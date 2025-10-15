@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YiThume — Health delivered. Fast.</title>
+  <meta name="description" content="YiThume delivers OTC meds to remote areas. Order on WhatsApp. Cash or EFT. Port Alfred, Bathurst, **Grahamstown/Makhanda**, **Eirini**, **Alicedale**, Kenton-on-Sea." />
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-900">
+  <!-- Replace with your real WhatsApp number, no plus sign (e.g., 2782XXXXXXX) -->
+  <script>
+    const WHATSAPP_NUMBER = "27XXXXXXXXX";
+    const customerStartText = encodeURIComponent(
+      "Hi YiThume 👋 I'd like to order medication."
+    );
+    const driverStartText = encodeURIComponent(
+      "Hi YiThume — Driver sign-in."
+    );
+    window.YI_LINKS = {
+      customer: `https://wa.me/${WHATSAPP_NUMBER}?text=${customerStartText}`,
+      driver: `https://wa.me/${WHATSAPP_NUMBER}?text=${driverStartText}`
+    };
+  </script>
+
+  <!-- Header -->
+  <header class="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-2xl bg-emerald-600 flex items-center justify-center text-white font-bold">Y</div>
+        <div class="text-xl font-semibold tracking-tight">YiThume</div>
+      </div>
+      <nav class="hidden md:flex items-center gap-6">
+        <a href="#how" class="text-sm hover:text-emerald-700 transition">How It Works</a>
+        <a href="#services" class="text-sm hover:text-emerald-700 transition">Services</a>
+        <a href="#pricing" class="text-sm hover:text-emerald-700 transition">Pricing & Zones</a>
+        <a href="#drivers" class="text-sm hover:text-emerald-700 transition">For Drivers</a>
+        <a href="#faq" class="text-sm hover:text-emerald-700 transition">FAQ</a>
+      </nav>
+      <div class="hidden sm:flex items-center gap-3">
+        <a id="ctaCustomerTop" href="#" class="px-3 py-2 text-sm rounded-xl border border-emerald-600 text-emerald-700 hover:bg-emerald-50">Order on WhatsApp</a>
+        <a id="ctaDriverTop" href="#" class="px-3 py-2 text-sm rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Driver Sign‑in</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="relative">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-20 grid md:grid-cols-2 gap-10 items-center">
+      <div>
+        <h1 class="text-4xl sm:text-5xl font-bold leading-tight">
+          Health delivered. <span class="text-emerald-600">Fast</span>.
+        </h1>
+        <p class="mt-4 text-slate-700 max-w-xl">
+          YiThume brings <strong>OTC meds</strong> to remote areas via WhatsApp. Simple ordering, clear pricing, and trusted local drivers.
+        </p>
+        <div class="mt-6 flex flex-col sm:flex-row gap-3">
+          <a id="ctaCustomerHero" href="#" class="px-5 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">Order on WhatsApp</a>
+          <a id="ctaDriverHero" href="#" class="px-5 py-3 rounded-2xl border border-slate-300 text-slate-800 text-sm font-medium hover:bg-slate-100">Driver Portal (WhatsApp)</a>
+          <button id="openOrderBuilder" class="px-5 py-3 rounded-2xl border border-emerald-600 text-emerald-700 text-sm font-medium hover:bg-emerald-50">Build an Order</button>
+        </div>
+        <div class="mt-5 text-xs text-slate-500">
+          Your chat will open in WhatsApp with a pre-filled hello message. We’ll guide you from there.
+        </div>
+      </div>
+      <div>
+        <div class="rounded-3xl border bg-white p-5 shadow-sm">
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <div class="p-4 rounded-2xl bg-slate-50">
+              <div class="text-slate-500">Delivery Windows</div>
+              <div class="mt-1 font-semibold">08–10 • 12–14 • 16–18</div>
+            </div>
+            <div class="p-4 rounded-2xl bg-slate-50">
+              <div class="text-slate-500">Payment</div>
+              <div class="mt-1 font-semibold">Cash or EFT</div>
+            </div>
+            <div class="p-4 rounded-2xl bg-slate-50">
+              <div class="text-slate-500">Coverage</div>
+              <div class="mt-1 font-semibold">Port Alfred • Bathurst • Kenton • Grahamstown/Makhanda • Eirini • Alexandria • Alicedale</div>
+            </div>
+            <div class="p-4 rounded-2xl bg-slate-50">
+              <div class="text-slate-500">Support</div>
+              <div class="mt-1 font-semibold">WhatsApp 7 days</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="how" class="py-12 sm:py-16 border-t border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6">
+      <h2 class="text-2xl sm:text-3xl font-bold">How YiThume Works</h2>
+      <div class="mt-6 grid md:grid-cols-4 gap-4">
+        <div class="p-5 rounded-2xl bg-white border shadow-sm">
+          <div class="text-sm text-slate-500">Step 1</div>
+          <div class="mt-1 font-semibold">WhatsApp us</div>
+          <p class=\"mt-2 text-sm text-slate-700\">Tap the WhatsApp button. We’ll ask the right questions and place your order.</p>
+        </div>
+        <div class="p-5 rounded-2xl bg-white border shadow-sm">
+          <div class="text-sm text-slate-500">Step 2</div>
+          <div class="mt-1 font-semibold">Confirm items</div>
+          <p class="mt-2 text-sm text-slate-700">Share your list (e.g., Panado x2). Script meds require a valid prescription.</p>
+        </div>
+        <div class="p-5 rounded-2xl bg-white border shadow-sm">
+          <div class="text-sm text-slate-500">Step 3</div>
+          <div class="mt-1 font-semibold">We dispatch</div>
+          <p class="mt-2 text-sm text-slate-700">A verified driver picks up from a partner pharmacy and heads to you.</p>
+        </div>
+        <div class="p-5 rounded-2xl bg-white border shadow-sm">
+          <div class="text-sm text-slate-500">Step 4</div>
+          <div class="mt-1 font-semibold">Pay & receive</div>
+          <p class="mt-2 text-sm text-slate-700">Cash or EFT on delivery. We’ll keep you updated in the chat.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Services -->
+  <section id="services" class="py-12 sm:py-16">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6">
+      <h2 class="text-2xl sm:text-3xl font-bold">What we deliver</h2>
+      <div class="mt-6 grid md:grid-cols-3 gap-4">
+        <div class="p-5 rounded-2xl bg-white border shadow-sm">
+          <div class="font-semibold">Over‑the‑Counter</div>
+          <ul class="mt-3 space-y-2 list-disc pl-5 text-sm text-slate-700">
+            <li>Pain & fever (Panado)</li>
+            <li>Allergy (Allergex)</li>
+            <li>Cough & flu</li>
+            <li>Electrolytes</li>
+          </ul>
+        </div>
+        <div class="p-5 rounded-2xl bg-white border shadow-sm">
+          <div class="font-semibold">Chronic & Scripts</div>
+          <ul class="mt-3 space-y-2 list-disc pl-5 text-sm text-slate-700">
+            <li>Diabetes & BP</li>
+            <li>Asthma inhalers</li>
+            <li>ARVs (script)</li>
+            <li>Other prescribed meds</li>
+          </ul>
+        </div>
+        <div class="p-5 rounded-2xl bg-white border shadow-sm">
+          <div class="font-semibold">Baby & Care</div>
+          <ul class="mt-3 space-y-2 list-disc pl-5 text-sm text-slate-700">
+            <li>Formula & nappies</li>
+            <li>Sanitary pads</li>
+            <li>Bandages & antiseptic</li>
+            <li>Personal care essentials</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mt-6 text-sm text-slate-600">
+        Note: We are a <strong>delivery service</strong> only — no medical advice is provided.
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing & Zones -->
+  <section id="pricing" class="py-12 sm:py-16 border-t border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <h2 class="text-2xl sm:text-3xl font-bold">Pricing & Zones</h2>
+        <details class="w-full md:w-auto">
+          <summary class="cursor-pointer text-sm text-emerald-700">Policy & POPIA</summary>
+          <div class="mt-3 text-sm text-slate-700 bg-slate-50 p-4 rounded-xl border">
+            We use your name, phone, address/pin and order details to deliver items and provide updates via WhatsApp. We share details only with your assigned driver and partner pharmacy. Reply “STOP” to opt out.
+          </div>
+        </details>
+      </div>
+      <div class="mt-2 text-sm text-slate-700">
+        <div>• <strong>Distance-based pricing</strong> — simple & fair.</div>
+        <div>• <strong>Set delivery days</strong> per zone to keep costs low. Need it sooner? Request <strong>same‑day (rush)</strong> for an extra fee.</div>
+        <div>• <strong>More villages coming soon</strong> — WhatsApp us to request yours.</div>
+      </div>
+      <div class="mt-6 overflow-hidden rounded-2xl border bg-white">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-slate-600">
+            <tr>
+              <th class="py-3 px-4 text-left">Zone</th>
+              <th class="py-3 px-4 text-left">Areas</th>
+              <th class="py-3 px-4 text-left">Delivery Fee</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="border-t"><td class="py-3 px-4 font-medium">Zone A</td><td class="py-3 px-4">Port Alfred, Nemato, East Beach, Seafield</td><td class="py-3 px-4">R25</td></tr>
+            <tr class="border-t"><td class="py-3 px-4 font-medium">Zone B</td><td class="py-3 px-4">Bathurst, Eluce/Elitsi</td><td class="py-3 px-4">R35</td></tr>
+            <tr class="border-t"><td class="py-3 px-4 font-medium">Zone C</td><td class="py-3 px-4">Kenton‑on‑Sea, Bushmans River, Boesmansriviermond</td><td class="py-3 px-4">R45</td></tr>
+            <tr class="border-t"><td class="py-3 px-4 font-medium">Zone D</td><td class="py-3 px-4">Grahamstown/Makhanda, Eirini</td><td class="py-3 px-4">R60</td></tr>
+            <tr class="border-t"><td class="py-3 px-4 font-medium">Zone E</td><td class="py-3 px-4">Alexandria, Alicedale, Surrounding Rural Areas</td><td class="py-3 px-4">R70</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-4 text-xs text-slate-500">Rush fee +R30 for ASAP when available.</div>
+    </div>
+  </section>
+
+  <!-- Drivers -->
+  <section id="drivers" class="py-12 sm:py-16">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <h2 class="text-2xl sm:text-3xl font-bold">Drivers — earn with YiThume</h2>
+        <a id="ctaDriverSection" href="#" class="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm hover:bg-emerald-700">Open Driver WhatsApp</a>
+      </div>
+      <div class="mt-6 grid md:grid-cols-3 gap-4">
+        <div class="p-5 rounded-2xl bg-white border shadow-sm">
+          <div class="font-semibold">Competitive Pay</div>
+          <ul class="mt-3 space-y-2 list-disc pl-5 text-sm text-slate-700">
+            <li>Earn more per trip with fair zone pricing</li>
+            <li>R30 base + R5/km + weekly bonuses</li>
+            <li>Petrol allowance after 8km</li>
+            <li>Cash-out anytime via WhatsApp</li>
+          </ul>
+        </div>
+        <div class="p-5 rounded-2xl bg-white border shadow-sm">
+          <div class="font-semibold">Requirements</div>
+          <ul class="mt-3 space-y-2 list-disc pl-5 text-sm text-slate-700">
+            <li>ID/Passport & Driver’s License</li>
+            <li>Roadworthy bike or car</li>
+            <li>Bank proof</li>
+            <li>WhatsApp & data</li>
+          </ul>
+        </div>
+        <div class="p-5 rounded-2xl bg-white border shadow-sm">
+          <div class="font-semibold">Driver Benefits</div>
+          <ul class="mt-3 space-y-2 list-disc pl-5 text-sm text-slate-700">
+            <li>Weekly incentives for top drivers</li>
+            <li>On-time payment guarantee</li>
+            <li>Local routes, flexible hours</li>
+            <li>Cash-out requests on demand</li>
+          </ul>
+        </div>
+      </div>
+      <details class="mt-6">
+        <summary class="cursor-pointer text-sm text-emerald-700">Driver Policy (short)</summary>
+        <div class="mt-3 text-sm text-slate-700 bg-slate-50 p-4 rounded-xl border">
+          Independent contractor status. Keep parcels secure and dry. No medical advice. Obey traffic laws. Status updates in chat: picked up → on the way → delivered.
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="py-12 sm:py-16 border-t border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6">
+      <h2 class="text-2xl sm:text-3xl font-bold">FAQ</h2>
+      <div class="mt-6 grid md:grid-cols-2 gap-4">
+        <details class="p-4 rounded-xl bg-white border shadow-sm">
+          <summary class="font-medium cursor-pointer">Do you give medical advice?</summary>
+          <p class="mt-2 text-sm text-slate-700">No. YiThume provides delivery only. Always follow your healthcare provider’s guidance.</p>
+        </details>
+        <details class="p-4 rounded-xl bg-white border shadow-sm">
+          <summary class="font-medium cursor-pointer">Do you deliver prescription meds?</summary>
+          <p class="mt-2 text-sm text-slate-700">Yes, with a valid script and ID where required.</p>
+        </details>
+        <details class="p-4 rounded-xl bg-white border shadow-sm">
+          <summary class="font-medium cursor-pointer">How do I pay?</summary>
+          <p class="mt-2 text-sm text-slate-700">Cash or EFT to YiThume. COD reconciled daily.</p>
+        </details>
+        <details class="p-4 rounded-xl bg-white border shadow-sm">
+          <summary class="font-medium cursor-pointer">Where do you operate?</summary>
+          <p class="mt-2 text-sm text-slate-700">Port Alfred, Bathurst, and Kenton‑on‑Sea (more soon).</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-10 border-t border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <div class="font-semibold">YiThume</div>
+          <div class="text-xs text-slate-500">Delivery service only • POPIA compliant • © <span id="year"></span></div>
+        </div>
+        <div class="flex gap-3">
+          <a id="ctaCustomerFooter" href="#" class="px-3 py-2 text-sm rounded-xl border border-slate-300 hover:bg-slate-100">WhatsApp Customer</a>
+          <a id="ctaDriverFooter" href="#" class="px-3 py-2 text-sm rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">WhatsApp Driver</a>
+        </div>
+      </div>
+    </div>
+  <!-- Order Builder Modal -->
+  <div id="orderBuilder" class="fixed inset-0 hidden items-center justify-center bg-black/40 p-4 z-50">
+    <div class="w-full max-w-2xl rounded-2xl bg-white shadow-xl border">
+      <div class="flex items-center justify-between p-4 border-b">
+        <div class="font-semibold">Build your order</div>
+        <button id="closeOrderBuilder" class="text-slate-500 hover:text-slate-700">✕</button>
+      </div>
+      <div class="p-4 grid md:grid-cols-2 gap-4 text-sm">
+        <div>
+          <div class="font-medium mb-2">Items</div>
+          <div class="space-y-2" id="itemsList"></div>
+          <div class="mt-3">
+            <button id="addCustomItem" class="text-emerald-700 text-xs underline">+ Add custom item</button>
+          </div>
+        </div>
+        <div>
+          <div class="font-medium mb-2">Delivery</div>
+          <label class="block mb-2">Zone
+            <select id="zoneSelect" class="mt-1 w-full border rounded-lg p-2">
+              <option value="A" data-fee="25">Zone A — R25</option>
+              <option value="B" data-fee="35">Zone B — R35</option>
+              <option value="C" data-fee="45">Zone C — R45</option>
+              <option value="D" data-fee="60">Zone D — R60</option>
+              <option value="E" data-fee="70">Zone E — R70</option>
+            </select>
+          </label>
+          <label class="inline-flex items-center gap-2 mt-2">
+            <input id="rushToggle" type="checkbox" class="h-4 w-4">
+            <span>Request same‑day (rush) +R30</span>
+          </label>
+          <div class="mt-4 font-medium">Payment</div>
+          <label class="flex items-center gap-2 mt-2"><input type="radio" name="pay" value="eft" checked> EFT (send POP)</label>
+          <label class="flex items-center gap-2 mt-1"><input type="radio" name="pay" value="card"> Card link via WhatsApp</label>
+          <div class="mt-4 p-3 rounded-xl bg-slate-50 border">
+            <div class="text-slate-500">Order Total</div>
+            <div class="text-2xl font-bold">R<span id="orderTotal">0</span></div>
+            <div class="text-xs text-slate-500 mt-1">Includes items + delivery fee{rush}</div>
+          </div>
+        </div>
+      </div>
+      <div class="p-4 border-t flex items-center justify-between text-sm">
+        <div class="text-slate-600">By confirming, you accept the cost. We’ll send payment instructions in WhatsApp.</div>
+        <div class="flex gap-2">
+          <button id="confirmOrder" class="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Confirm & Open WhatsApp</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  </footer>
+
+  <script>
+    // Wire up the WhatsApp links
+    ["ctaCustomerTop","ctaCustomerHero","ctaCustomerFooter"].forEach(id => {
+      const el = document.getElementById(id); if (el) el.href = window.YI_LINKS.customer;
+    });
+    ["ctaDriverTop","ctaDriverHero","ctaDriverSection","ctaDriverFooter"].forEach(id => {
+      const el = document.getElementById(id); if (el) el.href = window.YI_LINKS.driver;
+    });
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    // ORDER BUILDER LOGIC
+    const openBtn = document.getElementById('openOrderBuilder');
+    const modal = document.getElementById('orderBuilder');
+    const closeBtn = document.getElementById('closeOrderBuilder');
+    const itemsList = document.getElementById('itemsList');
+    const zoneSelect = document.getElementById('zoneSelect');
+    const rushToggle = document.getElementById('rushToggle');
+    const totalEl = document.getElementById('orderTotal');
+
+    const CATALOG = [
+      { name: 'Panado 500mg (24s)', price: 35 },
+      { name: 'Allergex 10mg (10s)', price: 30 },
+      { name: 'Cough Syrup 100ml', price: 55 },
+      { name: 'Electrolyte Sachet', price: 15 },
+      { name: 'Bandages (set)', price: 25 }
+    ];
+
+    let cart = [];
+
+    function renderItems() {
+      // build checkboxes with qty selectors
+      itemsList.innerHTML = '';
+      CATALOG.forEach((item, idx) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between gap-3 border rounded-lg p-2';
+        row.innerHTML = `
+          <label class="flex items-center gap-2">
+            <input type="checkbox" data-idx="${idx}" class="itemCheck h-4 w-4" />
+            <span>${item.name}</span>
+          </label>
+          <div class="flex items-center gap-2">
+            <span class="text-slate-500">R${item.price}</span>
+            <input type="number" min="1" value="1" data-idx="${idx}" class="itemQty w-14 border rounded-lg p-1"/>
+          </div>`;
+        itemsList.appendChild(row);
+      });
+    }
+
+    function computeTotal() {
+      const fee = Number(zoneSelect.options[zoneSelect.selectedIndex].dataset.fee || 0);
+      const rush = rushToggle.checked ? 30 : 0;
+      const items = Array.from(document.querySelectorAll('.itemCheck'))
+        .filter(chk => chk.checked)
+        .map(chk => {
+          const i = Number(chk.dataset.idx);
+          const qty = Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value || 1);
+          return { name: CATALOG[i].name, price: CATALOG[i].price, qty };
+        });
+      const itemsTotal = items.reduce((s, it) => s + it.price * it.qty, 0);
+      const total = itemsTotal + fee + rush;
+      totalEl.textContent = String(total);
+      return { items, itemsTotal, fee, rush, total };
+    }
+
+    function openModal() { modal.classList.remove('hidden'); modal.classList.add('flex'); computeTotal(); }
+    function closeModal() { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+
+    openBtn && openBtn.addEventListener('click', openModal);
+    closeBtn && closeBtn.addEventListener('click', closeModal);
+    zoneSelect && zoneSelect.addEventListener('change', computeTotal);
+    rushToggle && rushToggle.addEventListener('change', computeTotal);
+    document.addEventListener('change', (e) => {
+      if (e.target.classList.contains('itemCheck') || e.target.classList.contains('itemQty')) {
+        computeTotal();
+      }
+    });
+
+    document.getElementById('addCustomItem').addEventListener('click', (e) => {
+      e.preventDefault();
+      const name = prompt('Item name');
+      const price = Number(prompt('Price (R)')) || 0;
+      if (!name || !price) return;
+      CATALOG.push({ name, price });
+      renderItems();
+      computeTotal();
+    });
+
+    document.getElementById('confirmOrder').addEventListener('click', () => {
+      const { items, fee, rush, total } = computeTotal();
+      if (!items.length) { alert('Please select at least one item.'); return; }
+      const zone = zoneSelect.value;
+      const itemsText = items.map(it => `${it.name} x${it.qty}`).join(', ');
+      const pay = document.querySelector('input[name="pay"]:checked').value;
+      const rushText = rush ? ` + Rush R${rush}` : '';
+
+      let msg = `Hi YiThume%0A` +
+        `I want to order:%0A- ${encodeURIComponent(itemsText)}%0A` +
+        `Zone: ${zone} (Delivery R${fee}${rushText})%0A` +
+        `Total: R${total}%0A`;
+
+      if (pay === 'eft') {
+        msg += encodeURIComponent(`Payment: EFT. Please send bank details and I'll reply with proof of payment.`);
+      } else {
+        msg += encodeURIComponent(`Payment: Card. Please send a secure payment link.`);
+      }
+
+      const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`;
+      window.open(url, '_blank');
+      closeModal();
+    });
+
+    renderItems();
+  </script>
+</body>
+</html>
+</html>
