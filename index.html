@@ -33,11 +33,16 @@
     .pkg-dot{transform:translate(-50%,-50%);}
     .pkg-dot svg{width:20px;height:20px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))}
 
-    /* Simple “road” styling (no route line) */
-    .back-road{stroke:#94a3b8 !important; stroke-width:3.5 !important; opacity:.95 !important;}
-
     /* Subtle brand tint */
     .tint{position:absolute; inset:0; background:linear-gradient(180deg,rgba(5,150,105,.04),rgba(5,150,105,.03)); pointer-events:none;}
+
+    /* EC badge so people instantly know the region */
+    .ec-badge{
+      position:absolute; left:14px; bottom:12px;
+      padding:6px 10px; border-radius:10px;
+      background:rgba(15,23,42,.75); color:#fff; font-size:12px;
+      backdrop-filter: blur(2px);
+    }
   </style>
 </head>
 <body class="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-900">
@@ -101,6 +106,7 @@
           </div>
           <div id="heroMap" class="rounded-2xl"></div>
           <div class="tint"></div>
+          <div class="ec-badge">Eastern Cape</div>
         </div>
       </div>
     </div>
@@ -391,13 +397,24 @@
       window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`,'_blank'); closeBot();
     });}
 
-    // ===== HERO MAP (animated) =====
+    /* ===== HERO MAP (Eastern Cape focus, deliveries only: NO visible lines) ===== */
     const heroEl=document.getElementById('heroMap');
-    const heroMap=L.map(heroEl,{zoomControl:false,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,boxZoom:false,touchZoom:false})
-      .setView([-33.2, 26.4], 8); // Eastern Cape focus
+    const heroMap=L.map(heroEl,{
+      zoomControl:false, dragging:false, scrollWheelZoom:false,
+      doubleClickZoom:false, boxZoom:false, touchZoom:false
+    }).setView([-33.20, 26.55], 8); // EC center-ish
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',{attribution:'',opacity:0.85,noWrap:true,detectRetina:true}).addTo(heroMap);
+    // Basemap with labels so it clearly reads as Eastern Cape
+    L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      { attribution:'', opacity:0.96, noWrap:true, detectRetina:true }
+    ).addTo(heroMap);
 
+    // Keep within SA so it doesn't wrap strangely
+    const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
+    heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
+
+    // Town hubs
     const HUBS=[
       {name:'Port Alfred',zone:'A',lat:-33.590,lng:26.890},
       {name:'Bathurst',zone:'B',lat:-33.498,lng:26.833},
@@ -408,11 +425,19 @@
       {name:'Alicedale',zone:'E',lat:-33.321,lng:26.078}
     ];
 
-    const road1=[[HUBS[3].lat,HUBS[3].lng],[HUBS[4].lat,HUBS[4].lng]]; // Makhanda -> Alice
-    const road2=[[HUBS[4].lat,HUBS[4].lng],[HUBS[0].lat,HUBS[0].lng]]; // Alice -> Port Alfred
-    L.polyline(road1,{className:'back-road'}).addTo(heroMap);
-    L.polyline(road2,{className:'back-road'}).addTo(heroMap);
+    // Multiple routes (DATA ONLY). We DO NOT draw polylines.
+    const ROADS = [
+      [[HUBS[1].lat,HUBS[1].lng],[HUBS[0].lat,HUBS[0].lng]], // Bathurst → Port Alfred
+      [[HUBS[2].lat,HUBS[2].lng],[HUBS[5].lat,HUBS[5].lng]], // Kenton → Alexandria
+      [[HUBS[6].lat,HUBS[6].lng],[HUBS[3].lat,HUBS[3].lng]], // Alicedale → Makhanda
+      [[HUBS[3].lat,HUBS[3].lng],[HUBS[4].lat,HUBS[4].lng]], // Makhanda → Alice
+      [[HUBS[4].lat,HUBS[4].lng],[HUBS[0].lat,HUBS[0].lng]], // Alice → Port Alfred
+      [[HUBS[3].lat,HUBS[3].lng],[HUBS[2].lat,HUBS[2].lng]], // Makhanda → Kenton
+      [[HUBS[5].lat,HUBS[5].lng],[HUBS[0].lat,HUBS[0].lng]], // Alexandria → Port Alfred
+      [[HUBS[6].lat,HUBS[6].lng],[HUBS[2].lat,HUBS[2].lng]]  // Alicedale → Kenton
+    ];
 
+    // Icons
     function carIcon(zone){
       const cls=`car-dot car-${zone}`;
       const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'>
@@ -428,33 +453,51 @@
       </svg>`;
       return L.divIcon({className:cls,html:svg,iconSize:[24,12],iconAnchor:[12,6]});
     }
+    const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'><path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/></svg>`;
+    const pkgIcon=L.divIcon({className:'pkg-dot',html:pkgSvg,iconSize:[20,20],iconAnchor:[10,10]});
+
+    // Helpers
     function lerp(a,b,t){return a+(b-a)*t;}
     function posOnSeg(seg,t){const [A,B]=seg;return [lerp(A[0],B[0],t), lerp(A[1],B[1],t)];}
 
-    const cars=[];
-    function makeCar(seg,zone,startT=Math.random(),dir=Math.random()<.5?1:-1,speed=0.005+Math.random()*0.004){
-      const [lat,lng]=posOnSeg(seg,startT); const m=L.marker([lat,lng],{icon:carIcon(zone)}).addTo(heroMap);
+    // Animated fleets moving along hidden routes
+    const cars=[], parcels=[];
+    function makeCar(zone){
+      const seg=ROADS[(Math.random()*ROADS.length)|0];
+      const startT=Math.random(), dir=Math.random()<.5?1:-1;
+      const speed=0.0045+Math.random()*0.003;
+      const [lat,lng]=posOnSeg(seg,startT);
+      const m=L.marker([lat,lng],{icon:carIcon(zone)}).addTo(heroMap);
       cars.push({m,seg,t:startT,dir,speed});
     }
-    const parcels=[];
-    const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'><path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/></svg>`;
-    const pkgIcon=L.divIcon({className:'pkg-dot',html:pkgSvg,iconSize:[20,20],iconAnchor:[10,10]});
-    function makeParcel(seg,startT=Math.random(),dir=Math.random()<.5?1:-1,speed=0.006+Math.random()*0.004){
-      const [lat,lng]=posOnSeg(seg,startT); const m=L.marker([lat,lng],{icon:pkgIcon}).addTo(heroMap);
+    function makeParcel(){
+      const seg=ROADS[(Math.random()*ROADS.length)|0];
+      const startT=Math.random(), dir=Math.random()<.5?1:-1;
+      const speed=0.0055+Math.random()*0.003;
+      const [lat,lng]=posOnSeg(seg,startT);
+      const m=L.marker([lat,lng],{icon:pkgIcon}).addTo(heroMap);
       parcels.push({m,seg,t:startT,dir,speed});
     }
 
-    // populate
-    for(let i=0;i<5;i++) makeCar(road1,'D');
-    for(let i=0;i<7;i++) makeCar(road2,'A');
-    for(let i=0;i<3;i++) makeParcel(road1);
-    for(let i=0;i<3;i++) makeParcel(road2);
+    // Populate
+    for(let i=0;i<10;i++) makeCar(['A','B','C','D','E'][i%5]);
+    for(let i=0;i<6;i++)  makeParcel();
 
     function tick(){
-      for(const c of cars){ c.t += c.speed * c.dir; if(c.t>1){c.t=1;c.dir=-1;} if(c.t<0){c.t=0;c.dir=1;} const [lat,lng]=posOnSeg(c.seg,c.t); c.m.setLatLng([lat,lng]); }
-      for(const p of parcels){ p.t += p.speed * p.dir; if(p.t>1){p.t=1;p.dir=-1;} if(p.t<0){p.t=0;p.dir=1;} const [lat,lng]=posOnSeg(p.seg,p.t); p.m.setLatLng([lat,lng]); }
+      for(const c of cars){
+        c.t += c.speed * c.dir;
+        if(c.t>1){ c.t=1; c.dir=-1; } if(c.t<0){ c.t=0; c.dir=1; }
+        const [lat,lng]=posOnSeg(c.seg,c.t); c.m.setLatLng([lat,lng]);
+      }
+      for(const p of parcels){
+        p.t += p.speed * p.dir;
+        if(p.t>1){ p.t=1; p.dir=-1; } if(p.t<0){ p.t=0; p.dir=1; }
+        const [lat,lng]=posOnSeg(p.seg,p.t); p.m.setLatLng([lat,lng]);
+      }
     }
-    setInterval(tick,240);
+    setInterval(tick,220);
+
+    // Resize fix for previews
     setTimeout(()=>heroMap.invalidateSize(),180);
     window.addEventListener('resize',()=>heroMap.invalidateSize());
 
