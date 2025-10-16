@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>YiThume — Health delivered. Fast.</title>
   <meta name="description" content="YiThume delivers OTC meds to remote areas. Order on WhatsApp. Port Alfred, Bathurst, Makhanda/Grahamstown, Alice, Kenton-on-Sea, Alexandria, Alicedale." />
-  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
@@ -15,28 +13,23 @@
     :root{
       --emerald-600:#059669; --emerald-500:#10b981; --emerald-400:#34d399; --emerald-800:#047857; --emerald-900:#065f46;
       --map-bg:#f6f8f9;
+      --hero-h: 360px;
     }
+    @media (max-width:640px){ :root{ --hero-h: 280px; } }
 
-    /* Lower Leaflet panes so our modals easily beat them */
     .leaflet-pane, .leaflet-top, .leaflet-bottom { z-index: 10 !important; }
 
-    /* HERO MAP */
-    #heroMap{height:360px;border-radius:16px;position:relative;overflow:hidden;background:var(--map-bg);}
-    @media (max-width:640px){ #heroMap{height:280px;} }
-    .leaflet-control-container{display:none;} /* hide zoom */
+    #heroMap{height:var(--hero-h);border-radius:16px;position:relative;overflow:hidden;background:var(--map-bg);}
+    .leaflet-control-container{display:none;}
 
-    /* Car/parcel icons */
-    .car-dot{transform:translate(-50%,-50%);}
+    .car-dot{transform:translate(-50%,-50%); will-change: transform;}
     .car-dot svg{width:18px;height:18px;display:block;filter:drop-shadow(0 1px 1px rgba(0,0,0,.18));}
     .car-A path{fill:var(--emerald-600);} .car-B path{fill:var(--emerald-500);}
     .car-C path{fill:var(--emerald-400);} .car-D path{fill:var(--emerald-800);} .car-E path{fill:var(--emerald-900);}
-    .pkg-dot{transform:translate(-50%,-50%);}
+    .pkg-dot{transform:translate(-50%,-50%); will-change: transform;}
     .pkg-dot svg{width:20px;height:20px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))}
 
-    /* Subtle brand tint */
     .tint{position:absolute; inset:0; background:linear-gradient(180deg,rgba(5,150,105,.04),rgba(5,150,105,.03)); pointer-events:none;}
-
-    /* EC badge so people instantly know the region */
     .ec-badge{
       position:absolute; left:14px; bottom:12px;
       padding:6px 10px; border-radius:10px;
@@ -84,22 +77,50 @@
 
   <!-- Hero -->
   <section class="relative">
-    <!-- give the left more room -->
     <div class="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-20 grid md:[grid-template-columns:1.2fr_1fr] gap-10 items-stretch">
-      <!-- Left -->
-      <div class="flex flex-col md:pr-6">
-        <h1 class="text-4xl sm:text-5xl font-bold leading-tight">Health delivered. <span class="text-emerald-600">Fast</span>.</h1>
-        <p class="mt-4 text-slate-700 max-w-xl">YiThume brings <strong>OTC meds</strong> to remote areas via WhatsApp. Simple ordering, clear pricing, and trusted local drivers.</p>
-        <div class="mt-6 flex flex-col sm:flex-row gap-3">
-          <button id="openOrderBuilder" class="px-5 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">Start order</button>
-          <button id="openDriverModal" class="px-5 py-3 rounded-2xl border border-slate-300 text-slate-800 text-sm font-medium hover:bg-slate-100">Sign up / Log in (Driver)</button>
+      <!-- Left: now a card that matches map height -->
+      <div class="flex">
+        <div class="rounded-3xl border bg-white p-6 shadow-sm h-full w-full min-h-[var(--hero-h)] flex flex-col">
+          <div>
+            <h1 class="text-4xl sm:text-5xl font-bold leading-tight">Health delivered. <span class="text-emerald-600">Fast</span>.</h1>
+            <p class="mt-4 text-slate-700 max-w-xl">YiThume brings <strong>OTC meds</strong> to remote areas via WhatsApp. Simple ordering, clear pricing, and trusted local drivers.</p>
+          </div>
+
+          <!-- Benefits (not buttons) -->
+          <ul class="mt-6 grid grid-cols-2 gap-3 text-sm">
+            <li class="flex items-start gap-2">
+              <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span>
+              <div><b>Order on WhatsApp</b><div class="text-slate-500 text-xs">No app needed</div></div>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span>
+              <div><b>Same-day windows</b><div class="text-slate-500 text-xs">08–10 • 12–14 • 16–18</div></div>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span>
+              <div><b>Local drivers</b><div class="text-slate-500 text-xs">Verified per zone</div></div>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span>
+              <div><b>Cash or EFT</b><div class="text-slate-500 text-xs">Card link via chat</div></div>
+            </li>
+          </ul>
+
+          <!-- CTAs -->
+          <div class="mt-6 flex flex-col sm:flex-row gap-3">
+            <button id="openOrderBuilder" class="px-5 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">Start order</button>
+            <button id="openDriverModal" class="px-5 py-3 rounded-2xl border border-slate-300 text-slate-800 text-sm font-medium hover:bg-slate-100">Sign up / Log in (Driver)</button>
+          </div>
+          <div class="mt-3 text-xs text-slate-500">Build your basket here — we’ll send it to WhatsApp for confirmation & payment.</div>
+
+          <!-- Spacer to push content and keep equal height nicely -->
+          <div class="mt-auto"></div>
         </div>
-        <div class="mt-5 text-xs text-slate-500">Build your basket here — we’ll send it to WhatsApp for confirmation & payment.</div>
       </div>
 
-      <!-- Right: coverage map -->
-      <div class="flex flex-col">
-        <div class="rounded-3xl border bg-white p-3 shadow-sm h-full relative">
+      <!-- Right: coverage map card -->
+      <div class="flex">
+        <div class="rounded-3xl border bg-white p-3 shadow-sm h-full w-full relative min-h-[var(--hero-h)]">
           <div class="flex items-center justify-between px-1 pb-2">
             <div class="text-sm text-slate-600">Coverage map</div>
             <span class="px-2 py-1 text-xs rounded-lg bg-emerald-100 text-emerald-700">LIVE</span>
@@ -278,10 +299,8 @@
 
   <script>
   window.addEventListener('DOMContentLoaded', () => {
-    // Year
     const yearEl=document.getElementById('year'); if(yearEl) yearEl.textContent=new Date().getFullYear();
 
-    // ===== Order builder =====
     const modal=document.getElementById('orderBuilder');
     const openOrderButtons=['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'];
     const closeBtn=document.getElementById('closeOrderBuilder');
@@ -339,7 +358,6 @@
     });}
     renderItems();
 
-    // ===== Bot-style checkout =====
     const confirmBtn2=document.getElementById('confirmOrderBtn');
     const botModal=document.getElementById('botChat');
     const botClose=document.getElementById('closeBot');
@@ -397,24 +415,21 @@
       window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`,'_blank'); closeBot();
     });}
 
-    /* ===== HERO MAP (Eastern Cape focus, deliveries only: NO visible lines) ===== */
+    /* ===== HERO MAP (Eastern Cape focus, animated cars/parcels on hidden roads) ===== */
     const heroEl=document.getElementById('heroMap');
     const heroMap=L.map(heroEl,{
       zoomControl:false, dragging:false, scrollWheelZoom:false,
       doubleClickZoom:false, boxZoom:false, touchZoom:false
-    }).setView([-33.20, 26.55], 8); // EC center-ish
+    }).setView([-33.20, 26.55], 8);
 
-    // Basemap with labels so it clearly reads as Eastern Cape
     L.tileLayer(
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
       { attribution:'', opacity:0.96, noWrap:true, detectRetina:true }
     ).addTo(heroMap);
 
-    // Keep within SA so it doesn't wrap strangely
     const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
     heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
 
-    // Town hubs
     const HUBS=[
       {name:'Port Alfred',zone:'A',lat:-33.590,lng:26.890},
       {name:'Bathurst',zone:'B',lat:-33.498,lng:26.833},
@@ -425,19 +440,17 @@
       {name:'Alicedale',zone:'E',lat:-33.321,lng:26.078}
     ];
 
-    // Multiple routes (DATA ONLY). We DO NOT draw polylines.
     const ROADS = [
-      [[HUBS[1].lat,HUBS[1].lng],[HUBS[0].lat,HUBS[0].lng]], // Bathurst → Port Alfred
-      [[HUBS[2].lat,HUBS[2].lng],[HUBS[5].lat,HUBS[5].lng]], // Kenton → Alexandria
-      [[HUBS[6].lat,HUBS[6].lng],[HUBS[3].lat,HUBS[3].lng]], // Alicedale → Makhanda
-      [[HUBS[3].lat,HUBS[3].lng],[HUBS[4].lat,HUBS[4].lng]], // Makhanda → Alice
-      [[HUBS[4].lat,HUBS[4].lng],[HUBS[0].lat,HUBS[0].lng]], // Alice → Port Alfred
-      [[HUBS[3].lat,HUBS[3].lng],[HUBS[2].lat,HUBS[2].lng]], // Makhanda → Kenton
-      [[HUBS[5].lat,HUBS[5].lng],[HUBS[0].lat,HUBS[0].lng]], // Alexandria → Port Alfred
-      [[HUBS[6].lat,HUBS[6].lng],[HUBS[2].lat,HUBS[2].lng]]  // Alicedale → Kenton
+      [[HUBS[1].lat,HUBS[1].lng],[HUBS[0].lat,HUBS[0].lng]],
+      [[HUBS[2].lat,HUBS[2].lng],[HUBS[5].lat,HUBS[5].lng]],
+      [[HUBS[6].lat,HUBS[6].lng],[HUBS[3].lat,HUBS[3].lng]],
+      [[HUBS[3].lat,HUBS[3].lng],[HUBS[4].lat,HUBS[4].lng]],
+      [[HUBS[4].lat,HUBS[4].lng],[HUBS[0].lat,HUBS[0].lng]],
+      [[HUBS[3].lat,HUBS[3].lng],[HUBS[2].lat,HUBS[2].lng]],
+      [[HUBS[5].lat,HUBS[5].lng],[HUBS[0].lat,HUBS[0].lng]],
+      [[HUBS[6].lat,HUBS[6].lng],[HUBS[2].lat,HUBS[2].lng]]
     ];
 
-    // Icons
     function carIcon(zone){
       const cls=`car-dot car-${zone}`;
       const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'>
@@ -456,16 +469,14 @@
     const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'><path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/></svg>`;
     const pkgIcon=L.divIcon({className:'pkg-dot',html:pkgSvg,iconSize:[20,20],iconAnchor:[10,10]});
 
-    // Helpers
     function lerp(a,b,t){return a+(b-a)*t;}
     function posOnSeg(seg,t){const [A,B]=seg;return [lerp(A[0],B[0],t), lerp(A[1],B[1],t)];}
 
-    // Animated fleets moving along hidden routes
     const cars=[], parcels=[];
     function makeCar(zone){
       const seg=ROADS[(Math.random()*ROADS.length)|0];
       const startT=Math.random(), dir=Math.random()<.5?1:-1;
-      const speed=0.0045+Math.random()*0.003;
+      const speed=0.10+Math.random()*0.06; // fraction of segment per second (smooth)
       const [lat,lng]=posOnSeg(seg,startT);
       const m=L.marker([lat,lng],{icon:carIcon(zone)}).addTo(heroMap);
       cars.push({m,seg,t:startT,dir,speed});
@@ -473,35 +484,38 @@
     function makeParcel(){
       const seg=ROADS[(Math.random()*ROADS.length)|0];
       const startT=Math.random(), dir=Math.random()<.5?1:-1;
-      const speed=0.0055+Math.random()*0.003;
+      const speed=0.12+Math.random()*0.06;
       const [lat,lng]=posOnSeg(seg,startT);
       const m=L.marker([lat,lng],{icon:pkgIcon}).addTo(heroMap);
       parcels.push({m,seg,t:startT,dir,speed});
     }
 
-    // Populate
     for(let i=0;i<10;i++) makeCar(['A','B','C','D','E'][i%5]);
     for(let i=0;i<6;i++)  makeParcel();
 
-    function tick(){
+    // Smooth animation loop (time-based, no stutter)
+    let last=performance.now();
+    function animate(now){
+      const dt=Math.min((now-last)/1000, 0.05); // clamp to avoid jumps
+      last=now;
+
       for(const c of cars){
-        c.t += c.speed * c.dir;
-        if(c.t>1){ c.t=1; c.dir=-1; } if(c.t<0){ c.t=0; c.dir=1; }
+        c.t += c.speed * c.dir * dt;
+        if(c.t>1){ c.t=1; c.dir=-1; } else if(c.t<0){ c.t=0; c.dir=1; }
         const [lat,lng]=posOnSeg(c.seg,c.t); c.m.setLatLng([lat,lng]);
       }
       for(const p of parcels){
-        p.t += p.speed * p.dir;
-        if(p.t>1){ p.t=1; p.dir=-1; } if(p.t<0){ p.t=0; p.dir=1; }
+        p.t += p.speed * p.dir * dt;
+        if(p.t>1){ p.t=1; p.dir=-1; } else if(p.t<0){ p.t=0; p.dir=1; }
         const [lat,lng]=posOnSeg(p.seg,p.t); p.m.setLatLng([lat,lng]);
       }
+      requestAnimationFrame(animate);
     }
-    setInterval(tick,220);
+    requestAnimationFrame(animate);
 
-    // Resize fix for previews
     setTimeout(()=>heroMap.invalidateSize(),180);
     window.addEventListener('resize',()=>heroMap.invalidateSize());
 
-    // ===== Driver modal (open/close + tabs) =====
     const driverModal=document.getElementById('driverModal');
     ['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.addEventListener('click',()=>{driverModal.classList.remove('hidden');driverModal.classList.add('flex');});
@@ -515,7 +529,6 @@
     if(tabSignup) tabSignup.addEventListener('click',()=>{tabSignup.classList.add('bg-emerald-600','text-white');tabLogin.classList.remove('bg-emerald-600','text-white');formSignup.classList.remove('hidden');formLogin.classList.add('hidden');});
     if(tabLogin) tabLogin.addEventListener('click',()=>{tabLogin.classList.add('bg-emerald-600','text-white');tabSignup.classList.remove('bg-emerald-600','text-white');formLogin.classList.remove('hidden');formSignup.classList.add('hidden');});
 
-    // Demo sign-up → send WA + drop a dot
     function jitterAround(pt,meters){const d=(meters||800)/111111;const r=Math.random()*d;const a=Math.random()*Math.PI*2;return {lat:pt.lat+r*Math.cos(a),lng:pt.lng+r*Math.sin(a)};}
     if(formSignup){formSignup.addEventListener('submit',e=>{
       e.preventDefault();
@@ -542,7 +555,7 @@ Vehicle: ${vehicle}`);
       e.preventDefault(); alert('Logged in (demo). Driver tasks coming next).');
       driverModal.classList.add('hidden');driverModal.classList.remove('flex');
     });}
-  }); // END DOMContentLoaded
+  });
   </script>
 </body>
 </html>
