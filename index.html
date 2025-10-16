@@ -5,56 +5,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>YiThume — Health delivered. Fast.</title>
   <meta name="description" content="YiThume delivers OTC meds to remote areas. Order on WhatsApp. Port Alfred, Bathurst, Makhanda/Grahamstown, Alice, Kenton-on-Sea, Alexandria, Alicedale." />
-  <!-- TailwindCSS -->
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Leaflet for the hero map -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
   <style>
     :root{
       --emerald-600:#059669; --emerald-500:#10b981; --emerald-400:#34d399; --emerald-800:#047857; --emerald-900:#065f46;
-      --map-road:#dfe6e9; --map-bg:#f6f8f9; --map-edge:#e6edef;
+      --map-bg:#f6f8f9;
     }
+
+    /* Lower Leaflet panes so our modals easily beat them */
+    .leaflet-pane, .leaflet-top, .leaflet-bottom { z-index: 10 !important; }
+
     /* HERO MAP */
-    #heroMap{height:360px;border-radius:16px;position:relative;overflow:hidden;background:var(--map-bg);} 
+    #heroMap{height:360px;border-radius:16px;position:relative;overflow:hidden;background:var(--map-bg);}
     @media (max-width:640px){ #heroMap{height:280px;} }
     .leaflet-control-container{display:none;} /* hide zoom */
 
-    /* Car icons in brand family */
-    .car-dot{transform:translate(-50%,-50%);} .car-dot svg{width:18px;height:18px;display:block;filter:drop-shadow(0 1px 1px rgba(0,0,0,.18));}
-    .car-A path{fill:var(--emerald-600);} .car-B path{fill:var(--emerald-500);} .car-C path{fill:var(--emerald-400);} .car-D path{fill:var(--emerald-800);} .car-E path{fill:var(--emerald-900);} 
+    /* Car/parcel icons */
+    .car-dot{transform:translate(-50%,-50%);}
+    .car-dot svg{width:18px;height:18px;display:block;filter:drop-shadow(0 1px 1px rgba(0,0,0,.18));}
+    .car-A path{fill:var(--emerald-600);} .car-B path{fill:var(--emerald-500);}
+    .car-C path{fill:var(--emerald-400);} .car-D path{fill:var(--emerald-800);} .car-E path{fill:var(--emerald-900);}
+    .pkg-dot{transform:translate(-50%,-50%);}
+    .pkg-dot svg{width:20px;height:20px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))}
 
-    /* Package/lead marker */
-    .pkg-dot{transform:translate(-50%,-50%);} .pkg-dot svg{width:20px;height:20px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))}
+    /* Simple “road” styling (no route line) */
+    .back-road{stroke:#94a3b8 !important; stroke-width:3.5 !important; opacity:.95 !important;}
 
-    /* Subtle emerald route like in the screenshot */
-    .route-line{display:none;} /* route line hidden per request */
-    .back-road{stroke:#94a3b8 !important; stroke-width:3.5 !important; opacity:.95 !important;} 
-    .back-road{stroke:#94a3b8 !important; stroke-width:3.5 !important; opacity:.95 !important;} 
-
-    /* (you-are-here pulse removed by request) */
-
-    /* Brand tint over the grey tiles so it still feels on-brand but muted */
-    .tint { position:absolute; inset:0; background:linear-gradient(180deg,rgba(5,150,105,.04),rgba(5,150,105,.03)); pointer-events:none; }
+    /* Subtle brand tint */
+    .tint{position:absolute; inset:0; background:linear-gradient(180deg,rgba(5,150,105,.04),rgba(5,150,105,.03)); pointer-events:none;}
   </style>
 </head>
 <body class="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-900">
   <script>
-    // ===== CONFIG =====
-    const WHATSAPP_NUMBER = "270691456201";     // Customer line (no +)
-    const ADMIN_WHATSAPP  = "270691456201";     // Admin line (can be same)
-
-    // ===== QUICK LINKS (Header CTAs use these) =====
+    const WHATSAPP_NUMBER = "270691456201";
+    const ADMIN_WHATSAPP  = "270691456201";
     const customerStartText = encodeURIComponent("Hi YiThume 👋 I'd like to order medication.");
     const driverStartText   = encodeURIComponent("Hi YiThume — Driver sign-in.");
-    window.YI_LINKS = { customer:`https://wa.me/${WHATSAPP_NUMBER}?text=${customerStartText}`, driver:`https://wa.me/${WHATSAPP_NUMBER}?text=${driverStartText}` };
+    window.YI_LINKS = {
+      customer:`https://wa.me/${WHATSAPP_NUMBER}?text=${customerStartText}`,
+      driver:`https://wa.me/${WHATSAPP_NUMBER}?text=${driverStartText}`
+    };
   </script>
 
   <!-- Header -->
   <header class="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200">
     <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-2">
-        <!-- Inline logo -->
         <svg width="36" height="36" viewBox="0 0 36 36" class="rounded-2xl" aria-label="YiThume logo">
           <defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#059669"/></linearGradient></defs>
           <rect rx="12" width="36" height="36" fill="url(#g)"/>
@@ -71,16 +72,17 @@
       </nav>
       <div class="hidden sm:flex items-center gap-3">
         <button id="openOrderBuilderTop" class="px-3 py-2 text-sm rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Start order</button>
-        <button id="openDriverModalTop" class="px-3 py-2 text-sm rounded-xl border border-slate-300 hover:bg-slate-100">Driver sign‑in / up</button>
+        <button id="openDriverModalTop" class="px-3 py-2 text-sm rounded-xl border border-slate-300 hover:bg-slate-100">Driver sign-in / up</button>
       </div>
     </div>
   </header>
 
   <!-- Hero -->
   <section class="relative">
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-20 grid md:grid-cols-2 gap-10 items-stretch">
+    <!-- give the left more room -->
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-20 grid md:[grid-template-columns:1.2fr_1fr] gap-10 items-stretch">
       <!-- Left -->
-      <div class="flex flex-col">
+      <div class="flex flex-col md:pr-6">
         <h1 class="text-4xl sm:text-5xl font-bold leading-tight">Health delivered. <span class="text-emerald-600">Fast</span>.</h1>
         <p class="mt-4 text-slate-700 max-w-xl">YiThume brings <strong>OTC meds</strong> to remote areas via WhatsApp. Simple ordering, clear pricing, and trusted local drivers.</p>
         <div class="mt-6 flex flex-col sm:flex-row gap-3">
@@ -89,6 +91,7 @@
         </div>
         <div class="mt-5 text-xs text-slate-500">Build your basket here — we’ll send it to WhatsApp for confirmation & payment.</div>
       </div>
+
       <!-- Right: coverage map -->
       <div class="flex flex-col">
         <div class="rounded-3xl border bg-white p-3 shadow-sm h-full relative">
@@ -106,7 +109,7 @@
   <!-- How it works -->
   <section id="how" class="py-12 sm:py-16 border-t border-slate-200">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
-      <h2 class="text-2xl sm:text-3xl font-bold">How YiThume Works</h2>
+      <h2 class="text-2xl sm:3xl font-bold">How YiThume Works</h2>
       <div class="mt-6 grid md:grid-cols-4 gap-4">
         <div class="p-5 rounded-2xl bg-white border shadow-sm"><div class="text-sm text-slate-500">Step 1</div><div class="mt-1 font-semibold">WhatsApp us</div><p class="mt-2 text-sm text-slate-700">Tap the WhatsApp button. We’ll ask the right questions and place your order.</p></div>
         <div class="p-5 rounded-2xl bg-white border shadow-sm"><div class="text-sm text-slate-500">Step 2</div><div class="mt-1 font-semibold">Confirm items</div><p class="mt-2 text-sm text-slate-700">Share your list (e.g., Panado x2). Script meds require a valid prescription.</p></div>
@@ -116,7 +119,7 @@
     </div>
   </section>
 
-  <!-- Pricing & Zones (kept) -->
+  <!-- Pricing & Zones -->
   <section id="pricing" class="py-12 sm:py-16 border-t border-slate-200">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
       <h2 class="text-2xl sm:text-3xl font-bold">Pricing & Zones</h2>
@@ -126,7 +129,7 @@
           <tbody>
             <tr class="border-t"><td class="py-3 px-4 font-medium">Zone A</td><td class="py-3 px-4">Port Alfred, Nemato, East Beach, Seafield</td><td class="py-3 px-4">R25</td></tr>
             <tr class="border-t"><td class="py-3 px-4 font-medium">Zone B</td><td class="py-3 px-4">Bathurst, Eluce/Elitsi</td><td class="py-3 px-4">R35</td></tr>
-            <tr class="border-t"><td class="py-3 px-4 font-medium">Zone C</td><td class="py-3 px-4">Kenton‑on‑Sea, Bushmans River, Boesmansriviermond</td><td class="py-3 px-4">R45</td></tr>
+            <tr class="border-t"><td class="py-3 px-4 font-medium">Zone C</td><td class="py-3 px-4">Kenton-on-Sea, Bushmans River, Boesmansriviermond</td><td class="py-3 px-4">R45</td></tr>
             <tr class="border-t"><td class="py-3 px-4 font-medium">Zone D</td><td class="py-3 px-4">Makhanda/Grahamstown, Eirini</td><td class="py-3 px-4">R60</td></tr>
             <tr class="border-t"><td class="py-3 px-4 font-medium">Zone E</td><td class="py-3 px-4">Alexandria, Alicedale, Surrounding Rural Areas</td><td class="py-3 px-4">R70</td></tr>
           </tbody>
@@ -144,7 +147,7 @@
         <details class="p-4 rounded-xl bg-white border shadow-sm"><summary class="font-medium cursor-pointer">Do you give medical advice?</summary><p class="mt-2 text-sm text-slate-700">No. YiThume provides delivery only. Always follow your healthcare provider’s guidance.</p></details>
         <details class="p-4 rounded-xl bg-white border shadow-sm"><summary class="font-medium cursor-pointer">Do you deliver prescription meds?</summary><p class="mt-2 text-sm text-slate-700">Yes, with a valid script and ID where required.</p></details>
         <details class="p-4 rounded-xl bg-white border shadow-sm"><summary class="font-medium cursor-pointer">How do I pay?</summary><p class="mt-2 text-sm text-slate-700">EFT or secure card link shared in WhatsApp.</p></details>
-        <details class="p-4 rounded-xl bg-white border shadow-sm"><summary class="font-medium cursor-pointer">Where do you operate?</summary><p class="mt-2 text-sm text-slate-700">Port Alfred, Bathurst, Kenton‑on‑Sea, Makhanda/Grahamstown, Alice, Alexandria, Alicedale (more soon).</p></details>
+        <details class="p-4 rounded-xl bg-white border shadow-sm"><summary class="font-medium cursor-pointer">Where do you operate?</summary><p class="mt-2 text-sm text-slate-700">Port Alfred, Bathurst, Kenton-on-Sea, Makhanda/Grahamstown, Alice, Alexandria, Alicedale (more soon).</p></details>
       </div>
     </div>
   </section>
@@ -159,14 +162,14 @@
         </div>
         <div class="flex gap-3">
           <button id="openOrderBuilderFooter" class="px-3 py-2 text-sm rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Start order</button>
-          <button id="openDriverModalFooter" class="px-3 py-2 text-sm rounded-xl border border-slate-300 hover:bg-slate-100">Driver sign‑in / up</button>
+          <button id="openDriverModalFooter" class="px-3 py-2 text-sm rounded-xl border border-slate-300 hover:bg-slate-100">Driver sign-in / up</button>
         </div>
       </div>
     </div>
   </footer>
 
-  <!-- Driver Sign-up / Login Modal -->
-  <div id="driverModal" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-50">
+  <!-- Driver Modal -->
+  <div id="driverModal" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999]">
     <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border">
       <div class="flex items-center justify-between p-4 border-b">
         <div class="font-semibold">Driver — Sign up / Log in</div>
@@ -196,7 +199,7 @@
           </label>
           <label class="sm:col-span-2">Vehicle<input id="drvVehicle" type="text" class="mt-1 w-full border rounded-lg p-2" placeholder="Bike / Car"></label>
           <div class="sm:col-span-2 flex justify-end gap-2 mt-2">
-            <button id="drvSubmitSignup" type="submit" class="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Send sign‑up</button>
+            <button id="drvSubmitSignup" type="submit" class="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Send sign-up</button>
           </div>
         </form>
         <form id="driverFormLogin" class="grid sm:grid-cols-2 gap-3 text-sm hidden">
@@ -206,13 +209,13 @@
             <button id="drvSubmitLogin" type="submit" class="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Log in</button>
           </div>
         </form>
-        <p class="mt-3 text-xs text-slate-500">We’ll confirm by WhatsApp. Your pin/driver record is demo‑only here.</p>
+        <p class="mt-3 text-xs text-slate-500">We’ll confirm by WhatsApp. Your pin/driver record is demo-only here.</p>
       </div>
     </div>
   </div>
 
   <!-- Bot-style Checkout Modal -->
-  <div id="botChat" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-50">
+  <div id="botChat" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999]">
     <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border flex flex-col">
       <div class="flex items-center justify-between p-4 border-b"><div class="font-semibold">Checkout — YiThume Bot</div><button id="closeBot" class="text-slate-500 hover:text-slate-700">✕</button></div>
       <div id="botFeed" class="p-4 space-y-2 h-80 overflow-auto bg-slate-50"></div>
@@ -229,7 +232,7 @@
   </div>
 
   <!-- Order Builder Modal -->
-  <div id="orderBuilder" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-50">
+  <div id="orderBuilder" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999]">
     <div class="w-full max-w-2xl rounded-2xl bg-white shadow-xl border">
       <div class="flex items-center justify-between p-4 border-b"><div class="font-semibold">Build your order</div><button id="closeOrderBuilder" class="text-slate-500 hover:text-slate-700">✕</button></div>
       <div class="p-4 grid md:grid-cols-2 gap-4 text-sm">
@@ -249,7 +252,7 @@
               <option value="E" data-fee="70">Zone E — R70</option>
             </select>
           </label>
-          <label class="inline-flex items-center gap-2 mt-2"><input id="rushToggle" type="checkbox" class="h-4 w-4"><span>Request same‑day (rush) +R30</span></label>
+          <label class="inline-flex items-center gap-2 mt-2"><input id="rushToggle" type="checkbox" class="h-4 w-4"><span>Request same-day (rush) +R30</span></label>
           <div class="mt-4 font-medium">Payment</div>
           <label class="flex items-center gap-2 mt-2"><input type="radio" name="pay" value="eft" checked> EFT (send POP)</label>
           <label class="flex items-center gap-2 mt-1"><input type="radio" name="pay" value="card"> Card link via WhatsApp</label>
@@ -269,21 +272,12 @@
 
   <script>
   window.addEventListener('DOMContentLoaded', () => {
-    // Wire up header/footer buttons + year
-    ["openOrderBuilderTop","openOrderBuilderFooter"].forEach(id=>{
-      const el=document.getElementById(id); if(!el) return; el.addEventListener('click',()=>{ openModal(); });
-    });
-    ["openDriverModalTop","openDriverModalFooter"].forEach(id=>{
-      const el=document.getElementById(id); if(!el) return; el.addEventListener('click',()=>{
-        driverModal.classList.remove('hidden');
-        driverModal.classList.add('flex');
-      });
-    });
+    // Year
     const yearEl=document.getElementById('year'); if(yearEl) yearEl.textContent=new Date().getFullYear();
 
     // ===== Order builder =====
-    const openBtn=document.getElementById('openOrderBuilder');
     const modal=document.getElementById('orderBuilder');
+    const openOrderButtons=['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'];
     const closeBtn=document.getElementById('closeOrderBuilder');
     const itemsList=document.getElementById('itemsList');
     const zoneSelect=document.getElementById('zoneSelect');
@@ -307,22 +301,37 @@
         itemsList.appendChild(row);
       });
     }
-
     function computeTotal(){
       const fee=Number(zoneSelect.options[zoneSelect.selectedIndex].dataset.fee||0);
       const rush=rushToggle.checked?30:0;
-      const items=Array.from(document.querySelectorAll('.itemCheck')).filter(c=>c.checked).map(c=>{const i=Number(c.dataset.idx);const qty=Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value||1);return {name:CATALOG[i].name,price:CATALOG[i].price,qty};});
+      const items=Array.from(document.querySelectorAll('.itemCheck')).filter(c=>c.checked).map(c=>{
+        const i=Number(c.dataset.idx);
+        const qty=Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value||1);
+        return {name:CATALOG[i].name,price:CATALOG[i].price,qty};
+      });
       const itemsTotal=items.reduce((s,it)=>s+it.price*it.qty,0);
       totalEl.textContent=String(itemsTotal+fee+rush);
       return {items,itemsTotal,fee,rush,total:itemsTotal+fee+rush};
     }
+    function openOrder(){ modal.classList.remove('hidden'); modal.classList.add('flex'); computeTotal(); }
+    function closeOrder(){ modal.classList.add('hidden'); modal.classList.remove('flex'); }
 
-    function openModal(){modal.classList.remove('hidden');modal.classList.add('flex');computeTotal();}
-    function closeModal(){modal.classList.add('hidden');modal.classList.remove('flex');}
-    if(openBtn){openBtn.addEventListener('click',openModal);} if(closeBtn){closeBtn.addEventListener('click',closeModal);} if(zoneSelect){zoneSelect.addEventListener('change',computeTotal);} if(rushToggle){rushToggle.addEventListener('change',computeTotal);} document.addEventListener('change',e=>{if(e.target.classList.contains('itemCheck')||e.target.classList.contains('itemQty')) computeTotal();});
+    openOrderButtons.forEach(id=>{
+      const el=document.getElementById(id); if(el) el.addEventListener('click',openOrder);
+    });
+    if(closeBtn) closeBtn.addEventListener('click',closeOrder);
 
+    if(zoneSelect) zoneSelect.addEventListener('change',computeTotal);
+    if(rushToggle) rushToggle.addEventListener('change',computeTotal);
+    document.addEventListener('change',e=>{
+      if(e.target.classList.contains('itemCheck')||e.target.classList.contains('itemQty')) computeTotal();
+    });
     const addCustomBtn=document.getElementById('addCustomItem');
-    if(addCustomBtn){addCustomBtn.addEventListener('click',e=>{e.preventDefault();const name=prompt('Item name');const price=Number(prompt('Price (R)'))||0;if(!name||!price) return;CATALOG.push({name,price});renderItems();computeTotal();});}
+    if(addCustomBtn){addCustomBtn.addEventListener('click',e=>{
+      e.preventDefault();const name=prompt('Item name');const price=Number(prompt('Price (R)'))||0;
+      if(!name||!price) return; CATALOG.push({name,price}); renderItems(); computeTotal();
+    });}
+    renderItems();
 
     // ===== Bot-style checkout =====
     const confirmBtn2=document.getElementById('confirmOrderBtn');
@@ -332,48 +341,62 @@
     const botNext=document.getElementById('botNext');
     const botSendWA=document.getElementById('botSendWA');
     const botPayChoice=document.getElementById('botPayChoice');
-
     let _orderDraft=null;
+
     function openBot(){botModal.classList.remove('hidden');botModal.classList.add('flex');}
     function closeBot(){botModal.classList.add('hidden');botModal.classList.remove('flex');botFeed.innerHTML='';}
-    if(botClose){botClose.addEventListener('click',closeBot);}    
+    if(botClose) botClose.addEventListener('click',closeBot);
 
     function pad2(n){return String(n).padStart(2,'0');}
     function nextETA(rush){
-      const now=new Date(); const windows=[[8,10],[12,14],[16,18]]; const allowed=new Set([0,3,4,5,6]); const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      const fmt=(date,[h1,h2])=>{const today=date.toDateString()===new Date().toDateString();return today?`${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`:`${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;};
+      const now=new Date(); const windows=[[8,10],[12,14],[16,18]]; const allowed=new Set([0,3,4,5,6]);
+      const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const fmt=(date,[h1,h2])=>date.toDateString()===new Date().toDateString()
+        ? `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`
+        : `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
       if(allowed.has(now.getDay())){for(const w of windows){if(now.getHours()<w[1]) return fmt(now,w);}}
       for(let i=1;i<=7;i++){const d=new Date(now);d.setDate(now.getDate()+i);if(allowed.has(d.getDay())) return fmt(d,windows[0]);}
       return 'TBC';
     }
-    function appendBot(msg,who='bot'){const wrap=document.createElement('div');wrap.className=`flex ${who==='bot'?'justify-start':'justify-end'}`;wrap.innerHTML=`<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">${msg}</div>`;botFeed.appendChild(wrap);botFeed.scrollTop=botFeed.scrollHeight;}
+    function appendBot(msg,who='bot'){
+      const wrap=document.createElement('div');
+      wrap.className=`flex ${who==='bot'?'justify-start':'justify-end'}`;
+      wrap.innerHTML=`<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">${msg}</div>`;
+      botFeed.appendChild(wrap); botFeed.scrollTop=botFeed.scrollHeight;
+    }
 
     if(confirmBtn2){confirmBtn2.addEventListener('click',()=>{
       const {items,fee,rush,total}=computeTotal(); if(!items.length){alert('Please select at least one item.');return;}
       const zone=zoneSelect.value; const itemsText=items.map(it=>`${it.name} x${it.qty}`).join(', ');
-      const pay=document.querySelector('input[name="pay"]:checked').value; const eta=nextETA(Boolean(rush)); const orderId=`YI-${Date.now().toString().slice(-6)}`;
-      _orderDraft={orderId,items,itemsText,fee,rush,total,zone,pay,eta}; closeModal(); openBot();
+      const pay=document.querySelector('input[name="pay"]:checked').value; const eta=nextETA(Boolean(rush));
+      const orderId=`YI-${Date.now().toString().slice(-6)}`;
+      _orderDraft={orderId,items,itemsText,fee,rush,total,zone,pay,eta}; closeOrder(); openBot();
       appendBot(`<b>YiThume</b> 🤖<br/>Thanks for your order!<br/><b>Order ID:</b> ${orderId}<br/><b>Items:</b> ${itemsText}<br/><b>Delivery:</b> Zone ${zone} (R${fee}${rush?` + Rush R${rush}`:''})<br/><b>Total:</b> R${total}<br/><b>Estimated window:</b> ${eta}`);
       appendBot(`Choose your payment method below and press Next.`);
       botPayChoice.value=pay;
     });}
-    if(botNext){botNext.addEventListener('click',()=>{if(!_orderDraft) return;const pay=botPayChoice.value;_orderDraft.pay=pay;if(pay==='eft'){appendBot(`<b>Bank (EFT):</b><br/>Account: <code>YiThume Pty Ltd</code><br/>Bank: <code>FNB</code><br/>Acc #: <code>6XX XXX XXXX</code><br/>Branch: <code>250655</code><br/>Ref: <code>${_orderDraft.orderId}</code><br/><i>Reply with POP in WhatsApp after sending.</i>`);} else {appendBot(`We'll send you a secure <b>card link</b> in WhatsApp. Use reference <code>${_orderDraft.orderId}</code>.`);} appendBot(`When you're ready, press <b>Send to WhatsApp</b> so we can finalise your order.`);});}
-    if(botSendWA){botSendWA.addEventListener('click',()=>{if(!_orderDraft) return;const {orderId,itemsText,fee,rush,total,zone,pay,eta}=_orderDraft;let msg=`Yi Thume, my order is:%0A- ${encodeURIComponent(itemsText)}%0ADeliver to: [send pin/address]%0AZone: ${zone} (Delivery R${fee}${rush?` + Rush R${rush}`:''})%0ATotal: R${total}%0AETA: ${eta}%0APayment: ${pay.toUpperCase()}%0APlease confirm and send payment details / link.`;window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`,'_blank');closeBot();});}
+    if(botNext){botNext.addEventListener('click',()=>{
+      if(!_orderDraft) return; const pay=botPayChoice.value; _orderDraft.pay=pay;
+      if(pay==='eft'){
+        appendBot(`<b>Bank (EFT):</b><br/>Account: <code>YiThume Pty Ltd</code><br/>Bank: <code>FNB</code><br/>Acc #: <code>6XX XXX XXXX</code><br/>Branch: <code>250655</code><br/>Ref: <code>${_orderDraft.orderId}</code><br/><i>Reply with POP in WhatsApp after sending.</i>`);
+      } else {
+        appendBot(`We'll send you a secure <b>card link</b> in WhatsApp. Use reference <code>${_orderDraft.orderId}</code>.`);
+      }
+      appendBot(`When you're ready, press <b>Send to WhatsApp</b> so we can finalise your order.`);
+    });}
+    if(botSendWA){botSendWA.addEventListener('click',()=>{
+      if(!_orderDraft) return;
+      const {orderId,itemsText,fee,rush,total,zone,pay,eta}=_orderDraft;
+      const msg=`Yi Thume, my order is:%0A- ${encodeURIComponent(itemsText)}%0ADeliver to: [send pin/address]%0AZone: ${zone} (Delivery R${fee}${rush?` + Rush R${rush}`:''})%0ATotal: R${total}%0AETA: ${eta}%0APayment: ${pay.toUpperCase()}%0APlease confirm and send payment details / link.`;
+      window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`,'_blank'); closeBot();
+    });}
 
-    renderItems();
-
-    // ===== HERO MAP: South Africa styled like the screenshot, animated cars, featured route (Makhanda → Alice → Port Alfred) =====
+    // ===== HERO MAP (animated) =====
     const heroEl=document.getElementById('heroMap');
-    const heroMap=L.map(heroEl,{zoomControl:false,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,boxZoom:false,touchZoom:false}).setView([-33.2, 26.4], 8); // EC focus
-    // Light/no‑labels tiles (grey city look) — makes it feel like the screenshot while keeping brand tint via .tint overlay
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',{attribution:'',opacity:0.85,noWrap:true,detectRetina:true}).addTo(heroMap);
+    const heroMap=L.map(heroEl,{zoomControl:false,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,boxZoom:false,touchZoom:false})
+      .setView([-33.2, 26.4], 8); // Eastern Cape focus
 
-    // helper used by sign-up demo
-    function jitterAround(pt,meters){
-      const d=(meters||800)/111111; // ~deg per meter
-      const r=Math.random()*d; const a=Math.random()*Math.PI*2; 
-      return {lat:pt.lat + r*Math.cos(a), lng:pt.lng + r*Math.sin(a)};
-    }
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',{attribution:'',opacity:0.85,noWrap:true,detectRetina:true}).addTo(heroMap);
 
     const HUBS=[
       {name:'Port Alfred',zone:'A',lat:-33.590,lng:26.890},
@@ -384,21 +407,12 @@
       {name:'Alexandria',zone:'E',lat:-33.653,lng:26.404},
       {name:'Alicedale',zone:'E',lat:-33.321,lng:26.078}
     ];
-    // Endpoints removed — we only show roads + moving cars/parcels per request
 
-    // Draw two simple rural roads (remote vibe)
     const road1=[[HUBS[3].lat,HUBS[3].lng],[HUBS[4].lat,HUBS[4].lng]]; // Makhanda -> Alice
     const road2=[[HUBS[4].lat,HUBS[4].lng],[HUBS[0].lat,HUBS[0].lng]]; // Alice -> Port Alfred
     L.polyline(road1,{className:'back-road'}).addTo(heroMap);
     L.polyline(road2,{className:'back-road'}).addTo(heroMap);
-    console.debug('Roads drawn:', road1.length, road2.length);
 
-    // (route polyline creation kept as data only; still hidden)
-
-    // (no "you are here" marker per request) // removed geolocation & pulse to prevent JS errors
-    }
-
-    // Car icon (mini white car with lights)
     function carIcon(zone){
       const cls=`car-dot car-${zone}`;
       const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'>
@@ -406,7 +420,7 @@
           <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
           <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
           <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
-          <rect x='10' y='9' width='4' height='3' fill='#f59e0b'/> 
+          <rect x='10' y='9' width='4' height='3' fill='#f59e0b'/>
           <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
           <circle cx='18' cy='20' r='3' fill='#0f172a'/>
           <circle cx='46' cy='20' r='3' fill='#0f172a'/>
@@ -414,77 +428,78 @@
       </svg>`;
       return L.divIcon({className:cls,html:svg,iconSize:[24,12],iconAnchor:[12,6]});
     }
-
-    // Helpers to move along a straight road [A,B]
     function lerp(a,b,t){return a+(b-a)*t;}
     function posOnSeg(seg,t){const [A,B]=seg;return [lerp(A[0],B[0],t), lerp(A[1],B[1],t)];}
 
-    // Create a few animated cars that go back & forth on the two roads
     const cars=[];
     function makeCar(seg,zone,startT=Math.random(),dir=Math.random()<.5?1:-1,speed=0.005+Math.random()*0.004){
       const [lat,lng]=posOnSeg(seg,startT); const m=L.marker([lat,lng],{icon:carIcon(zone)}).addTo(heroMap);
       cars.push({m,seg,t:startT,dir,speed});
     }
-    // 10 cars in total for a livelier look
-    makeCar(road1,'D'); makeCar(road1,'D'); makeCar(road1,'D'); makeCar(road1,'D'); makeCar(road1,'D');
-    makeCar(road2,'A'); makeCar(road2,'A'); makeCar(road2,'A'); makeCar(road2,'A'); makeCar(road2,'A'); makeCar(road2,'A'); makeCar(road2,'A');
-
-    function tickCars(){
-      for(const c of cars){
-        c.t += c.speed * c.dir; if(c.t>1){c.t=1; c.dir=-1;} if(c.t<0){c.t=0; c.dir=1;}
-        const [lat,lng]=posOnSeg(c.seg,c.t); c.m.setLatLng([lat,lng]);
-      }
-    }
-
-    // Multiple parcel animations along the two roads
+    const parcels=[];
     const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'><path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/></svg>`;
     const pkgIcon=L.divIcon({className:'pkg-dot',html:pkgSvg,iconSize:[20,20],iconAnchor:[10,10]});
-    const parcels=[];
     function makeParcel(seg,startT=Math.random(),dir=Math.random()<.5?1:-1,speed=0.006+Math.random()*0.004){
       const [lat,lng]=posOnSeg(seg,startT); const m=L.marker([lat,lng],{icon:pkgIcon}).addTo(heroMap);
       parcels.push({m,seg,t:startT,dir,speed});
     }
-    // Spawn several parcels on both roads
-    makeParcel(road1); makeParcel(road1); makeParcel(road1);
-    makeParcel(road2); makeParcel(road2); makeParcel(road2);
 
-    function tickParcels(){
-      for(const p of parcels){
-        p.t += p.speed * p.dir; if(p.t>1){p.t=1; p.dir=-1;} if(p.t<0){p.t=0; p.dir=1;}
-        const [lat,lng]=posOnSeg(p.seg,p.t); p.m.setLatLng([lat,lng]);
-      }
+    // populate
+    for(let i=0;i<5;i++) makeCar(road1,'D');
+    for(let i=0;i<7;i++) makeCar(road2,'A');
+    for(let i=0;i<3;i++) makeParcel(road1);
+    for(let i=0;i<3;i++) makeParcel(road2);
+
+    function tick(){
+      for(const c of cars){ c.t += c.speed * c.dir; if(c.t>1){c.t=1;c.dir=-1;} if(c.t<0){c.t=0;c.dir=1;} const [lat,lng]=posOnSeg(c.seg,c.t); c.m.setLatLng([lat,lng]); }
+      for(const p of parcels){ p.t += p.speed * p.dir; if(p.t>1){p.t=1;p.dir=-1;} if(p.t<0){p.t=0;p.dir=1;} const [lat,lng]=posOnSeg(p.seg,p.t); p.m.setLatLng([lat,lng]); }
     }
-
-    // Ensure layout has rendered before Leaflet draws (prevents blank map in some previews)
+    setInterval(tick,240);
     setTimeout(()=>heroMap.invalidateSize(),180);
     window.addEventListener('resize',()=>heroMap.invalidateSize());
-    setInterval(()=>{tickCars(); tickParcels();}, 240);
 
     // ===== Driver modal (open/close + tabs) =====
-    const openDriver=document.getElementById('openDriverModal');
     const driverModal=document.getElementById('driverModal');
+    ['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.addEventListener('click',()=>{driverModal.classList.remove('hidden');driverModal.classList.add('flex');});
+    });
     const closeDriver=document.getElementById('closeDriverModal');
-    if(openDriver){openDriver.addEventListener('click',()=>{driverModal.classList.remove('hidden');driverModal.classList.add('flex');});}
-    if(closeDriver){closeDriver.addEventListener('click',()=>{driverModal.classList.add('hidden');driverModal.classList.remove('flex');});}
+    if(closeDriver) closeDriver.addEventListener('click',()=>{driverModal.classList.add('hidden');driverModal.classList.remove('flex');});
     const tabSignup=document.getElementById('tabSignup');
     const tabLogin=document.getElementById('tabLogin');
     const formSignup=document.getElementById('driverFormSignup');
     const formLogin=document.getElementById('driverFormLogin');
-    if(tabSignup){tabSignup.addEventListener('click',()=>{tabSignup.classList.add('bg-emerald-600','text-white');tabLogin.classList.remove('bg-emerald-600','text-white');formSignup.classList.remove('hidden');formLogin.classList.add('hidden');});}
-    if(tabLogin){tabLogin.addEventListener('click',()=>{tabLogin.classList.add('bg-emerald-600','text-white');tabSignup.classList.remove('bg-emerald-600','text-white');formLogin.classList.remove('hidden');formSignup.classList.add('hidden');});}
+    if(tabSignup) tabSignup.addEventListener('click',()=>{tabSignup.classList.add('bg-emerald-600','text-white');tabLogin.classList.remove('bg-emerald-600','text-white');formSignup.classList.remove('hidden');formLogin.classList.add('hidden');});
+    if(tabLogin) tabLogin.addEventListener('click',()=>{tabLogin.classList.add('bg-emerald-600','text-white');tabSignup.classList.remove('bg-emerald-600','text-white');formLogin.classList.remove('hidden');formSignup.classList.add('hidden');});
 
-    // Demo: on sign‑up, send a WhatsApp to admin and drop a new dot near the chosen zone
-    if(formSignup){formSignup.addEventListener('submit',e=>{e.preventDefault();const name=document.getElementById('drvName').value;const phone=document.getElementById('drvPhone').value;const zone=document.getElementById('drvZone').value;const radius=document.getElementById('drvRadius').value;const vehicle=document.getElementById('drvVehicle').value;const hub=HUBS.find(h=>h.zone===zone)||HUBS[0];const start=jitterAround({lat:hub.lat,lng:hub.lng},1500);const m=L.marker([start.lat,start.lng],{icon:carIcon(zone)}).addTo(heroMap);cars.push({m,zone,target:jitterAround(start,1200)});const text=encodeURIComponent(`New driver sign‑up
+    // Demo sign-up → send WA + drop a dot
+    function jitterAround(pt,meters){const d=(meters||800)/111111;const r=Math.random()*d;const a=Math.random()*Math.PI*2;return {lat:pt.lat+r*Math.cos(a),lng:pt.lng+r*Math.sin(a)};}
+    if(formSignup){formSignup.addEventListener('submit',e=>{
+      e.preventDefault();
+      const name=document.getElementById('drvName').value;
+      const phone=document.getElementById('drvPhone').value;
+      const zone=document.getElementById('drvZone').value;
+      const radius=document.getElementById('drvRadius').value;
+      const vehicle=document.getElementById('drvVehicle').value;
+      const hubs={A:HUBS[0],B:HUBS[1],C:HUBS[2],D:HUBS[3],E:HUBS[5]};
+      const hub=hubs[zone]||HUBS[0];
+      const start=jitterAround({lat:hub.lat,lng:hub.lng},1500);
+      L.marker([start.lat,start.lng],{icon:carIcon(zone)}).addTo(heroMap);
+      const text=encodeURIComponent(`New driver sign-up
 Name: ${name}
 Phone: ${phone}
 Zone: ${zone}
 Radius: ${radius}km
-Vehicle: ${vehicle}`);window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${text}`,'_blank');driverModal.classList.add('hidden');driverModal.classList.remove('flex');});}
+Vehicle: ${vehicle}`);
+      window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${text}`,'_blank');
+      driverModal.classList.add('hidden');driverModal.classList.remove('flex');
+    });}
 
-    // Demo: driver login does nothing yet but validates UI
-    if(formLogin){formLogin.addEventListener('submit',e=>{e.preventDefault();alert('Logged in (demo). Driver tasks coming next).');driverModal.classList.add('hidden');driverModal.classList.remove('flex');});}
-  });
+    if(formLogin){formLogin.addEventListener('submit',e=>{
+      e.preventDefault(); alert('Logged in (demo). Driver tasks coming next).');
+      driverModal.classList.add('hidden');driverModal.classList.remove('flex');
+    });}
+  }); // END DOMContentLoaded
   </script>
 </body>
 </html>
-
