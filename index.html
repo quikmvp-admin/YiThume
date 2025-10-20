@@ -8,9 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <!-- Load the helper library (placed next to this file) -->
   <script defer src="yithume-lite-pro.js"></script>
-
   <style>
     :root{
       --emerald-600:#059669; --emerald-500:#10b981; --emerald-400:#34d399; --emerald-800:#047857; --emerald-900:#065f46;
@@ -29,22 +27,11 @@
 </head>
 <body class="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-900">
   <script>
-    /* ====== CONFIG ====== */
-    const WHATSAPP_NUMBER = "270691456201"; // business inbox
-    const ADMIN_WHATSAPP  = "270691456201"; // internal alerts
+    const WHATSAPP_NUMBER = "270691456201";
+    const ADMIN_WHATSAPP  = "270691456201";
+    const SHEET_WEBHOOK   = "https://script.google.com/macros/s/REPLACE_WITH_YOURS/exec";
+    const DEMO_MODE       = true;
 
-    // Google Sheet webhook (create with Apps Script ➜ doPost(e) ➜ return JSON). Replace with your deployed URL.
-    const SHEET_WEBHOOK = "https://script.google.com/macros/s/REPLACE_WITH_YOURS/exec";
-
-    // Optional: set to true to simulate webhook success without a backend
-    const DEMO_MODE = true;
-
-    // Payment provider placeholders — you’ll paste generated links per order in WhatsApp
-    const PAYMENT_INFO = {
-      bank:{ name: "YiThume Pty Ltd", bank: "FNB", account: "6XX XXX XXXX", branch: "250655" }
-    };
-
-    /* Pre-baked WhatsApp starters */
     const customerStartText = encodeURIComponent("Hi YiThume 👋 I'd like to order medication.");
     const driverStartText   = encodeURIComponent("Hi YiThume — Driver sign-in.");
     window.YI_LINKS = {
@@ -64,6 +51,8 @@
         </svg>
         <div class="text-xl font-semibold tracking-tight">YiThume</div>
       </div>
+
+      <!-- Desktop nav -->
       <nav class="hidden md:flex items-center gap-6">
         <a href="#how" class="text-sm hover:text-emerald-700">How It Works</a>
         <a href="#services" class="text-sm hover:text-emerald-700">Services</a>
@@ -71,9 +60,40 @@
         <a href="#drivers" class="text-sm hover:text-emerald-700">For Drivers</a>
         <a href="#faq" class="text-sm hover:text-emerald-700">FAQ</a>
       </nav>
-      <div class="hidden sm:flex items-center gap-3">
-        <button id="openOrderBuilderTop" class="px-3 py-2 text-sm rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Start order</button>
-        <button id="openDriverModalTop" class="px-3 py-2 text-sm rounded-xl border border-slate-300 hover:bg-slate-100">Driver sign-in / up</button>
+
+      <div class="flex items-center gap-2">
+        <!-- Mobile hamburger -->
+        <button id="mobileMenuBtn" class="md:hidden p-2 rounded-lg border border-slate-300" aria-label="Open menu">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <!-- CTAs -->
+        <div class="hidden sm:flex items-center gap-2">
+          <button id="openOrderBuilderTop" class="px-3 py-2 text-sm rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Start order</button>
+          <button id="openDriverModalTop" class="px-3 py-2 text-sm rounded-xl border border-slate-300 hover:bg-slate-100">Driver sign-in / up</button>
+          <!-- Admin login -->
+          <button id="adminLoginBtn" class="px-3 py-2 text-xs rounded-xl border border-slate-300 hover:bg-slate-100">Admin</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile nav panel -->
+    <div id="mobileNav" class="hidden md:hidden fixed inset-0 z-50 bg-black/40">
+      <div class="absolute right-0 top-0 h-full w-72 bg-white shadow-xl p-4 overflow-y-auto">
+        <div class="flex items-center justify-between pb-3 border-b">
+          <div class="font-semibold">Menu</div>
+          <button id="mobileMenuClose" class="p-1 rounded hover:bg-slate-100" aria-label="Close menu">✕</button>
+        </div>
+        <nav class="mt-3 grid gap-2">
+          <a href="#how" class="py-2 px-2 rounded hover:bg-slate-50">How It Works</a>
+          <a href="#services" class="py-2 px-2 rounded hover:bg-slate-50">Services</a>
+          <a href="#pricing" class="py-2 px-2 rounded hover:bg-slate-50">Pricing & Zones</a>
+          <a href="#drivers" class="py-2 px-2 rounded hover:bg-slate-50">For Drivers</a>
+          <a href="#faq" class="py-2 px-2 rounded hover:bg-slate-50">FAQ</a>
+          <div class="h-px bg-slate-200 my-2"></div>
+          <button id="openOrderBuilderTopMobile" class="w-full py-2 rounded-xl bg-emerald-600 text-white">Start order</button>
+          <button id="openDriverModalTopMobile" class="w-full py-2 rounded-xl border border-slate-300">Driver sign-in / up</button>
+          <button id="adminLoginBtnMobile" class="w-full py-2 rounded-xl border border-slate-300">Admin</button>
+        </nav>
       </div>
     </div>
   </header>
@@ -88,14 +108,12 @@
             <h1 class="text-4xl sm:text-5xl font-bold leading-tight">Health delivered. <span class="text-emerald-600">Fast</span>.</h1>
             <p class="mt-4 text-slate-700 max-w-xl">Order on the website, then we confirm and send a secure payment link in WhatsApp. Clear pricing, trusted local drivers.</p>
           </div>
-
           <ul class="mt-6 grid grid-cols-2 gap-3 text-sm">
             <li class="flex items-start gap-2"><span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span><div><b>Website ➜ WhatsApp</b><div class="text-slate-500 text-xs">No app needed</div></div></li>
             <li class="flex items-start gap-2"><span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span><div><b>Same-day windows</b><div class="text-slate-500 text-xs">08–10 • 12–14 • 16–18</div></div></li>
             <li class="flex items-start gap-2"><span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span><div><b>Card or EFT</b><div class="text-slate-500 text-xs">Yoco link / Ozow EFT</div></div></li>
             <li class="flex items-start gap-2"><span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span><div><b>Deposit + COD</b><div class="text-slate-500 text-xs">Returning customers only</div></div></li>
           </ul>
-
           <div class="mt-6 flex flex-col sm:flex-row gap-3">
             <button id="openOrderBuilder" class="px-5 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">Start order</button>
             <button id="openDriverModal" class="px-5 py-3 rounded-2xl border border-slate-300 text-slate-800 text-sm font-medium hover:bg-slate-100">Sign up / Log in (Driver)</button>
@@ -149,7 +167,7 @@
     </div>
   </section>
 
-  <!-- FAQ (with payment policy) -->
+  <!-- FAQ -->
   <section id="faq" class="py-12 sm:py-16 border-t border-slate-200">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
       <h2 class="text-2xl sm:text-3xl font-bold">FAQ</h2>
@@ -179,7 +197,7 @@
   </footer>
 
   <!-- Driver Modal -->
-  <div id="driverModal" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999]">
+  <div id="driverModal" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999] overflow-y-auto">
     <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border">
       <div class="flex items-center justify-between p-4 border-b"><div class="font-semibold">Driver — Sign up / Log in</div><button id="closeDriverModal" class="text-slate-500 hover:text-slate-700">✕</button></div>
       <div class="p-4">
@@ -203,7 +221,7 @@
   </div>
 
   <!-- Bot-style Checkout Modal -->
-  <div id="botChat" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999]">
+  <div id="botChat" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999] overflow-y-auto">
     <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border flex flex-col">
       <div class="flex items-center justify-between p-4 border-b"><div class="font-semibold">Checkout — YiThume Bot</div><button id="closeBot" class="text-slate-500 hover:text-slate-700">✕</button></div>
       <div id="botFeed" class="p-4 space-y-2 h-80 overflow-auto bg-slate-50"></div>
@@ -224,7 +242,7 @@
   </div>
 
   <!-- Order Builder Modal -->
-  <div id="orderBuilder" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999]">
+  <div id="orderBuilder" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999] overflow-y-auto">
     <div class="w-full max-w-2xl rounded-2xl bg-white shadow-xl border">
       <div class="flex items-center justify-between p-4 border-b"><div class="font-semibold">Build your order</div><button id="closeOrderBuilder" class="text-slate-500 hover:text-slate-700">✕</button></div>
       <div class="p-4 grid md:grid-cols-2 gap-4 text-sm">
@@ -264,9 +282,44 @@
     </div>
   </div>
 
+  <!-- Orders Panel (Admin) -->
+  <div id="ordersPanel" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[10000] overflow-y-auto">
+    <div class="w-full max-w-3xl rounded-2xl bg-white shadow-xl border">
+      <div class="flex items-center justify-between p-4 border-b">
+        <div class="font-semibold">Orders</div>
+        <button id="closeOrdersPanel" class="text-slate-500 hover:text-slate-700">✕</button>
+      </div>
+      <div class="p-4">
+        <div class="flex gap-2 text-sm mb-4">
+          <button data-o-tab="pending"  class="yt-o-tab px-3 py-1 rounded-lg bg-emerald-600 text-white">Pending</button>
+          <button data-o-tab="approved" class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300">Approved</button>
+          <button data-o-tab="assigned" class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300">Assigned</button>
+          <button data-o-tab="delivered" class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300">Delivered</button>
+        </div>
+        <div id="ordersList" class="max-h-[70vh] overflow-y-auto divide-y"></div>
+      </div>
+      <div class="p-4 border-t flex justify-end gap-2">
+        <button id="ordersRefresh" class="px-3 py-2 rounded-lg border">Refresh</button>
+        <button id="ordersAssign"  class="px-3 py-2 rounded-lg bg-emerald-600 text-white">Auto-Assign Approved</button>
+      </div>
+    </div>
+  </div>
+
   <script>
   window.addEventListener('DOMContentLoaded', () => {
     const yearEl=document.getElementById('year'); if(yearEl) yearEl.textContent=new Date().getFullYear();
+
+    /* Mobile menu */
+    const mobileBtn = document.getElementById('mobileMenuBtn');
+    const mobileClose = document.getElementById('mobileMenuClose');
+    const mobileNav = document.getElementById('mobileNav');
+    const openMobile = ()=> mobileNav.classList.remove('hidden');
+    const closeMobile = ()=> mobileNav.classList.add('hidden');
+    mobileBtn?.addEventListener('click', openMobile);
+    mobileClose?.addEventListener('click', closeMobile);
+    document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{closeMobile(); document.getElementById('openOrderBuilder')?.click();});
+    document.getElementById('openDriverModalTopMobile')?.addEventListener('click', ()=>{closeMobile(); document.getElementById('openDriverModal')?.click();});
+    document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{closeMobile(); document.getElementById('adminLoginBtn')?.click();});
 
     /* Elements */
     const modal=document.getElementById('orderBuilder');
@@ -279,6 +332,17 @@
     const rushNote=document.getElementById('rushNote');
     const depositBanner=document.getElementById('depositBanner');
     const depositAmtEl=document.getElementById('depositAmt');
+
+    /* Admin login button */
+    const adminBtn = document.getElementById('adminLoginBtn');
+    adminBtn?.addEventListener('click', ()=>{
+      const pin = prompt('Enter admin PIN:');
+      if(window.YiThumeLitePro.adminLogin(pin)){
+        alert('Admin mode ON');
+      } else {
+        alert('Invalid PIN');
+      }
+    });
 
     const CATALOG=[
       {name:'Panado 500mg (24s)',price:35},
@@ -390,48 +454,46 @@
       const zone=zoneSelect.value; const itemsText=items.map(it=>`${it.name} x${it.qty}`).join(', ');
       const pay=selectedPay(); const eta=nextETA(Boolean(rush));
       const orderId=`YI-${Date.now().toString().slice(-6)}`;
-      _orderDraft={orderId,items,itemsText,fee,rush,total,zone,pay,eta, ts:new Date().toISOString(), status:'pending_payment'};
+      _orderDraft={orderId,items,itemsText,fee,rush,total,zone,pay,eta, ts:new Date().toISOString(), status:'pending'};
       closeOrder(); openBot();
       appendBot(`<b>YiThume</b> 🤖<br/>Thanks for your order!<br/><b>Order ID:</b> ${orderId}<br/><b>Items:</b> ${itemsText}<br/><b>Delivery:</b> Zone ${zone} (R${fee}${rush?` + Rush R${rush}`:''})<br/><b>Total:</b> R${total}<br/><b>Estimated window:</b> ${eta}`);
       appendBot(`Choose your payment method below and press <b>Next</b>.`);
       botPayChoice.value=pay;
 
-      // Log initial order to Google Sheet
-      logToSheet({
-        type:'order_created', orderId, zone, items:itemsText, items_json:items, total, fee, rush, pay_pref:pay, eta, status:'pending_payment', created_at:new Date().toISOString()
-      });
+      // Log initial order to Google Sheet & local
+      logToSheet({ type:'order_created', orderId, zone, items:itemsText, items_json:items, total, fee, rush, pay_pref:pay, eta, status:'pending', created_at:new Date().toISOString() });
     });}
 
     if(botNext){botNext.addEventListener('click',()=>{
       if(!_orderDraft) return; const pay=botPayChoice.value; _orderDraft.pay=pay;
       if(pay==='eft'){
-        appendBot(`<b>Instant EFT (Ozow)</b><br/>We’ll send you an Ozow link in WhatsApp. Use reference <code>${_orderDraft.orderId}</code>. If you prefer manual EFT:<br/>Acc holder: <code>${PAYMENT_INFO.bank.name}</code><br/>Bank: <code>${PAYMENT_INFO.bank.bank}</code><br/>Acc #: <code>${PAYMENT_INFO.bank.account}</code><br/>Branch: <code>${PAYMENT_INFO.bank.branch}</code>`);
+        appendBot(`<b>Instant EFT (Ozow)</b><br/>We’ll send you an Ozow link in WhatsApp. Use reference <code>${_orderDraft.orderId}</code>.`);
       } else if(pay==='card'){
         appendBot(`We'll send you a secure <b>card link</b> (Yoco) in WhatsApp. Use reference <code>${_orderDraft.orderId}</code>.`);
       } else {
         const deposit = Math.ceil(_orderDraft.total*0.5);
-        appendBot(`<b>50% deposit + COD</b><br/>Pay deposit now: <b>R${deposit}</b> (Yoco link / Ozow EFT). Balance due at delivery. Returning customers only. Use ref <code>${_orderDraft.orderId}</code>.`);
+        appendBot(`<b>50% deposit + COD</b><br/>Pay deposit now: <b>R${deposit}</b>. Balance due at delivery. Returning customers only. Use ref <code>${_orderDraft.orderId}</code>.`);
       }
       appendBot(`When you're ready, press <b>Send to WhatsApp</b> so we can finalise your order.`);
 
-      // Update log with payment method picked
       logToSheet({ type:'payment_method_selected', orderId:_orderDraft.orderId, pay_method:pay, updated_at:new Date().toISOString() });
     });}
 
-    // Use the helper library to create the WhatsApp link from the live cart
+    // Send to WhatsApp & persist as PENDING
     if (botSendWA) {
       botSendWA.addEventListener('click', () => {
         const cart = window.YiThumeLitePro.readCartFromPage();
         if (!cart.items.length) return alert('Please select at least one item.');
-
-        const { whatsapp_link } = window.YiThumeLitePro.makeWhatsAppLink({
+        const { whatsapp_link, orderId } = window.YiThumeLitePro.makeWhatsAppLink({
           whatsappNumber: WHATSAPP_NUMBER,
-          ...cart
+          ...cart,
+          initialStatus: 'pending'
         });
         window.open(whatsapp_link, '_blank');
-
-        // close modal
         botModal?.classList.add('hidden'); botModal?.classList.remove('flex');
+        // Notify admin list to refresh (if open)
+        window.dispatchEvent(new CustomEvent('yt-orders-updated'));
+        alert(`Order sent to WhatsApp. Ref: ${orderId}`);
       });
     }
 
@@ -513,6 +575,66 @@
     });}
 
     if(formLogin){formLogin.addEventListener('submit',e=>{ e.preventDefault(); alert('Logged in (demo). Driver tasks coming next).'); driverModal.classList.add('hidden');driverModal.classList.remove('flex');});}
+
+    /* --- Orders panel open/close & population --- */
+    const ordersPanel = document.getElementById('ordersPanel');
+    const ordersList  = document.getElementById('ordersList');
+    const ordersClose = document.getElementById('closeOrdersPanel');
+    const ordersAssign= document.getElementById('ordersAssign');
+    const ordersRefresh= document.getElementById('ordersRefresh');
+    let ordersTab = 'pending';
+
+    function openOrders(){ ordersPanel.classList.remove('hidden'); ordersPanel.classList.add('flex'); renderOrders(); }
+    function closeOrders(){ ordersPanel.classList.add('hidden'); ordersPanel.classList.remove('flex'); }
+    ordersClose?.addEventListener('click', closeOrders);
+    window.addEventListener('yt-open-orders', openOrders);
+    window.addEventListener('yt-orders-updated', ()=>{ if(!ordersPanel.classList.contains('hidden')) renderOrders(); });
+    ordersRefresh?.addEventListener('click', renderOrders);
+    ordersAssign?.addEventListener('click', ()=>{
+      window.YiThumeLitePro.autoAssign(); 
+      renderOrders();
+      alert('Auto-assigned approved orders');
+    });
+
+    document.querySelectorAll('.yt-o-tab').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        document.querySelectorAll('.yt-o-tab').forEach(x=>x.classList.remove('bg-emerald-600','text-white'));
+        btn.classList.add('bg-emerald-600','text-white');
+        ordersTab = btn.dataset.oTab;
+        renderOrders();
+      });
+    });
+
+    function renderOrders(){
+      const data = window.YiThumeLitePro.listOrdersByStatus(ordersTab);
+      ordersList.innerHTML = data.length ? '' : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
+      for(const o of data){
+        const row = document.createElement('div');
+        row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-2';
+        row.innerHTML = `
+          <div class="flex-1">
+            <div class="font-medium">Ref ${o.orderId} • Zone ${o.zone} • Total R${o.total}</div>
+            <div class="text-xs text-slate-500">${o.itemsText || o.items?.map(i=>`${i.name} x${i.qty}`).join(', ') || ''}</div>
+            <div class="text-xs text-slate-500">Status: ${o.status}${o.assigned_batch_id?` • Batch ${o.assigned_batch_id}`:''}</div>
+          </div>
+          <div class="flex gap-2">
+            ${ordersTab==='pending'?`<button data-act="approve" data-ref="${o.orderId}" class="px-3 py-1 rounded-lg bg-emerald-600 text-white text-xs">Approve</button>`:''}
+            ${ordersTab==='approved'?`<button data-act="mark-paid" data-ref="${o.orderId}" class="px-3 py-1 rounded-lg border text-xs">Mark Paid</button>`:''}
+          </div>
+        `;
+        ordersList.appendChild(row);
+      }
+    }
+
+    ordersList?.addEventListener('click', (e)=>{
+      const btn = e.target.closest('button[data-act]');
+      if(!btn) return;
+      const ref = btn.dataset.ref;
+      const act = btn.dataset.act;
+      if(act==='approve'){ window.YiThumeLitePro.approveOrder(ref); renderOrders(); alert(`Approved ${ref}`); }
+      if(act==='mark-paid'){ window.YiThumeLitePro.markOrderPaid(ref); renderOrders(); alert(`Marked paid ${ref}`); }
+    });
+
   });
   </script>
 </body>
