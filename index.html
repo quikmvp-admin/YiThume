@@ -8,6 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- Load the helper library (placed next to this file) -->
   <script defer src="yithume-lite-pro.js"></script>
 
   <style>
@@ -17,7 +18,8 @@
     }
     @media (max-width:640px){ :root{ --hero-h: 280px; } }
     .leaflet-pane, .leaflet-top, .leaflet-bottom { z-index: 10 !important; }
-    #heroMap{height:var(--hero-h);border-radius:16px;position:relative;overflow:hidden;background:var(--map-bg);} .leaflet-control-container{display:none;}
+    #heroMap{height:var(--hero-h);border-radius:16px;position:relative;overflow:hidden;background:var(--map-bg);}
+    .leaflet-control-container{display:none;}
     .car-dot{transform:translate(-50%,-50%);} .car-dot svg{width:18px;height:18px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.18));}
     .car-A path{fill:var(--emerald-600);} .car-B path{fill:var(--emerald-500);} .car-C path{fill:var(--emerald-400);} .car-D path{fill:var(--emerald-800);} .car-E path{fill:var(--emerald-900);} 
     .pkg-dot{transform:translate(-50%,-50%);} .pkg-dot svg{width:20px;height:20px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))}
@@ -39,9 +41,7 @@
 
     // Payment provider placeholders — you’ll paste generated links per order in WhatsApp
     const PAYMENT_INFO = {
-      bank:{
-        name: "YiThume Pty Ltd", bank: "FNB", account: "6XX XXX XXXX", branch: "250655"
-      }
+      bank:{ name: "YiThume Pty Ltd", bank: "FNB", account: "6XX XXX XXXX", branch: "250655" }
     };
 
     /* Pre-baked WhatsApp starters */
@@ -119,7 +119,7 @@
   <!-- How it works -->
   <section id="how" class="py-12 sm:py-16 border-t border-slate-200">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
-      <h2 class="text-2xl sm:3xl font-bold">How YiThume Works</h2>
+      <h2 class="text-2xl sm:text-3xl font-bold">How YiThume Works</h2>
       <div class="mt-6 grid md:grid-cols-4 gap-4">
         <div class="p-5 rounded-2xl bg-white border shadow-sm"><div class="text-sm text-slate-500">Step 1</div><div class="mt-1 font-semibold">Build order</div><p class="mt-2 text-sm text-slate-700">Choose items and delivery zone on the website.</p></div>
         <div class="p-5 rounded-2xl bg-white border shadow-sm"><div class="text-sm text-slate-500">Step 2</div><div class="mt-1 font-semibold">WhatsApp confirm</div><p class="mt-2 text-sm text-slate-700">We send summary + payment instructions in WhatsApp.</p></div>
@@ -178,7 +178,7 @@
     </div>
   </footer>
 
-  <!-- Driver Modal (unchanged structure) -->
+  <!-- Driver Modal -->
   <div id="driverModal" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999]">
     <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border">
       <div class="flex items-center justify-between p-4 border-b"><div class="font-semibold">Driver — Sign up / Log in</div><button id="closeDriverModal" class="text-slate-500 hover:text-slate-700">✕</button></div>
@@ -202,7 +202,7 @@
     </div>
   </div>
 
-  <!-- Bot-style Checkout Modal (updated for deposit rules + Google Sheet logging) -->
+  <!-- Bot-style Checkout Modal -->
   <div id="botChat" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999]">
     <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border flex flex-col">
       <div class="flex items-center justify-between p-4 border-b"><div class="font-semibold">Checkout — YiThume Bot</div><button id="closeBot" class="text-slate-500 hover:text-slate-700">✕</button></div>
@@ -405,7 +405,7 @@
     if(botNext){botNext.addEventListener('click',()=>{
       if(!_orderDraft) return; const pay=botPayChoice.value; _orderDraft.pay=pay;
       if(pay==='eft'){
-        appendBot(`<b>Instant EFT (Ozow)</b><br/>We’ll send you an Ozow link in WhatsApp. Use reference <code>${_orderDraft.orderId}</code>. If you prefer manual EFT:<br/>Acc: <code>${PAYMENT_INFO.bank.name}</code><br/>Bank: <code>${PAYMENT_INFO.bank.bank}</code><br/>Acc #: <code>${PAYMENT_INFO.bank.account}</code><br/>Branch: <code>${PAYMENT_INFO.bank.branch}</code>`);
+        appendBot(`<b>Instant EFT (Ozow)</b><br/>We’ll send you an Ozow link in WhatsApp. Use reference <code>${_orderDraft.orderId}</code>. If you prefer manual EFT:<br/>Acc holder: <code>${PAYMENT_INFO.bank.name}</code><br/>Bank: <code>${PAYMENT_INFO.bank.bank}</code><br/>Acc #: <code>${PAYMENT_INFO.bank.account}</code><br/>Branch: <code>${PAYMENT_INFO.bank.branch}</code>`);
       } else if(pay==='card'){
         appendBot(`We'll send you a secure <b>card link</b> (Yoco) in WhatsApp. Use reference <code>${_orderDraft.orderId}</code>.`);
       } else {
@@ -417,24 +417,23 @@
       // Update log with payment method picked
       logToSheet({ type:'payment_method_selected', orderId:_orderDraft.orderId, pay_method:pay, updated_at:new Date().toISOString() });
     });}
-// replace your old botSendWA click handler with:
-if (botSendWA) {
-  botSendWA.addEventListener('click', () => {
-    const cart = window.YiThumeLitePro.readCartFromPage();
-    if (!cart.items.length) return alert('Please select at least one item.');
 
-    const { whatsapp_link } = window.YiThumeLitePro.makeWhatsAppLink({
-      whatsappNumber: WHATSAPP_NUMBER,
-      ...cart
-    });
-    window.open(whatsapp_link, '_blank');
+    // Use the helper library to create the WhatsApp link from the live cart
+    if (botSendWA) {
+      botSendWA.addEventListener('click', () => {
+        const cart = window.YiThumeLitePro.readCartFromPage();
+        if (!cart.items.length) return alert('Please select at least one item.');
 
-    // close modal
-    const botModal = document.getElementById('botChat');
-    botModal?.classList.add('hidden'); botModal?.classList.remove('flex');
-  });
-}
+        const { whatsapp_link } = window.YiThumeLitePro.makeWhatsAppLink({
+          whatsappNumber: WHATSAPP_NUMBER,
+          ...cart
+        });
+        window.open(whatsapp_link, '_blank');
 
+        // close modal
+        botModal?.classList.add('hidden'); botModal?.classList.remove('flex');
+      });
+    }
 
     /* ===== HERO MAP (animated markers) ===== */
     const heroEl=document.getElementById('heroMap');
@@ -487,7 +486,7 @@ if (botSendWA) {
     let last=performance.now(); function animate(now){ const dt=Math.min((now-last)/1000, 0.05); last=now; for(const c of cars){ c.t += c.speed * c.dir * dt; if(c.t>1){ c.t=1; c.dir=-1; } else if(c.t<0){ c.t=0; c.dir=1; } const [lat,lng]=posOnSeg(c.seg,c.t); c.m.setLatLng([lat,lng]); } for(const p of parcels){ p.t += p.speed * p.dir * dt; if(p.t>1){ p.t=1; p.dir=-1; } else if(p.t<0){ p.t=0; p.dir=1; } const [lat,lng]=posOnSeg(p.seg,p.t); p.m.setLatLng([lat,lng]); } requestAnimationFrame(animate); }
     requestAnimationFrame(animate); setTimeout(()=>heroMap.invalidateSize(),180); window.addEventListener('resize',()=>heroMap.invalidateSize());
 
-    // Driver modal handlers (same UX)
+    // Driver modal handlers
     const driverModal=document.getElementById('driverModal');
     ['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('click',()=>{driverModal.classList.remove('hidden');driverModal.classList.add('flex');}); });
     const closeDriver=document.getElementById('closeDriverModal'); if(closeDriver) closeDriver.addEventListener('click',()=>{driverModal.classList.add('hidden');driverModal.classList.remove('flex');});
