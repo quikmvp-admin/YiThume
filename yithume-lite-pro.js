@@ -1,13 +1,13 @@
 /* yithume-lite-pro.js — no-backend, localStorage-based ops for YiThume */
-
 (function () {
-  // ====== CONFIG (you can tweak these) ======
+  "use strict";
+  // ====== CONFIG ======
   const CONFIG = {
     WHATSAPP_NUMBER: "270691456201",
-    DRIVER_SHARE_FIRST: 1.00,   // 100% of fee for the first stop in a cluster
-    DRIVER_SHARE_NEXT: 0.40,    // % of fee for each additional stop in same cluster
-    DEFAULT_MARKUP_PERCENT: 12, // used to back-calc cost if not provided
-    PayoutWeekDays: [1,2,3,4,5,6,0], // Mon..Sun display order (we compute by date anyway)
+    DRIVER_SHARE_FIRST: 1.00,
+    DRIVER_SHARE_NEXT: 0.40,
+    DEFAULT_MARKUP_PERCENT: 12,
+    PayoutWeekDays: [1,2,3,4,5,6,0],
     ADMIN_BADGE_TEXT: "YiThume — Admin",
   };
 
@@ -50,7 +50,7 @@
     return Math.round(price / (1+m));
   }
 
-  // ====== PUBLIC CART READER (works with your current index.html) ======
+  // ====== PUBLIC CART READER (works with your page) ======
   function readCartFromPage() {
     const zoneSel = document.getElementById("zoneSelect");
     const rushToggle = document.getElementById("rushToggle");
@@ -67,12 +67,10 @@
       const qty = Number(document.querySelector(`.itemQty[data-idx="${idx}"]`)?.value || 1);
       const priceTxt = row?.querySelector(".text-slate-500")?.textContent || "R0";
       const price = Number((priceTxt.match(/\d+/)||[0])[0]);
-      // try read cost from data attribute if you add it, else infer
       const cost = Number(row?.dataset?.cost || 0) || inferCostFromPrice(price);
       return { name, qty, price, cost };
     });
 
-    // Optional: capture address field if you add one with id="addrInput"
     const addrEl = document.getElementById("addrInput");
     const address = addrEl?.value?.trim() || "";
     return { items, zone, baseFee: fee, rushFee: rush, paymentChoice: pay, customer: { address } };
@@ -111,7 +109,7 @@
       payment_choice: paymentChoice,
       eta_label: eta,
       customer,
-      status: "awaiting_payment", // you will flip to "paid" manually
+      status: "awaiting_payment",
       created_at: nowISO()
     });
     save(KEYS.ORDERS, orders);
@@ -128,7 +126,6 @@
     return d;
   }
 
-  // Simple cluster key: zone + cleaned address (or "zone-only" if none provided)
   function clusterKey(order) {
     const a = (order.customer?.address || "").toLowerCase().replace(/\s+/g," ").trim();
     if (a) return `${order.zone}::${a}`;
@@ -149,7 +146,6 @@
     return { driverTotal, platformDeliveryMargin };
   }
 
-  // Admin marks order paid (e.g., after you confirm Yoco/Ozow)
   function markOrderPaid(orderId) {
     const orders = load(KEYS.ORDERS, []);
     const idx = orders.findIndex(o => o.orderId === orderId);
@@ -157,7 +153,6 @@
     return false;
   }
 
-  // Auto-assign all paid & unassigned orders → batches per cluster
   function autoAssign() {
     const orders = load(KEYS.ORDERS, []);
     const batches = load(KEYS.BATCHES, []);
@@ -197,7 +192,6 @@
         started_at: nowISO()
       };
 
-      // update orders
       for (const o of group) {
         const idx = orders.findIndex(x => x.orderId === o.orderId);
         if (idx >= 0) {
@@ -215,7 +209,6 @@
     return created;
   }
 
-  // Driver completes a batch: mark delivered + close batch
   function completeBatch(batchId) {
     const orders = load(KEYS.ORDERS, []);
     const batches = load(KEYS.BATCHES, []);
@@ -237,8 +230,8 @@
   // ====== WEEKLY PAYOUTS ======
   function startOfMonday(d = new Date()) {
     const date = new Date(d);
-    const day = date.getDay(); // 0 Sun .. 6 Sat
-    const diff = (day + 6) % 7; // days since Monday
+    const day = date.getDay();
+    const diff = (day + 6) % 7;
     date.setHours(0,0,0,0);
     date.setDate(date.getDate() - diff);
     return date;
@@ -309,9 +302,8 @@
     return false;
   }
 
-  // ====== ADMIN MINI-PANEL (auto-injected, optional) ======
+  // ====== ADMIN MINI-PANEL ======
   function injectAdminPanel() {
-    // small floating admin widget so you don't edit HTML
     const wrap = document.createElement("div");
     wrap.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:99999;background:#0f172a;color:#fff;padding:10px 12px;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.25);font:12px/1.2 system-ui;max-width:320px";
     wrap.innerHTML = `
@@ -380,12 +372,11 @@
     });
   }
 
-  // ====== HOOK DRIVER SIGN-UP (your existing modal) ======
+  // ====== HOOK DRIVER SIGN-UP ======
   function hookSignupForm() {
     const form = document.getElementById("driverFormSignup");
     if (!form) return;
-    form.addEventListener("submit", (e) => {
-      // keep your existing behavior, also store locally
+    form.addEventListener("submit", () => {
       try {
         const name = document.getElementById("drvName").value;
         const phone = document.getElementById("drvPhone").value;
@@ -401,8 +392,6 @@
   window.YiThumeLitePro = {
     readCartFromPage,
     makeWhatsAppLink,
-
-    // admin ops
     markOrderPaid, autoAssign, completeBatch,
     generateWeeklyPayouts, markPayoutPaid
   };
