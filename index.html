@@ -8,6 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script defer src="yithume-lite-pro.js"></script>
 
   <style>
     :root{
@@ -416,20 +417,24 @@
       // Update log with payment method picked
       logToSheet({ type:'payment_method_selected', orderId:_orderDraft.orderId, pay_method:pay, updated_at:new Date().toISOString() });
     });}
+// replace your old botSendWA click handler with:
+if (botSendWA) {
+  botSendWA.addEventListener('click', () => {
+    const cart = window.YiThumeLitePro.readCartFromPage();
+    if (!cart.items.length) return alert('Please select at least one item.');
 
-    if(botSendWA){botSendWA.addEventListener('click',()=>{
-      if(!_orderDraft) return;
-      const {orderId,itemsText,fee,rush,total,zone,pay,eta}= _orderDraft;
-      const deposit = Math.ceil(total*0.5);
-      const payLine = pay==='deposit_cod' ? `50% deposit now (R${deposit}) + COD balance` : (pay==='card'?'Card (Yoco)':'Instant EFT (Ozow)');
-      const msg = `YiThume, my order:%0A- ${encodeURIComponent(itemsText)}%0AZone: ${zone} (Delivery R${fee}${rush?` + Rush R${rush}`:''})%0ATotal: R${total}%0AETA: ${encodeURIComponent(eta)}%0APayment choice: ${encodeURIComponent(payLine)}%0AMy location pin: [paste Google Maps pin]%0ARef: ${orderId}`;
+    const { whatsapp_link } = window.YiThumeLitePro.makeWhatsAppLink({
+      whatsappNumber: WHATSAPP_NUMBER,
+      ...cart
+    });
+    window.open(whatsapp_link, '_blank');
 
-      // Log before redirect
-      logToSheet({ type:'order_sent_to_whatsapp', orderId, status:'awaiting_payment', updated_at:new Date().toISOString() });
+    // close modal
+    const botModal = document.getElementById('botChat');
+    botModal?.classList.add('hidden'); botModal?.classList.remove('flex');
+  });
+}
 
-      window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`,'_blank');
-      closeBot();
-    });}
 
     /* ===== HERO MAP (animated markers) ===== */
     const heroEl=document.getElementById('heroMap');
