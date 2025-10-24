@@ -28,18 +28,11 @@
 </head>
 <body class="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-900">
 <script>
-  // === CONFIG ===
-  const BASE_API = "/api/app"; // this is Flask on Vercel (api/app.py)
-  const WHATSAPP_NUMBER = "270691456201"; // customer chat
-  const ADMIN_WHATSAPP  = "270691456201"; // internal alert if you still want it
-  const DEMO_MODE       = false; // set true to not actually call backend
-
-  // helper to urlencode WhatsApp text
-  function waText(t){return encodeURIComponent(t);}
-</script>
-<script>
-  const BASE_API = "/api/app";   // important
-  const DEMO_MODE = false;
+  const BASE_API = "/api/app";
+  const WHATSAPP_NUMBER = "270691456201";
+  const ADMIN_WHATSAPP  = "270691456201";
+  const DEMO_MODE       = false;
+  // (rest unchanged)
 </script>
 
 
