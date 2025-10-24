@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "api/app.py": {
+      "runtime": "python3.11",
+      "maxDuration": 10
+    }
+  },
+  "routes": [
+    { "src": "/api/app(?:/.*)?", "dest": "api/app.py" }
+  ]
+}
