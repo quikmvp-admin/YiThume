@@ -1,7 +1,7 @@
 import os
 import uuid
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
 from bson.objectid import ObjectId
@@ -10,18 +10,17 @@ from bson.objectid import ObjectId
 # CONFIG
 # -----------------------
 
-# IMPORTANT: set this in Vercel → Project Settings → Environment Variables
-#   MONGO_URI = your full mongodb+srv://... string
 MONGO_URI = os.environ.get(
     "MONGO_URI",
+    # fallback so it doesn't instantly crash if env var isn't set in Vercel yet
     "mongodb+srv://username:password@cluster0.mongodb.net/yithume?retryWrites=true&w=majority"
 )
 
 client = MongoClient(MONGO_URI)
-db = client.yithume  # database name "yithume"
+db = client.yithume  # DB name
 
-app = Flask(__name__, template_folder="templates")
-CORS(app)  # still fine; does nothing bad even on same-origin
+app = Flask(__name__)
+CORS(app)
 
 
 # -----------------------
@@ -29,39 +28,26 @@ CORS(app)  # still fine; does nothing bad even on same-origin
 # -----------------------
 
 def make_order_id():
-    """Generate a public-friendly order ref like YI-20251024-ABC123"""
     return f"YI-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
 
-
 def inside_service_area(lat, lng):
-    """
-    Quick service area check around Eastern Cape focus.
-    If coords missing, allow.
-    """
+    # loose check, doesn't block legit orders if coords missing
     if lat is None or lng is None:
         return True
 
-    # loose bounding box around Port Alfred / Kenton / Bathurst etc.
-    # tweak for realism later
+    # rough EC bounding box
     min_lat, max_lat = -34.2, -33.0
     min_lng, max_lng = 25.5, 27.5
-
     return (min_lat <= lat <= max_lat) and (min_lng <= lng <= max_lng)
 
-
 def rule_based_score(order_doc):
-    """
-    Dumb fraud heuristics.
-    Returns (score, flags)
-    score is between 0 and 1.
-    """
     score = 0.0
     flags = {}
 
     phone = order_doc.get("customer", {}).get("phone")
     total_value = order_doc.get("total", 0)
 
-    # 1. Phone velocity: same number spamming orders in last hour
+    # 1. phone velocity
     if phone:
         recent_same_phone = db.orders.count_documents({
             "customer.phone": phone,
@@ -71,7 +57,7 @@ def rule_based_score(order_doc):
             flags["phone_velocity"] = True
             score += 0.4
 
-        # 2. Duplicate order within last 10 min (same phone + same subtotal)
+        # 2. duplicate in last 10 min
         recent_dup = db.orders.find_one({
             "customer.phone": phone,
             "subtotal": order_doc.get("subtotal", 0),
@@ -81,7 +67,7 @@ def rule_based_score(order_doc):
             flags["duplicate_order"] = True
             score += 0.3
 
-    # 3. Address outside service area
+    # 3. service area
     coords = (
         order_doc.get("customer", {})
                  .get("address", {})
@@ -93,7 +79,7 @@ def rule_based_score(order_doc):
         flags["address_out_of_area"] = True
         score += 0.5
 
-    # 4. High order value
+    # 4. high order value
     pipeline = [{"$group": {"_id": None, "avg": {"$avg": "$total"}}}]
     agg = list(db.orders.aggregate(pipeline))
     avg_total = agg[0]["avg"] if agg else 50
@@ -105,34 +91,12 @@ def rule_based_score(order_doc):
     return min(score, 1.0), flags
 
 
-def iso(dt):
-    if isinstance(dt, datetime):
-        # always return a string so jsonify won't choke
-        return dt.isoformat() + "Z"
-    return dt
-
-
 def serialize_order(doc):
-    """Convert Mongo ObjectIds + datetimes so we can send to frontend."""
     if not doc:
         return None
-
     doc["_id"] = str(doc["_id"])
-
-    # string-ify ObjectIds
     if doc.get("assigned_driver_id"):
         doc["assigned_driver_id"] = str(doc["assigned_driver_id"])
-
-    # make datetimes JSON safe
-    for field in ["created_at", "assigned_at", "delivered_at"]:
-        if field in doc:
-            doc[field] = iso(doc[field])
-
-    # also fix nested date in driver location etc if it exists
-    if "route" in doc and isinstance(doc["route"], dict):
-        # nothing time-based in route yet, keep as-is
-        pass
-
     return doc
 
 
@@ -150,38 +114,24 @@ def log_audit(entity, entity_id, action, payload, by="system"):
 # -----------------------
 # ROUTES
 # -----------------------
+#
+# We mount each route twice:
+#   1. "/api/app/..."    <- what the browser will call (BASE_API=/api/app)
+#   2. "/.../..."        <- fallback/testing
+#
+# Vercel will route /api/app/... to this file because of vercel.json.
+#
 
 @app.route("/", methods=["GET"])
-def home_page():
-    # Serve the landing page+modal etc.
-    # NOTE: index.html must live in /templates/index.html
-    return render_template("index.html")
+@app.route("/api/app", methods=["GET"])
+def healthcheck():
+    return jsonify({"ok": True, "service": "YiThume backend"}), 200
 
 
+# --- CREATE ORDER ---
 @app.route("/orders", methods=["POST"])
+@app.route("/api/app/orders", methods=["POST"])
 def create_order():
-    """
-    Create a new order. Body shape (from the site JS):
-    {
-      "customer": {
-        "name": "...",
-        "phone": "...",
-        "address": {
-          "line1": "...",
-          "suburb": "Zone A",
-          "coords": { "lat": -33.59, "lng": 26.89 }
-        }
-      },
-      "items": [ { "name":"Panado", "qty":2, "price":35 }, ... ],
-      "subtotal": 50,
-      "delivery_fee": 20,
-      "total": 70,
-      "payment": { "method":"card","status":"pending","provider_ref":null },
-      "created_by": "web",
-      "route": { "eta_minutes":null, "distance_km":null, "eta_text":"Wed 12:00–14:00" },
-      "meta": { "rush": true, "zone": "A" }
-    }
-    """
     data = request.json or {}
 
     order_doc = {
@@ -208,11 +158,11 @@ def create_order():
         "meta": data.get("meta", {})
     }
 
-    # save draft first
+    # insert draft
     res = db.orders.insert_one(order_doc)
     oid = res.inserted_id
 
-    # run fraud check + maybe bump status
+    # fraud rules
     score, flags = rule_based_score(order_doc)
     order_status = "pending"
     if score >= 0.75:
@@ -244,17 +194,13 @@ def create_order():
     }), 201
 
 
+# --- LIST ORDERS ---
 @app.route("/orders", methods=["GET"])
+@app.route("/api/app/orders", methods=["GET"])
 def list_orders():
-    """
-    Admin dashboard pulls by status for tabs:
-    /orders?status=pending
-    /orders?status=review_required
-    /orders?status=assigned
-    /orders?status=delivered
-    """
-    q = {}
     status_filter = request.args.get("status")
+
+    q = {}
     if status_filter:
         q["status"] = status_filter
 
@@ -264,54 +210,53 @@ def list_orders():
     return jsonify({"ok": True, "orders": orders}), 200
 
 
-@app.route("/orders/<order_id>/assign", methods=["POST"])
-def assign_driver(order_id):
-    """
-    Assign a driver (future feature).
-    Body: { "driver_id": "<mongo _id of driver>" }
-    """
+# --- ASSIGN DRIVER ---
+@app.route("/orders/<oid>/assign", methods=["POST"])
+@app.route("/api/app/orders/<oid>/assign", methods=["POST"])
+def assign_driver(oid):
     body = request.json or {}
     driver_id_str = body.get("driver_id")
     if not driver_id_str:
         return jsonify({"ok": False, "error": "driver_id required"}), 400
 
     try:
-        oid = ObjectId(order_id)
-        did = ObjectId(driver_id_str)
+        order_obj_id = ObjectId(oid)
+        driver_obj_id = ObjectId(driver_id_str)
     except Exception:
         return jsonify({"ok": False, "error": "bad ObjectId"}), 400
 
     db.orders.update_one(
-        {"_id": oid},
+        {"_id": order_obj_id},
         {"$set": {
-            "assigned_driver_id": did,
+            "assigned_driver_id": driver_obj_id,
             "assigned_at": datetime.utcnow(),
             "status": "assigned"
         }}
     )
 
-    log_audit("orders", oid, "assign_driver", {"driver_id": driver_id_str})
+    log_audit("orders", order_obj_id, "assign_driver",
+              {"driver_id": driver_id_str})
+
     return jsonify({"ok": True}), 200
 
 
-@app.route("/orders/<order_id>/status", methods=["POST"])
-def update_status(order_id):
-    """
-    Set order status.
-    Body: { "status": "in_transit" | "delivered" | "cancelled" | "failed" | "review_required" | "pending" | "assigned" }
-    """
+# --- UPDATE STATUS ---
+@app.route("/orders/<oid>/status", methods=["POST"])
+@app.route("/api/app/orders/<oid>/status", methods=["POST"])
+def update_status(oid):
     body = request.json or {}
     new_status = body.get("status")
-    allowed = [
+
+    allowed_status = [
         "pending", "assigned", "in_transit",
         "delivered", "cancelled", "failed",
         "review_required"
     ]
-    if new_status not in allowed:
+    if new_status not in allowed_status:
         return jsonify({"ok": False, "error": "invalid status"}), 400
 
     try:
-        oid = ObjectId(order_id)
+        order_obj_id = ObjectId(oid)
     except Exception:
         return jsonify({"ok": False, "error": "bad ObjectId"}), 400
 
@@ -319,27 +264,23 @@ def update_status(order_id):
     if new_status == "delivered":
         update_set["delivered_at"] = datetime.utcnow()
 
-    db.orders.update_one({"_id": oid}, {"$set": update_set})
+    db.orders.update_one(
+        {"_id": order_obj_id},
+        {"$set": update_set}
+    )
 
-    log_audit("orders", oid, "status_change", {"status": new_status})
+    log_audit("orders", order_obj_id, "status_change",
+              {"status": new_status})
+
     return jsonify({"ok": True}), 200
 
 
+# --- CREATE DRIVER ---
 @app.route("/drivers", methods=["POST"])
+@app.route("/api/app/drivers", methods=["POST"])
 def create_driver():
-    """
-    Add a driver from the signup modal.
-    Body:
-    {
-      "driver_id": "DRV-123456",
-      "name": "Thabo",
-      "phone": "2782...",
-      "vehicle": "motorbike",
-      "available": true,
-      "current_location": { "lat": -33.5, "lng": 26.9 }
-    }
-    """
     data = request.json or {}
+
     driver_doc = {
         "driver_id": data.get("driver_id"),
         "name": data.get("name"),
@@ -354,35 +295,31 @@ def create_driver():
         },
         "weekly_payout_due": 0.0,
         "earnings_history": [],
-        "ratings": {"count": 0, "avg": None}
+        "ratings": { "count": 0, "avg": None }
     }
 
     res = db.drivers.insert_one(driver_doc)
+
     log_audit("drivers", res.inserted_id, "create_driver", driver_doc)
 
-    return jsonify({"ok": True, "driver_db_id": str(res.inserted_id)}), 201
+    return jsonify({
+        "ok": True,
+        "driver_db_id": str(res.inserted_id)
+    }), 201
 
 
+# --- LIST DRIVERS ---
 @app.route("/drivers", methods=["GET"])
+@app.route("/api/app/drivers", methods=["GET"])
 def list_drivers():
-    drivers = db.drivers.find({"active": True})
+    driver_cursor = db.drivers.find({"active": True})
     out = []
-    for d in drivers:
+    for d in driver_cursor:
         d["_id"] = str(d["_id"])
-        loc = d.get("current_location", {})
-        if "updated_at" in loc:
-            loc["updated_at"] = iso(loc["updated_at"])
         out.append(d)
-
     return jsonify({"ok": True, "drivers": out}), 200
 
 
-# -----------------------
-# LOCAL DEV ENTRYPOINT
-# -----------------------
-if __name__ == "__main__":
-    # local testing:
-    #   export MONGO_URI="mongodb+srv://..."
-    #   pip install -r requirements.txt
-    #   python app.py
-    app.run(host="0.0.0.0", port=5000, debug=True)
+# IMPORTANT:
+# DO NOT put "if __name__ == '__main__': app.run(...)" here.
+# On Vercel, this file is imported, not run like a normal server process.
