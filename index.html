@@ -319,52 +319,80 @@
 
 <script>
 window.addEventListener('DOMContentLoaded', () => {
+  // Grab config from the small <script> at top of <body>
+  // BASE_API, WHATSAPP_NUMBER, ADMIN_WHATSAPP, DEMO_MODE, waText are already defined there.
+
   // YEAR IN FOOTER
-  const yearEl=document.getElementById('year'); if(yearEl) yearEl.textContent=new Date().getFullYear();
+  const yearEl = document.getElementById('year');
+  if (yearEl) yearEl.textContent = new Date().getFullYear();
 
   // === MOBILE MENU TOGGLE ===
-  const mobileBtn = document.getElementById('mobileMenuBtn');
-  const mobileClose = document.getElementById('mobileMenuClose');
-  const mobileNav = document.getElementById('mobileNav');
-  const openMobile = ()=> mobileNav.classList.remove('hidden');
-  const closeMobile = ()=> mobileNav.classList.add('hidden');
+  const mobileBtn    = document.getElementById('mobileMenuBtn');
+  const mobileClose  = document.getElementById('mobileMenuClose');
+  const mobileNav    = document.getElementById('mobileNav');
+  const openMobile   = () => mobileNav.classList.remove('hidden');
+  const closeMobile  = () => mobileNav.classList.add('hidden');
   mobileBtn?.addEventListener('click', openMobile);
   mobileClose?.addEventListener('click', closeMobile);
-  document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{closeMobile(); document.getElementById('openOrderBuilder')?.click();});
-  document.getElementById('openDriverModalTopMobile')?.addEventListener('click', ()=>{closeMobile(); document.getElementById('openDriverModal')?.click();});
-  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{closeMobile(); document.getElementById('adminLoginBtn')?.click();});
-
-  // === ELEMENT REFS / STATE ===
-  const modal=document.getElementById('orderBuilder');
-  const openOrderButtons=['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'];
-  const closeBtn=document.getElementById('closeOrderBuilder');
-  const itemsList=document.getElementById('itemsList');
-  const zoneSelect=document.getElementById('zoneSelect');
-  const rushToggle=document.getElementById('rushToggle');
-  const totalEl=document.getElementById('orderTotal');
-  const rushNote=document.getElementById('rushNote');
-  const depositBanner=document.getElementById('depositBanner');
-  const depositAmtEl=document.getElementById('depositAmt');
-
-  const custNameEl   = document.getElementById('custName');
-  const custPhoneEl  = document.getElementById('custPhone');
-  const custAddrEl   = document.getElementById('custAddress');
-
-  // admin login = open Orders panel
-  const adminBtn = document.getElementById('adminLoginBtn');
-  adminBtn?.addEventListener('click', ()=>{
-    const pin = prompt('Enter admin PIN:');
-    // lightweight: just open panel if pin not empty
-    if(pin && pin.trim() !== ""){
-      alert('Admin mode ON');
-      openOrders();
-    } else {
-      alert('Invalid PIN');
-    }
+  document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{
+    closeMobile(); document.getElementById('openOrderBuilder')?.click();
+  });
+  document.getElementById('openDriverModalTopMobile')?.addEventListener('click', ()=>{
+    closeMobile(); document.getElementById('openDriverModal')?.click();
+  });
+  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{
+    closeMobile(); document.getElementById('adminLoginBtn')?.click();
   });
 
-  // === CATALOG (static for now) ===
-  const CATALOG=[
+  // === ELEMENT REFS / STATE ===
+  const modal               = document.getElementById('orderBuilder');
+  const openOrderButtons    = ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'];
+  const closeBtn            = document.getElementById('closeOrderBuilder');
+  const itemsList           = document.getElementById('itemsList');
+  const zoneSelect          = document.getElementById('zoneSelect');
+  const rushToggle          = document.getElementById('rushToggle');
+  const totalEl             = document.getElementById('orderTotal');
+  const rushNote            = document.getElementById('rushNote');
+  const depositBanner       = document.getElementById('depositBanner');
+  const depositAmtEl        = document.getElementById('depositAmt');
+  const custNameEl          = document.getElementById('custName');
+  const custPhoneEl         = document.getElementById('custPhone');
+  const custAddrEl          = document.getElementById('custAddress');
+
+  // admin login = open Orders panel
+  const adminBtn            = document.getElementById('adminLoginBtn');
+
+  // Bot modal refs
+  const confirmBtn2         = document.getElementById('confirmOrderBtn');
+  const botModal            = document.getElementById('botChat');
+  const botClose            = document.getElementById('closeBot');
+  const botFeed             = document.getElementById('botFeed');
+  const botNext             = document.getElementById('botNext');
+  const botSendWA           = document.getElementById('botSendWA');
+  const botPayChoice        = document.getElementById('botPayChoice');
+
+  // Driver modal refs
+  const driverModal         = document.getElementById('driverModal');
+  const closeDriver         = document.getElementById('closeDriverModal');
+  const tabSignup           = document.getElementById('tabSignup');
+  const tabLogin            = document.getElementById('tabLogin');
+  const formSignup          = document.getElementById('driverFormSignup');
+  const formLogin           = document.getElementById('driverFormLogin');
+
+  // Admin orders panel refs
+  const ordersPanel         = document.getElementById('ordersPanel');
+  const ordersList          = document.getElementById('ordersList');
+  const ordersClose         = document.getElementById('closeOrdersPanel');
+  const ordersAssign        = document.getElementById('ordersAssign');
+  const ordersRefresh       = document.getElementById('ordersRefresh');
+  let   ordersTab           = 'pending';
+
+  // runtime state
+  let latestOrderData       = null; // We fill this after POST /orders
+
+
+  // === UTILITIES ===
+  const CATALOG = [
     {name:'Panado 500mg (24s)',price:35},
     {name:'Allergex 10mg (10s)',price:30},
     {name:'Cough Syrup 100ml',price:55},
@@ -373,41 +401,62 @@ window.addEventListener('DOMContentLoaded', () => {
   ];
 
   function renderItems(){
-    itemsList.innerHTML='';
+    itemsList.innerHTML = '';
     CATALOG.forEach((item,idx)=>{
       const row=document.createElement('div');
       row.className='flex items-center justify-between gap-3 border rounded-lg p-2';
-      row.innerHTML=`<label class="flex items-center gap-2"><input type="checkbox" data-idx="${idx}" class="itemCheck h-4 w-4"/><span>${item.name}</span></label><div class="flex items-center gap-2"><span class="text-slate-500">R${item.price}</span><input type="number" min="1" value="1" data-idx="${idx}" class="itemQty w-14 border rounded-lg p-1"/></div>`;
+      row.innerHTML = `
+        <label class="flex items-center gap-2">
+          <input type="checkbox" data-idx="${idx}" class="itemCheck h-4 w-4"/>
+          <span>${item.name}</span>
+        </label>
+        <div class="flex items-center gap-2">
+          <span class="text-slate-500">R${item.price}</span>
+          <input
+            type="number"
+            min="1"
+            value="1"
+            data-idx="${idx}"
+            class="itemQty w-14 border rounded-lg p-1"
+          />
+        </div>`;
       itemsList.appendChild(row);
     });
   }
 
   function selectedPay(){
-    const el=document.querySelector('input[name="pay"]:checked');
-    return el?el.value:'card';
+    const el = document.querySelector('input[name="pay"]:checked');
+    return el ? el.value : 'card';
   }
 
   function computeTotal(){
-    const opt = zoneSelect.options[zoneSelect.selectedIndex];
-    const fee = Number(opt.dataset.fee||0);
-    const rush = rushToggle.checked?30:0;
-    rushNote.textContent = rush? ' + rush' : '';
+    const opt     = zoneSelect.options[zoneSelect.selectedIndex];
+    const feeBase = Number(opt.dataset.fee || 0);
+    const rushFee = rushToggle.checked ? 30 : 0;
+    rushNote.textContent = rushFee ? ' + rush' : '';
 
-    const items=Array.from(document.querySelectorAll('.itemCheck')).filter(c=>c.checked).map(c=>{
-      const i=Number(c.dataset.idx);
-      const qty=Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value||1);
-      return {name:CATALOG[i].name,price:CATALOG[i].price,qty};
-    });
+    const items = Array.from(document.querySelectorAll('.itemCheck'))
+      .filter(c => c.checked)
+      .map(c => {
+        const i   = Number(c.dataset.idx);
+        const qty = Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value || 1);
+        return {
+          name:  CATALOG[i].name,
+          price: Number(CATALOG[i].price),
+          qty:   qty
+        };
+      });
 
-    const itemsTotal=items.reduce((s,it)=>s+it.price*it.qty,0);
-    const total=itemsTotal+fee+rush;
-    totalEl.textContent=String(total);
+    const itemsTotal = items.reduce((sum,it)=> sum + (it.price * it.qty), 0);
+    const total      = itemsTotal + feeBase + rushFee;
+
+    totalEl.textContent = String(total);
 
     return {
       items,
       itemsTotal,
-      fee,
-      rush,
+      fee: feeBase,
+      rush: rushFee,
       total,
       zoneVal: opt.value,
       hubLat: Number(opt.dataset.lat),
@@ -428,52 +477,13 @@ window.addEventListener('DOMContentLoaded', () => {
   function openOrder(){
     modal.classList.remove('hidden');
     modal.classList.add('flex');
-    const s=computeTotal();
+    const s = computeTotal();
     toggleDepositBanner(s.total);
   }
   function closeOrder(){
     modal.classList.add('hidden');
     modal.classList.remove('flex');
   }
-
-  openOrderButtons.forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.addEventListener('click',openOrder);
-  });
-  if(closeBtn) closeBtn.addEventListener('click',closeOrder);
-
-  if(zoneSelect) zoneSelect.addEventListener('change',()=>{const s=computeTotal(); toggleDepositBanner(s.total);});
-  if(rushToggle) rushToggle.addEventListener('change',()=>{const s=computeTotal(); toggleDepositBanner(s.total);});
-  document.addEventListener('change',e=>{
-    if(e.target.classList.contains('itemCheck')||e.target.classList.contains('itemQty')||e.target.name==='pay'){
-      const s=computeTotal(); toggleDepositBanner(s.total);
-    }
-  });
-
-  const addCustomBtn=document.getElementById('addCustomItem');
-  if(addCustomBtn){
-    addCustomBtn.addEventListener('click',e=>{
-      e.preventDefault();
-      const name=prompt('Item name');
-      const price=Number(prompt('Price (R)'))||0;
-      if(!name||!price) return;
-      CATALOG.push({name,price});
-      renderItems();
-      const s=computeTotal(); toggleDepositBanner(s.total);
-    });
-  }
-  renderItems(); computeTotal();
-
-  // === BOT MODAL REFS / STATE ===
-  const confirmBtn2=document.getElementById('confirmOrderBtn');
-  const botModal=document.getElementById('botChat');
-  const botClose=document.getElementById('closeBot');
-  const botFeed=document.getElementById('botFeed');
-  const botNext=document.getElementById('botNext');
-  const botSendWA=document.getElementById('botSendWA');
-  const botPayChoice=document.getElementById('botPayChoice');
-
-  let latestOrderData=null; // we keep data from backend + UI here
 
   function openBot(){
     botModal.classList.remove('hidden');
@@ -484,79 +494,148 @@ window.addEventListener('DOMContentLoaded', () => {
     botModal.classList.remove('flex');
     botFeed.innerHTML='';
   }
-  if(botClose) botClose.addEventListener('click',closeBot);
 
   function pad2(n){return String(n).padStart(2,'0');}
+
+  // Delivery slot estimator
   function nextETA(rush){
-    const now=new Date();
-    const windows=[[8,10],[12,14],[16,18]];
-    const allowed=new Set([0,3,4,5,6]); // Sun, Wed, Thu, Fri, Sat
+    const now     = new Date();
+    const windows = [[8,10],[12,14],[16,18]];
+    // allowed days: Sun=0, Wed=3, Thu=4, Fri=5, Sat=6
+    const allowed = new Set([0,3,4,5,6]);
     const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
     function fmt(date,[h1,h2]){
-      return date.toDateString()===new Date().toDateString()
-        ? `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`
-        : `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
+      const sameDay = (date.toDateString()===new Date().toDateString());
+      if (sameDay){
+        return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
+      }
+      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
     }
-    if(allowed.has(now.getDay())){
+
+    if (allowed.has(now.getDay())){
       for(const w of windows){
         if(now.getHours()<w[1]) return fmt(now,w);
       }
     }
+
     for(let i=1;i<=7;i++){
-      const d=new Date(now); d.setDate(now.getDate()+i);
-      if(allowed.has(d.getDay())) return fmt(d,windows[0]);
+      const d = new Date(now);
+      d.setDate(now.getDate()+i);
+      if(allowed.has(d.getDay())){
+        return fmt(d,windows[0]);
+      }
     }
+
     return 'TBC';
   }
 
   function appendBot(msg,who='bot'){
     const wrap=document.createElement('div');
-    wrap.className=`flex ${who==='bot'?'justify-start':'justify-end'}`;
-    wrap.innerHTML=`<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">${msg}</div>`;
+    wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
+    wrap.innerHTML = `
+      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
+        ${msg}
+      </div>`;
     botFeed.appendChild(wrap);
-    botFeed.scrollTop=botFeed.scrollHeight;
+    botFeed.scrollTop = botFeed.scrollHeight;
   }
 
-  // === ORDER SUBMIT ===
+
+  // === EVENT WIRING ===
+
+  // Show order modal (Start order buttons)
+  openOrderButtons.forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('click', openOrder);
+  });
+
+  // Close order modal
+  if(closeBtn) closeBtn.addEventListener('click', closeOrder);
+
+  // Recompute totals when zone / rush / items / qty / payment changes
+  if(zoneSelect) zoneSelect.addEventListener('change', ()=>{
+    const s = computeTotal(); toggleDepositBanner(s.total);
+  });
+  if(rushToggle) rushToggle.addEventListener('change', ()=>{
+    const s = computeTotal(); toggleDepositBanner(s.total);
+  });
+  document.addEventListener('change', e=>{
+    if(e.target.classList.contains('itemCheck') ||
+       e.target.classList.contains('itemQty')   ||
+       e.target.name === 'pay'){
+      const s = computeTotal(); toggleDepositBanner(s.total);
+    }
+  });
+
+  // Add custom item to cart list
+  const addCustomBtn=document.getElementById('addCustomItem');
+  if(addCustomBtn){
+    addCustomBtn.addEventListener('click', e=>{
+      e.preventDefault();
+      const name = prompt('Item name');
+      const priceVal = prompt('Price (R)');
+      const price = Number(priceVal);
+      if(!name || !price || Number.isNaN(price)){ return; }
+      CATALOG.push({name,price});
+      renderItems();
+      const s=computeTotal(); toggleDepositBanner(s.total);
+    });
+  }
+
+  // init cart UI once
+  renderItems();
+  computeTotal();
+
+
+  // Close bot modal (X button)
+  if(botClose) botClose.addEventListener('click', closeBot);
+
+
+  // === SUBMIT ORDER -> POST /orders ===
   if(confirmBtn2){
     confirmBtn2.addEventListener('click', async ()=>{
-      const s=computeTotal();
-      if(!s.items.length){
+      // Calculate totals & grab cart
+      const summary = computeTotal();
+      if (!summary.items.length){
         alert('Please select at least one item.');
         return;
       }
 
-      // collect customer info
+      // Collect customer info
       const custName  = custNameEl.value.trim();
       const custPhone = custPhoneEl.value.trim();
       const custAddr  = custAddrEl.value.trim();
+
       if(!custName || !custPhone || !custAddr){
         alert('Please fill name, WhatsApp and address.');
         return;
       }
 
-      // build payload for Flask
+      // Collect payment pref + ETA
       const paymentMethod = selectedPay(); // 'card' / 'eft' / 'deposit_cod'
-      const eta = nextETA(Boolean(s.rush));
+      const eta           = nextETA(Boolean(summary.rush));
 
+      // Build the payload as Flask expects
       const orderPayload = {
         customer: {
           name: custName,
           phone: custPhone,
           address: {
             line1: custAddr,
-            suburb: `Zone ${s.zoneVal}`,
-            coords: { lat: s.hubLat, lng: s.hubLng }
+            suburb: `Zone ${summary.zoneVal}`,
+            coords: { lat: summary.hubLat, lng: summary.hubLng }
           }
         },
-        items: s.items.map(it => ({
+        items: summary.items.map(it => ({
+          sku: null,               // we don't have SKUs in the UI yet
           name: it.name,
           qty: it.qty,
           price: it.price
         })),
-        subtotal: s.itemsTotal,
-        delivery_fee: s.fee + s.rush,
-        total: s.total,
+        subtotal: summary.itemsTotal,
+        delivery_fee: summary.fee + summary.rush,
+        total: summary.total,
         payment: {
           method: paymentMethod,
           status: "pending",
@@ -569,89 +648,146 @@ window.addEventListener('DOMContentLoaded', () => {
           eta_text: eta
         },
         meta: {
-          rush: !!s.rush,
-          zone: s.zoneVal
+          rush: !!summary.rush,
+          zone: summary.zoneVal
         }
       };
 
+      // If we are in demo mode, we don't actually POST
       if(DEMO_MODE){
         console.info("[DEMO] Would POST", orderPayload);
+
         latestOrderData = {
-          order_public_id: "DEMO-ORDER",
-          total: s.total,
-          zone: s.zoneVal,
-          items: s.items,
+          order_public_id: "DEMO-" + Date.now().toString().slice(-6),
+          status: "pending",
+          fraud_score: 0.0,
+          total: summary.total,
+          zone: summary.zoneVal,
+          items: summary.items,
           eta,
           payment_method: paymentMethod
         };
       } else {
+        // Real request to Flask
         try {
           const res = await fetch(`${BASE_API}/orders`, {
             method:"POST",
             headers:{ "Content-Type":"application/json" },
             body: JSON.stringify(orderPayload)
           });
-          const data = await res.json();
-          if(!data.ok){
-            alert("Order failed to create.");
+
+          // handle non-200 (like 500 from Flask)
+          if(!res.ok){
+            console.error("Bad status", res.status);
+            alert("Order failed on server ("+res.status+").");
             return;
           }
+
+          let data;
+          try {
+            data = await res.json();
+          } catch(parseErr){
+            console.error("JSON parse error", parseErr);
+            alert("Server response wasn't JSON.");
+            return;
+          }
+
+          if(!data.ok){
+            console.error("Server said not ok", data);
+            alert("Order not accepted.");
+            return;
+          }
+
           latestOrderData = {
-            order_public_id: data.order_public_id,
-            status: data.status,
-            fraud_score: data.fraud_score,
-            total: s.total,
-            zone: s.zoneVal,
-            items: s.items,
+            order_public_id: data.order_public_id || data.order_id || ("YI-" + Date.now().toString().slice(-6)),
+            status:         data.status || "pending",
+            fraud_score:    data.fraud_score ?? null,
+            total:          summary.total,
+            zone:           summary.zoneVal,
+            items:          summary.items,
             eta,
             payment_method: paymentMethod
           };
+
         } catch(err){
-          console.error(err);
+          console.error("Network/Fetch error", err);
           alert("Network error creating order.");
           return;
         }
       }
 
-      // open bot modal and show summary
+      // Open bot modal and show summary
       closeOrder();
       openBot();
-      appendBot(`<b>YiThume</b> 🤖<br/>Thanks for your order!<br/><b>Ref:</b> ${latestOrderData.order_public_id}<br/><b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/><b>Zone:</b> ${latestOrderData.zone}<br/><b>Total:</b> R${latestOrderData.total}<br/><b>Estimated window:</b> ${latestOrderData.eta}`);
+
+      appendBot(
+        `<b>YiThume</b> 🤖<br/>
+         Thanks for your order!<br/>
+         <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
+         <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
+         <b>Zone:</b> ${latestOrderData.zone}<br/>
+         <b>Total:</b> R${latestOrderData.total}<br/>
+         <b>Estimated window:</b> ${latestOrderData.eta}`
+      );
+
       if(latestOrderData.status === "review_required"){
-        appendBot(`<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`);
+        appendBot(
+          `<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`
+        );
       } else {
-        appendBot(`Choose your payment method below and press <b>Next</b>.`);
+        appendBot(
+          `Choose your payment method below and press <b>Next</b>.`
+        );
       }
+
       botPayChoice.value = latestOrderData.payment_method;
     });
   }
 
-  // === BOT NEXT (explain payment) ===
+
+  // === BOT NEXT (explain payment flow to customer) ===
   if(botNext){
-    botNext.addEventListener('click',()=>{
+    botNext.addEventListener('click', ()=>{
       if(!latestOrderData) return;
-      const pay=botPayChoice.value;
+      const pay = botPayChoice.value;
       latestOrderData.payment_method = pay;
 
-      if(pay==='eft'){
-        appendBot(`<b>Instant EFT (Ozow)</b><br/>We'll WhatsApp you a secure Ozow link. Use ref <code>${latestOrderData.order_public_id}</code>.`);
-      } else if(pay==='card'){
-        appendBot(`We'll WhatsApp you a secure <b>card link</b> (Yoco). Use ref <code>${latestOrderData.order_public_id}</code>.`);
+      if(pay === 'eft'){
+        appendBot(
+          `<b>Instant EFT (Ozow)</b><br/>
+           We'll WhatsApp you a secure Ozow link.<br/>
+           Use ref <code>${latestOrderData.order_public_id}</code>.`
+        );
+      } else if(pay === 'card'){
+        appendBot(
+          `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
+           Use ref <code>${latestOrderData.order_public_id}</code>.`
+        );
       } else {
         const deposit = Math.ceil(latestOrderData.total*0.5);
-        appendBot(`<b>50% deposit + COD</b><br/>Pay deposit now: <b>R${deposit}</b>. Balance due at delivery. Returning customers only. Ref <code>${latestOrderData.order_public_id}</code>.`);
+        appendBot(
+          `<b>50% deposit + COD</b><br/>
+           Pay deposit now: <b>R${deposit}</b>.<br/>
+           Balance due at delivery.<br/>
+           Ref <code>${latestOrderData.order_public_id}</code>.`
+        );
       }
-      appendBot(`When you're ready, press <b>Send to WhatsApp</b> so we can finalise your order.`);
+
+      appendBot(
+        `When you're ready, press <b>Send to WhatsApp</b> so we can finalise your order.`
+      );
     });
   }
 
-  // === BOT SEND WHATSAPP ===
+
+  // === SEND TO WHATSAPP ===
   if (botSendWA) {
     botSendWA.addEventListener('click', () => {
       if(!latestOrderData){
         alert("No order data.");
         return;
       }
+
       const textLines = [
         "YiThume order request:",
         `Ref: ${latestOrderData.order_public_id}`,
@@ -661,18 +797,37 @@ window.addEventListener('DOMContentLoaded', () => {
         `ETA: ${latestOrderData.eta}`,
         `Payment: ${latestOrderData.payment_method}`
       ];
+
       const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(textLines.join("\n"))}`;
       window.open(wa,'_blank');
-      botModal.classList.add('hidden'); botModal.classList.remove('flex');
+
+      botModal.classList.add('hidden');
+      botModal.classList.remove('flex');
       alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
     });
   }
 
-  // === MAP ===
-  const heroEl=document.getElementById('heroMap');
-  const heroMap=L.map(heroEl,{ zoomControl:false, dragging:false, scrollWheelZoom:false, doubleClickZoom:false, boxZoom:false, touchZoom:false }).setView([-33.20, 26.55], 8);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{ attribution:'', opacity:0.96, noWrap:true, detectRetina:true }).addTo(heroMap);
-  const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
+
+  // === MAP VISUAL ===
+  const heroEl  = document.getElementById('heroMap');
+  const heroMap = L.map(heroEl,{
+    zoomControl:false, dragging:false, scrollWheelZoom:false,
+    doubleClickZoom:false, boxZoom:false, touchZoom:false
+  }).setView([-33.20, 26.55], 8);
+
+  L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    {
+      attribution:'',
+      opacity:0.96,
+      noWrap:true,
+      detectRetina:true
+    }
+  ).addTo(heroMap);
+
+  const southAfricaBounds = L.latLngBounds(
+    [[-35.5, 16.0], [-22.0, 33.5]]
+  );
   heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
 
   const HUBS=[
@@ -699,146 +854,208 @@ window.addEventListener('DOMContentLoaded', () => {
   function carIcon(zone){
     const cls=`car-dot car-${zone}`;
     const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
-        <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
-        <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
-        <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
-        <rect x='10' y='9' width='4' height='3' fill='#f59e0b'/>
-        <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
-        <circle cx='18' cy='20' r='3' fill='#0f172a'/>
-        <circle cx='46' cy='20' r='3' fill='#0f172a'/>
-      </g></svg>`;
-    return L.divIcon({className:cls,html:svg,iconSize:[24,12],iconAnchor:[12,6]});
+      <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
+      <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
+      <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
+      <rect x='10' y='9' width='4' height='3' fill='#f59e0b'/>
+      <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
+      <circle cx='18' cy='20' r='3' fill='#0f172a'/>
+      <circle cx='46' cy='20' r='3' fill='#0f172a'/>
+    </g></svg>`;
+    return L.divIcon({
+      className:cls,
+      html:svg,
+      iconSize:[24,12],
+      iconAnchor:[12,6]
+    });
   }
-  const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'><path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/></svg>`;
-  const pkgIcon=L.divIcon({className:'pkg-dot',html:pkgSvg,iconSize:[20,20],iconAnchor:[10,10]});
+
+  const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
+    <path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
+  </svg>`;
+
+  const pkgIcon=L.divIcon({
+    className:'pkg-dot',
+    html:pkgSvg,
+    iconSize:[20,20],
+    iconAnchor:[10,10]
+  });
 
   function lerp(a,b,t){return a+(b-a)*t;}
   function posOnSeg(seg,t){
     const [A,B]=seg;
     return [lerp(A[0],B[0],t), lerp(A[1],B[1],t)];
   }
-  const cars=[], parcels=[];
+
+  const cars   = [];
+  const parcels= [];
+
   function makeCar(zone){
-    const seg=ROADS[(Math.random()*ROADS.length)|0];
-    const startT=Math.random(), dir=Math.random()<.5?1:-1;
-    const speed=0.10+Math.random()*0.06;
+    const seg     = ROADS[(Math.random()*ROADS.length)|0];
+    const startT  = Math.random();
+    const dir     = Math.random()<.5 ? 1 : -1;
+    const speed   = 0.10+Math.random()*0.06;
     const [lat,lng]=posOnSeg(seg,startT);
-    const m=L.marker([lat,lng],{icon:carIcon(zone)}).addTo(heroMap);
+    const m      = L.marker([lat,lng],{icon:carIcon(zone)}).addTo(heroMap);
     cars.push({m,seg,t:startT,dir,speed});
   }
+
   function makeParcel(){
-    const seg=ROADS[(Math.random()*ROADS.length)|0];
-    const startT=Math.random(), dir=Math.random()<.5?1:-1;
-    const speed=0.12+Math.random()*0.06;
+    const seg     = ROADS[(Math.random()*ROADS.length)|0];
+    const startT  = Math.random();
+    const dir     = Math.random()<.5 ? 1 : -1;
+    const speed   = 0.12+Math.random()*0.06;
     const [lat,lng]=posOnSeg(seg,startT);
-    const m=L.marker([lat,lng],{icon:pkgIcon}).addTo(heroMap);
+    const m      = L.marker([lat,lng],{icon:pkgIcon}).addTo(heroMap);
     parcels.push({m,seg,t:startT,dir,speed});
   }
+
   for(let i=0;i<10;i++) makeCar(['A','B','C','D','E'][i%5]);
   for(let i=0;i<6;i++)  makeParcel();
-  let last=performance.now();
+
+  let lastTS = performance.now();
   function animate(now){
-    const dt=Math.min((now-last)/1000, 0.05);
-    last=now;
+    const dt = Math.min((now-lastTS)/1000, 0.05);
+    lastTS = now;
+
     for(const c of cars){
       c.t += c.speed * c.dir * dt;
       if(c.t>1){ c.t=1; c.dir=-1; }
       else if(c.t<0){ c.t=0; c.dir=1; }
-      const [lat,lng]=posOnSeg(c.seg,c.t); c.m.setLatLng([lat,lng]);
+      const [lat,lng] = posOnSeg(c.seg,c.t);
+      c.m.setLatLng([lat,lng]);
     }
+
     for(const p of parcels){
       p.t += p.speed * p.dir * dt;
       if(p.t>1){ p.t=1; p.dir=-1; }
       else if(p.t<0){ p.t=0; p.dir=1; }
-      const [lat,lng]=posOnSeg(p.seg,p.t); p.m.setLatLng([lat,lng]);
+      const [lat,lng] = posOnSeg(p.seg,p.t);
+      p.m.setLatLng([lat,lng]);
     }
+
     requestAnimationFrame(animate);
   }
   requestAnimationFrame(animate);
+
   setTimeout(()=>heroMap.invalidateSize(),180);
   window.addEventListener('resize',()=>heroMap.invalidateSize());
 
+
   // === DRIVER MODAL ===
-  const driverModal=document.getElementById('driverModal');
+  // open driver modal from any driver button
   ['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
     const el=document.getElementById(id);
-    if(el) el.addEventListener('click',()=>{
-      driverModal.classList.remove('hidden');
-      driverModal.classList.add('flex');
+    if(el){
+      el.addEventListener('click',()=>{
+        driverModal.classList.remove('hidden');
+        driverModal.classList.add('flex');
+      });
+    }
+  });
+
+  // close driver modal
+  if(closeDriver){
+    closeDriver.addEventListener('click',()=>{
+      driverModal.classList.add('hidden');
+      driverModal.classList.remove('flex');
     });
-  });
-  const closeDriver=document.getElementById('closeDriverModal');
-  if(closeDriver) closeDriver.addEventListener('click',()=>{
-    driverModal.classList.add('hidden');driverModal.classList.remove('flex');
-  });
+  }
 
-  const tabSignup=document.getElementById('tabSignup');
-  const tabLogin=document.getElementById('tabLogin');
-  const formSignup=document.getElementById('driverFormSignup');
-  const formLogin=document.getElementById('driverFormLogin');
-  if(tabSignup) tabSignup.addEventListener('click',()=>{
-    tabSignup.classList.add('bg-emerald-600','text-white');
-    tabLogin.classList.remove('bg-emerald-600','text-white');
-    formSignup.classList.remove('hidden');
-    formLogin.classList.add('hidden');
-  });
-  if(tabLogin) tabLogin.addEventListener('click',()=>{
-    tabLogin.classList.add('bg-emerald-600','text-white');
-    tabSignup.classList.remove('bg-emerald-600','text-white');
-    formLogin.classList.remove('hidden');
-    formSignup.classList.add('hidden');
-  });
+  // tabs in driver modal
+  if(tabSignup){
+    tabSignup.addEventListener('click',()=>{
+      tabSignup.classList.add('bg-emerald-600','text-white');
+      tabLogin.classList.remove('bg-emerald-600','text-white');
+      formSignup.classList.remove('hidden');
+      formLogin.classList.add('hidden');
+    });
+  }
+  if(tabLogin){
+    tabLogin.addEventListener('click',()=>{
+      tabLogin.classList.add('bg-emerald-600','text-white');
+      tabSignup.classList.remove('bg-emerald-600','text-white');
+      formLogin.classList.remove('hidden');
+      formSignup.classList.add('hidden');
+    });
+  }
 
+  // helper for random-ish start location around hub
   function jitterAround(pt,meters){
     const d=(meters||800)/111111;
     const r=Math.random()*d;
     const a=Math.random()*Math.PI*2;
-    return {lat:pt.lat+r*Math.cos(a),lng:pt.lng+r*Math.sin(a)};
+    return {
+      lat: pt.lat + r*Math.cos(a),
+      lng: pt.lng + r*Math.sin(a)
+    };
   }
 
-  // Driver signup now: save driver in backend, also still pop WhatsApp alert to admin
+  // Submit driver signup -> POST /drivers
   if(formSignup){
-    formSignup.addEventListener('submit',async e=>{
+    formSignup.addEventListener('submit', async e=>{
       e.preventDefault();
-      const name=document.getElementById('drvName').value;
-      const phone=document.getElementById('drvPhone').value;
-      const zone=document.getElementById('drvZone').value;
-      const radius=document.getElementById('drvRadius').value;
-      const vehicle=document.getElementById('drvVehicle').value;
+      const name    = document.getElementById('drvName').value.trim();
+      const phone   = document.getElementById('drvPhone').value.trim();
+      const zone    = document.getElementById('drvZone').value;
+      const radius  = document.getElementById('drvRadius').value;
+      const vehicle = document.getElementById('drvVehicle').value.trim();
 
-      const hubs={A:HUBS[0],B:HUBS[1],C:HUBS[2],D:HUBS[3],E:HUBS[5]};
-      const hub=hubs[zone]||HUBS[0];
-      const start=jitterAround({lat:hub.lat,lng:hub.lng},1500);
+      if(!name || !phone){
+        alert("Please enter name and phone.");
+        return;
+      }
 
-      // show them visually
+      const hubMap = {
+        A:HUBS[0],
+        B:HUBS[1],
+        C:HUBS[2],
+        D:HUBS[3],
+        E:HUBS[5]
+      };
+      const hub   = hubMap[zone] || HUBS[0];
+      const start = jitterAround({lat:hub.lat,lng:hub.lng},1500);
+
+      // Marker on map so driver "appears"
       L.marker([start.lat,start.lng],{icon:carIcon(zone)}).addTo(heroMap);
 
-      // Save driver in backend
+      // Body for backend
       const driverPayload = {
         driver_id: `DRV-${Date.now().toString().slice(-6)}`,
         name,
         phone,
         vehicle,
         available: true,
-        current_location: { lat:start.lat, lng:start.lng }
+        current_location: { lat:start.lat, lng:start.lng },
+        meta: {
+          zone,
+          radius_km: radius
+        }
       };
 
-      try{
-        if(!DEMO_MODE){
+      if(!DEMO_MODE){
+        try{
           const r = await fetch(`${BASE_API}/drivers`,{
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify(driverPayload)
           });
-          const j = await r.json();
-          console.log("driver create resp", j);
+
+          if (!r.ok){
+            alert("Driver save failed on server ("+r.status+").");
+          } else {
+            const j = await r.json().catch(()=>({}));
+            console.log("driver create resp", j);
+          }
+        }catch(err){
+          console.error("driver create failed",err);
         }
-      }catch(err){
-        console.error("driver create failed",err);
+      } else {
+        console.info("[DEMO] Would POST driver", driverPayload);
       }
 
-      // Notify admin via WhatsApp
-      const text=`New driver sign-up
+      // Also ping you on WhatsApp so you see signup
+      const text = `New driver sign-up
 Name: ${name}
 Phone: ${phone}
 Zone: ${zone}
@@ -851,6 +1068,7 @@ Vehicle: ${vehicle}`;
     });
   }
 
+  // fake login
   if(formLogin){
     formLogin.addEventListener('submit',e=>{
       e.preventDefault();
@@ -860,13 +1078,8 @@ Vehicle: ${vehicle}`;
     });
   }
 
-  // === ORDERS PANEL (ADMIN) ===
-  const ordersPanel = document.getElementById('ordersPanel');
-  const ordersList  = document.getElementById('ordersList');
-  const ordersClose = document.getElementById('closeOrdersPanel');
-  const ordersAssign= document.getElementById('ordersAssign');
-  const ordersRefresh= document.getElementById('ordersRefresh');
-  let ordersTab = 'pending';
+
+  // === ADMIN ORDERS PANEL ===
 
   function openOrders(){
     ordersPanel.classList.remove('hidden');
@@ -877,35 +1090,79 @@ Vehicle: ${vehicle}`;
     ordersPanel.classList.add('hidden');
     ordersPanel.classList.remove('flex');
   }
+
   ordersClose?.addEventListener('click', closeOrders);
 
+  // Allow you to open panel from code if needed
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
     if(!ordersPanel.classList.contains('hidden')) renderOrders();
   });
+
   ordersRefresh?.addEventListener('click', renderOrders);
 
-  // Auto-assign placeholder — we will build later using /orders/<id>/assign
+  // You can hook auto-assign later to POST /orders/<id>/assign etc
   ordersAssign?.addEventListener('click', ()=>{
     alert('Auto-assign will call /orders/<id>/assign for each pending paid order. Coming soon.');
   });
 
+  // Switch tabs buttons
   document.querySelectorAll('.yt-o-tab').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      document.querySelectorAll('.yt-o-tab').forEach(x=>x.classList.remove('bg-emerald-600','text-white'));
+      document.querySelectorAll('.yt-o-tab')
+        .forEach(x=>x.classList.remove('bg-emerald-600','text-white'));
       btn.classList.add('bg-emerald-600','text-white');
       ordersTab = btn.dataset.oTab;
       renderOrders();
     });
   });
 
+  adminBtn?.addEventListener('click', ()=>{
+    const pin = prompt('Enter admin PIN:');
+    // Minimum lightweight check. You can upgrade this to real auth later.
+    if(pin && pin.trim() !== ""){
+      alert('Admin mode ON');
+      openOrders();
+    } else {
+      alert('Invalid PIN');
+    }
+  });
+
+  // Fetch orders list by status from backend
   async function fetchOrdersByStatus(status){
-    try{
+    if(DEMO_MODE){
+      console.info("[DEMO] would GET orders?status=" + status);
+      return [
+        {
+          order_id: "YI-DEMO123",
+          status: status,
+          total: 120,
+          items: [
+            {name:"Panado 500mg (24s)",qty:1},
+            {name:"Cough Syrup 100ml",qty:2}
+          ],
+          meta: { zone:"A" },
+          fraud_score: 0.07
+        }
+      ];
+    }
+
+    try {
       const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
-      const data = await res.json();
+      if(!res.ok){
+        console.error("fetchOrdersByStatus bad status", res.status);
+        return [];
+      }
+      let data;
+      try {
+        data = await res.json();
+      } catch(parseErr){
+        console.error("JSON parse err orders", parseErr);
+        return [];
+      }
       if (!data.ok) return [];
-      return data.orders || [];
-    }catch(err){
+      return Array.isArray(data.orders) ? data.orders : [];
+    } catch(err){
       console.error("fetchOrdersByStatus error",err);
       return [];
     }
@@ -913,6 +1170,7 @@ Vehicle: ${vehicle}`;
 
   async function renderOrders(){
     const data = await fetchOrdersByStatus(ordersTab);
+
     ordersList.innerHTML = data.length
       ? ''
       : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
@@ -922,15 +1180,29 @@ Vehicle: ${vehicle}`;
         .map(i=>`${i.name} x${i.qty}`)
         .join(', ');
 
+      // order_public_id vs _id vs order_id:
+      const refDisplay =
+        o.order_public_id ||
+        o.order_id ||
+        o._id ||
+        "REF?";
+
+      const zoneDisplay = (o.meta && o.meta.zone) ? o.meta.zone : "";
+
+      const fraudDisplay = (typeof o.fraud_score === "number")
+        ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
+        : "";
+
       const row = document.createElement('div');
       row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-2';
       row.innerHTML = `
         <div class="flex-1">
-          <div class="font-medium">Ref ${o.order_id || o._id} • Zone ${o.meta?.zone || ''} • Total R${o.total}</div>
+          <div class="font-medium">
+            Ref ${refDisplay} • Zone ${zoneDisplay} • Total R${o.total}
+          </div>
           <div class="text-xs text-slate-500">${itemsText}</div>
           <div class="text-xs text-slate-500">
-            Status: ${o.status}
-            ${o.fraud_score !== undefined ? ` • Fraud: ${o.fraud_score.toFixed(2)}` : ""}
+            Status: ${o.status}${fraudDisplay}
           </div>
         </div>
       `;
