@@ -31,7 +31,12 @@
   const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
   const DEMO_MODE       = false;
-  // (rest unchanged)
+
+  // encode text for WhatsApp deep link
+  function waText(str) {
+    // WhatsApp expects URL-encoded text in the ?text= param
+    return encodeURIComponent(str);
+  }
 </script>
 
 
