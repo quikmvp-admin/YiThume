@@ -33,7 +33,6 @@
 
   // encode text for WhatsApp deep link
   function waText(str) {
-    // WhatsApp expects URL-encoded text in the ?text= param
     return encodeURIComponent(str);
   }
 </script>
@@ -95,9 +94,8 @@
   </div>
 
   <!-- Mobile nav panel -->
-  <!-- overlay -->
   <div id="mobileNav"
-    class="fixed inset-0 z-[10000] hidden"  <!-- now super high -->
+    class="fixed inset-0 z-[12000] hidden"
     aria-hidden="true">
 
     <!-- backdrop -->
@@ -273,6 +271,8 @@
   <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border flex flex-col">
     <div class="flex items-center justify-between p-4 border-b"><div class="font-semibold">Checkout — YiThume Bot</div><button id="closeBot" class="text-slate-500 hover:text-slate-700">✕</button></div>
     <div id="botFeed" class="p-4 space-y-2 h-80 overflow-auto bg-slate-50"></div>
+
+    <!-- footer changes: WA button starts hidden, Next will later become "Pay now" -->
     <div class="p-4 border-t grid sm:grid-cols-4 gap-3 items-center">
       <label class="sm:col-span-3 text-sm">Payment Method
         <select id="botPayChoice" class="mt-1 w-full border rounded-lg p-2">
@@ -283,7 +283,7 @@
       </label>
       <div class="flex gap-2 sm:justify-end">
         <button id="botNext" class="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-100 text-sm">Next</button>
-        <button id="botSendWA" class="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-sm">Send to WhatsApp</button>
+        <button id="botSendWA" class="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-sm hidden">Send to WhatsApp</button>
       </div>
     </div>
   </div>
@@ -302,7 +302,7 @@
       <div>
         <div class="font-medium mb-2">Delivery</div>
 
-        <!-- NEW: Customer details to send to Flask -->
+        <!-- Customer details -->
         <label class="block mb-2">Full name
           <input id="custName" class="mt-1 w-full border rounded-lg p-2" placeholder="Your name" required />
         </label>
@@ -346,7 +346,7 @@
 </div>
 
 <!-- Orders Panel (Admin) -->
-<div id="ordersPanel" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[10000] overflow-y-auto">
+<div id="ordersPanel" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[11000] overflow-y-auto">
   <div class="w-full max-w-3xl rounded-2xl bg-white shadow-xl border">
     <div class="flex items-center justify-between p-4 border-b">
       <div class="font-semibold">Orders</div>
@@ -354,7 +354,6 @@
     </div>
     <div class="p-4">
       <div class="flex gap-2 text-sm mb-4">
-        <!-- map to backend statuses -->
         <button data-o-tab="pending"          class="yt-o-tab px-3 py-1 rounded-lg bg-emerald-600 text-white">Pending</button>
         <button data-o-tab="review_required"  class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300">Review</button>
         <button data-o-tab="assigned"         class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300">Assigned</button>
@@ -364,22 +363,24 @@
     </div>
     <div class="p-4 border-t flex justify-end gap-2">
       <button id="ordersRefresh" class="px-3 py-2 rounded-lg border">Refresh</button>
-      <button id="ordersAssign"  class="px-3 py-2 rounded-lg bg-emerald-600 text-white">Auto-Assign (coming)</button>
+      <button id="ordersAssign"  class="px-3 py-2 rounded-lg bg-emerald-600 text-white">Auto-Assign All</button>
     </div>
   </div>
 </div>
 
 <script>
 window.addEventListener('DOMContentLoaded', () => {
-  // config from <script> in <body> top:
-  // BASE_API, WHATSAPP_NUMBER, ADMIN_WHATSAPP, DEMO_MODE, waText
-
   // === RUNTIME / GLOBAL STATE ===
-  let latestOrderData = null; // filled on successful checkout
-  let zoneDemandStats = {};   // { "A": {misses:3}, ... } from backend (admin view)
+  let latestOrderData = null;     // after Checkout
+  let zoneDemandStats = {};       // { "A": {misses:3}, ... } from backend (admin view)
 
-  // cache for admin panel so Auto-Assign can loop orders already fetched
-  // shape: { pending: [ {...}, {...} ], assigned: [...], ... }
+  // track payment stage in the bot footer
+  // stage 0: we haven't shown payment instructions yet
+  // stage 1: we've shown them (Next button becomes "Pay now", WA button appears)
+  let botStage = 0;
+
+  // cache for admin panel so Auto-Assign All can loop orders already fetched
+  // { pending: [...], review_required:[...], assigned:[...], delivered:[...] }
   const currentOrdersByTab = {};
 
   // YEAR IN FOOTER
@@ -387,12 +388,12 @@ window.addEventListener('DOMContentLoaded', () => {
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
   // === ELEMENT REFS ===
-  // mobile nav elements (responsive drawer)
+  // mobile nav
   const mobileBtn       = document.getElementById('mobileMenuBtn');
   const mobileClose     = document.getElementById('mobileMenuClose');
-  const mobileNav       = document.getElementById('mobileNav');         // wrapper (fixed inset-0)
-  const mobileSheet     = document.getElementById('mobileNavSheet');    // sliding panel
-  const mobileBackdrop  = document.getElementById('mobileNavBackdrop'); // dark overlay
+  const mobileNav       = document.getElementById('mobileNav');
+  const mobileSheet     = document.getElementById('mobileNavSheet');
+  const mobileBackdrop  = document.getElementById('mobileNavBackdrop');
 
   // order builder / checkout modal
   const modal               = document.getElementById('orderBuilder');
@@ -512,7 +513,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function pad2(n){return String(n).padStart(2,'0');}
 
-  // delivery window guess
+  // rough delivery window text
   function nextETA(rush){
     const now     = new Date();
     const windows = [[8,10],[12,14],[16,18]];
@@ -564,6 +565,11 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   function openBot(){
+    // reset bot stage each time we open checkout bot
+    botStage = 0;
+    botNext.textContent = "Next";
+    botSendWA.classList.add('hidden');
+
     botModal.classList.remove('hidden');
     botModal.classList.add('flex');
   }
@@ -584,7 +590,7 @@ window.addEventListener('DOMContentLoaded', () => {
     botFeed.scrollTop = botFeed.scrollHeight;
   }
 
-  // mini heat indicator for admin: which zones are "cold" (drivers) vs "hot" (demand but no driver)
+  // mini heat indicator for admin panel
   function demandBadge(zone){
     const missCount = zoneDemandStats[zone]?.misses || 0;
     if(missCount === 0) return "";
@@ -594,18 +600,11 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // === MOBILE NAV (drawer) ===
-  function lockScroll() {
-    document.body.style.overflow = 'hidden';
-  }
-  function unlockScroll() {
-    document.body.style.overflow = '';
-  }
+  function lockScroll(){ document.body.style.overflow = 'hidden'; }
+  function unlockScroll(){ document.body.style.overflow = ''; }
 
   function openMobile() {
-    // show wrapper
     mobileNav.classList.remove('hidden');
-
-    // animate next frame so transition plays
     requestAnimationFrame(() => {
       mobileSheet.classList.remove('translate-x-full');
       mobileBackdrop.classList.remove('opacity-0');
@@ -614,22 +613,18 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   function closeMobile() {
-    // animate out
     mobileSheet.classList.add('translate-x-full');
     mobileBackdrop.classList.add('opacity-0');
     unlockScroll();
-
-    // after transition ends, hide wrapper so it stops intercepting clicks
     setTimeout(() => {
       mobileNav.classList.add('hidden');
-    }, 200); // sync with duration-200
+    }, 200);
   }
 
   mobileBtn?.addEventListener('click', openMobile);
   mobileClose?.addEventListener('click', closeMobile);
   mobileBackdrop?.addEventListener('click', closeMobile);
 
-  // trigger flows from inside mobile menu (and close it first)
   document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{
     closeMobile();
     document.getElementById('openOrderBuilder')?.click();
@@ -647,7 +642,6 @@ window.addEventListener('DOMContentLoaded', () => {
   renderItems();
   computeTotal();
 
-  // LISTENERS: recompute total, deposit, etc
   zoneSelect?.addEventListener('change', ()=>{
     const s = computeTotal(); toggleDepositBanner(s.total);
   });
@@ -674,10 +668,8 @@ window.addEventListener('DOMContentLoaded', () => {
     const s=computeTotal(); toggleDepositBanner(s.total);
   });
 
-  // close bot modal
+  // close modals
   botClose?.addEventListener('click', closeBot);
-
-  // close order modal
   closeBtn?.addEventListener('click', closeOrder);
 
   // open order modal from CTAs
@@ -716,7 +708,7 @@ window.addEventListener('DOMContentLoaded', () => {
     formLogin.classList.remove('hidden');
   });
 
-  // helper to jitter a driver's starting pin on the map
+  // helper to jitter driver's pin
   function jitterAround(pt,meters){
     const d=(meters||800)/111111;
     const r=Math.random()*d;
@@ -873,7 +865,6 @@ window.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // base hub per zone for map marker
     const hubMap = {
       A:HUBS[0],
       B:HUBS[1],
@@ -884,7 +875,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const hub   = hubMap[zone] || HUBS[0];
     const start = jitterAround({lat:hub.lat,lng:hub.lng},1500);
 
-    // visually pop driver on map
+    // show driver pin on map
     L.marker([start.lat,start.lng],{icon:carIcon(zone)}).addTo(heroMap);
 
     const driverPayload = {
@@ -894,10 +885,7 @@ window.addEventListener('DOMContentLoaded', () => {
       vehicle,
       available: true,
       current_location: { lat:start.lat, lng:start.lng },
-      meta: {
-        zone,
-        radius_km: radius
-      }
+      meta: { zone, radius_km: radius }
     };
 
     if(!DEMO_MODE){
@@ -921,7 +909,6 @@ window.addEventListener('DOMContentLoaded', () => {
       console.info("[DEMO] Would POST driver", driverPayload);
     }
 
-    // WhatsApp notify admin
     const text = `New driver sign-up
 Name: ${name}
 Phone: ${phone}
@@ -1027,14 +1014,12 @@ Vehicle: ${vehicle}`;
           body: JSON.stringify(orderPayload)
         });
 
-        // Try to parse body regardless of status
         try {
           data = await res.json();
         } catch(e) {
           data = null;
         }
 
-        // 409 = backend says "no driver in that zone right now"
         if (res.status === 409 && data && data.error === "no_driver_available") {
           alert(
             data.message ||
@@ -1067,7 +1052,6 @@ Vehicle: ${vehicle}`;
           wa_message:     data.wa_message || null
         };
 
-        // update local heat stats that admin sees:
         if (data.zone_demand_snapshot) {
           zoneDemandStats = data.zone_demand_snapshot;
         }
@@ -1106,35 +1090,52 @@ Vehicle: ${vehicle}`;
     botPayChoice.value = latestOrderData.payment_method;
   });
 
-  // BOT NEXT
+  // BOT NEXT / PAY NOW
   botNext?.addEventListener('click', ()=>{
     if(!latestOrderData) return;
+
+    // update method in memory
     const pay = botPayChoice.value;
     latestOrderData.payment_method = pay;
 
-    if(pay === 'eft'){
+    if(botStage === 0){
+      // first click: explain how to pay and reveal WhatsApp button
+      if(pay === 'eft'){
+        appendBot(
+          `<b>Instant EFT (Ozow)</b><br/>
+           We'll WhatsApp you a secure Ozow link.<br/>
+           Use ref <code>${latestOrderData.order_public_id}</code>.`
+        );
+      } else if(pay === 'card'){
+        appendBot(
+          `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
+           Use ref <code>${latestOrderData.order_public_id}</code>.`
+        );
+      } else {
+        const deposit = Math.ceil(latestOrderData.total*0.5);
+        appendBot(
+          `<b>50% deposit + COD</b><br/>
+           Pay deposit now: <b>R${deposit}</b>.<br/>
+           Balance due at delivery.<br/>
+           Ref <code>${latestOrderData.order_public_id}</code>.`
+        );
+      }
+
       appendBot(
-        `<b>Instant EFT (Ozow)</b><br/>
-         We'll WhatsApp you a secure Ozow link.<br/>
-         Use ref <code>${latestOrderData.order_public_id}</code>.`
+        `When you're ready, hit <b>Send to WhatsApp</b> and we'll finalise your order + payment link.`
       );
-    } else if(pay === 'card'){
-      appendBot(
-        `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
-         Use ref <code>${latestOrderData.order_public_id}</code>.`
-      );
-    } else {
-      const deposit = Math.ceil(latestOrderData.total*0.5);
-      appendBot(
-        `<b>50% deposit + COD</b><br/>
-         Pay deposit now: <b>R${deposit}</b>.<br/>
-         Balance due at delivery.<br/>
-         Ref <code>${latestOrderData.order_public_id}</code>.`
-      );
+
+      // Reveal WA button, change Next -> Pay now
+      botSendWA.classList.remove('hidden');
+      botNext.textContent = "Pay now";
+
+      botStage = 1;
+      return;
     }
 
+    // stage 1: they've already seen instructions, "Pay now" just reminds them to press WA
     appendBot(
-      `When you're ready, press <b>Send to WhatsApp</b> so we can finalise your order.`
+      `Tap <b>Send to WhatsApp</b> so we can confirm, lock in your slot, and send the payment link.`
     );
   });
 
@@ -1145,14 +1146,13 @@ Vehicle: ${vehicle}`;
       return;
     }
 
-    // prefer server-signed WA message (includes address, ETA, total)
     const msg = latestOrderData.wa_message
       ? latestOrderData.wa_message
       : [
           "Yi Thume, my order is:",
           `Ref: ${latestOrderData.order_public_id}`,
           `Deliver to: Zone ${latestOrderData.zone}`,
-          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')} `,
+          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
           `Total: R${latestOrderData.total}`,
           `Expected: ${latestOrderData.eta}`,
           `Payment: ${latestOrderData.payment_method}`,
@@ -1179,7 +1179,6 @@ Vehicle: ${vehicle}`;
   }
   ordersClose?.addEventListener('click', closeOrders);
 
-  // allow programmatic open
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
     if(!ordersPanel.classList.contains('hidden')) renderOrders();
@@ -1187,11 +1186,75 @@ Vehicle: ${vehicle}`;
 
   ordersRefresh?.addEventListener('click', renderOrders);
 
-  // auto-assign helper: for each "pending" order in current tab, ask backend to /auto-assign
+  // single-order assign action
+  async function assignOneOrder(internalId){
+    if(!internalId){
+      alert("Missing order id.");
+      return;
+    }
+
+    if(DEMO_MODE){
+      alert(`[DEMO] Would auto-assign ${internalId}`);
+      return;
+    }
+
+    try{
+      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"}
+      });
+      const data = await res.json().catch(()=>({}));
+
+      if(res.ok && data && data.ok){
+        alert(`Assigned: ${internalId} -> ${data.driver_id || 'driver?'}`);
+      } else if (res.status === 409 && data && data.error === "no_driver_available") {
+        alert(`No driver available for ${internalId}`);
+      } else {
+        alert(`Failed to assign ${internalId} (${res.status})`);
+      }
+    }catch(err){
+      console.error("assignOneOrder err",err);
+      alert(`Network error assigning ${internalId}`);
+    }
+
+    renderOrders();
+  }
+
+  // single-order delivered action
+  async function markDelivered(internalId){
+    if(!internalId){
+      alert("Missing order id.");
+      return;
+    }
+
+    if(DEMO_MODE){
+      alert(`[DEMO] Would mark delivered ${internalId}`);
+      return;
+    }
+
+    try{
+      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({status:"delivered"})
+      });
+      const data = await res.json().catch(()=>({}));
+      if(res.ok && data && data.ok){
+        alert(`Marked delivered: ${internalId}`);
+      } else {
+        alert(`Failed to mark delivered (${res.status})`);
+      }
+    }catch(err){
+      console.error("markDelivered err",err);
+      alert(`Network error marking delivered ${internalId}`);
+    }
+
+    renderOrders();
+  }
+
+  // Auto-Assign All pending in current tab
   async function autoAssignForAll(){
     const ordersInTab = currentOrdersByTab[ordersTab] || [];
-
-    // we only try to assign pending orders
     const targets = ordersInTab.filter(o => o.status === 'pending');
 
     if (targets.length === 0){
@@ -1200,20 +1263,15 @@ Vehicle: ${vehicle}`;
     }
 
     const results = [];
-
     for (const o of targets){
-      const internalId =
-        o._internal_id ||
-        o.internal_id ||
-        null;
-
+      const internalId = o._internal_id || o.internal_id || null;
       if(!internalId){
-        results.push(`❓ Missing ID for one order, skipped.`);
+        results.push(`❓ Missing ID for an order, skipped.`);
         continue;
       }
 
       if (DEMO_MODE){
-        results.push(`✅ (demo) Order ${internalId} assigned to DRV-DEMO`);
+        results.push(`✅ (demo) ${internalId} -> DRV-DEMO`);
         continue;
       }
 
@@ -1228,26 +1286,23 @@ Vehicle: ${vehicle}`;
           const driverId = data.driver_id || "driver?";
           results.push(`✅ ${internalId} → ${driverId}`);
         } else if (res.status === 409 && data && data.error === "no_driver_available") {
-          results.push(`⚠️ ${internalId}: no driver available in that area`);
+          results.push(`⚠️ ${internalId}: no driver`);
         } else {
           results.push(`❌ ${internalId}: failed (${res.status})`);
         }
       } catch (err){
-        console.error("auto-assign error", err);
+        console.error("autoAssignForAll error", err);
         results.push(`❌ ${internalId}: network error`);
       }
     }
 
     alert(results.join("\n"));
-
-    // refresh list so statuses update
     renderOrders();
   }
 
-  // hook button to real auto-assign
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
-  // switch tabs (pending / review_required / assigned / delivered)
+  // tabs (pending / review_required / assigned / delivered)
   document.querySelectorAll('.yt-o-tab').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       document.querySelectorAll('.yt-o-tab')
@@ -1258,7 +1313,7 @@ Vehicle: ${vehicle}`;
     });
   });
 
-  // light admin PIN gate
+  // admin PIN gate
   adminBtn?.addEventListener('click', ()=>{
     const pin = prompt('Enter admin PIN:');
     if(pin && pin.trim() !== ""){
@@ -1269,11 +1324,10 @@ Vehicle: ${vehicle}`;
     }
   });
 
-  // helper to fetch orders by status
+  // fetch orders by status
   async function fetchOrdersByStatus(status){
     if(DEMO_MODE){
-      // demo mode stub
-      const demoOrders = [
+      return [
         {
           _internal_id: "demo-abc123",
           order_id: "YI-DEMO123",
@@ -1287,7 +1341,6 @@ Vehicle: ${vehicle}`;
           fraud_score: 0.07
         }
       ];
-      return demoOrders;
     }
 
     try {
@@ -1296,7 +1349,6 @@ Vehicle: ${vehicle}`;
       if(!res.ok || !data.ok){
         return [];
       }
-      // backend can optionally ship zoneDemand snapshot for demandBadge
       if (data.zone_demand_snapshot){
         zoneDemandStats = data.zone_demand_snapshot;
       }
@@ -1309,8 +1361,6 @@ Vehicle: ${vehicle}`;
 
   async function renderOrders(){
     const data = await fetchOrdersByStatus(ordersTab);
-
-    // stash array for this tab so auto-assign can use it without re-fetching
     currentOrdersByTab[ordersTab] = data;
 
     ordersList.innerHTML = data.length
@@ -1340,32 +1390,63 @@ Vehicle: ${vehicle}`;
         ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
         : "";
 
+      // buttons conditions
+      const isDelivered = o.status === "delivered";
+      const canAssign   = (o.status === "pending" || o.status === "review_required") && !isDelivered;
+      const canDeliver  = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
+
       const row = document.createElement('div');
-      row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-2';
+      row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3';
       row.setAttribute('data-order-id', internalId || '');
       row.setAttribute('data-order-status', o.status || '');
+
       row.innerHTML = `
-        <div class="flex-1">
+        <div class="flex-1 min-w-0">
           <div class="font-medium flex flex-wrap items-center gap-1">
             <span>Ref ${refDisplay}</span>
             <span>• Zone ${zoneDisplay}</span>
             <span>• Total R${o.total}</span>
             ${demandBadge(zoneDisplay)}
           </div>
-          <div class="text-xs text-slate-500">${itemsText}</div>
+          <div class="text-xs text-slate-500 break-words">${itemsText}</div>
           <div class="text-xs text-slate-500">
             Status: ${o.status}${fraudDisplay}
           </div>
         </div>
+        <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
+          <button
+            class="btn-assign px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            ${(!canAssign || !internalId) ? 'disabled' : ''}
+            data-id="${internalId || ''}">
+            Assign
+          </button>
+          <button
+            class="btn-delivered px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            ${(!canDeliver || !internalId) ? 'disabled' : ''}
+            data-id="${internalId || ''}">
+            Delivered
+          </button>
+        </div>
       `;
       ordersList.appendChild(row);
     }
-  }
 
+    // hook up row buttons AFTER rendering
+    ordersList.querySelectorAll('.btn-assign').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const id = btn.getAttribute('data-id');
+        assignOneOrder(id);
+      });
+    });
+    ordersList.querySelectorAll('.btn-delivered').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const id = btn.getAttribute('data-id');
+        markDelivered(id);
+      });
+    });
+  }
 });
 </script>
-
-
 
 </body>
 </html>
