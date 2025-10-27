@@ -323,32 +323,22 @@
 
 <script>
 window.addEventListener('DOMContentLoaded', () => {
-  // Grab config from the small <script> at top of <body>
-  // BASE_API, WHATSAPP_NUMBER, ADMIN_WHATSAPP, DEMO_MODE, waText are already defined there.
+  // config from <script> in <body> top:
+  // BASE_API, WHATSAPP_NUMBER, ADMIN_WHATSAPP, DEMO_MODE, waText
+
+  // === RUNTIME / GLOBAL STATE ===
+  let latestOrderData = null; // filled on successful checkout
+  let zoneDemandStats = {};   // { "A": {misses:3}, "C":{misses:1}, ... } comes from backend (admin view)
 
   // YEAR IN FOOTER
   const yearEl = document.getElementById('year');
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
-  // === MOBILE MENU TOGGLE ===
+  // === ELEMENT REFS ===
   const mobileBtn    = document.getElementById('mobileMenuBtn');
   const mobileClose  = document.getElementById('mobileMenuClose');
   const mobileNav    = document.getElementById('mobileNav');
-  const openMobile   = () => mobileNav.classList.remove('hidden');
-  const closeMobile  = () => mobileNav.classList.add('hidden');
-  mobileBtn?.addEventListener('click', openMobile);
-  mobileClose?.addEventListener('click', closeMobile);
-  document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{
-    closeMobile(); document.getElementById('openOrderBuilder')?.click();
-  });
-  document.getElementById('openDriverModalTopMobile')?.addEventListener('click', ()=>{
-    closeMobile(); document.getElementById('openDriverModal')?.click();
-  });
-  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{
-    closeMobile(); document.getElementById('adminLoginBtn')?.click();
-  });
 
-  // === ELEMENT REFS / STATE ===
   const modal               = document.getElementById('orderBuilder');
   const openOrderButtons    = ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'];
   const closeBtn            = document.getElementById('closeOrderBuilder');
@@ -363,7 +353,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const custPhoneEl         = document.getElementById('custPhone');
   const custAddrEl          = document.getElementById('custAddress');
 
-  // admin login = open Orders panel
   const adminBtn            = document.getElementById('adminLoginBtn');
 
   // Bot modal refs
@@ -383,7 +372,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const formSignup          = document.getElementById('driverFormSignup');
   const formLogin           = document.getElementById('driverFormLogin');
 
-  // Admin orders panel refs
+  // Admin panel refs
   const ordersPanel         = document.getElementById('ordersPanel');
   const ordersList          = document.getElementById('ordersList');
   const ordersClose         = document.getElementById('closeOrdersPanel');
@@ -391,11 +380,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const ordersRefresh       = document.getElementById('ordersRefresh');
   let   ordersTab           = 'pending';
 
-  // runtime state
-  let latestOrderData       = null; // We fill this after POST /orders
-
-
-  // === UTILITIES ===
+  // === CATALOG ===
   const CATALOG = [
     {name:'Panado 500mg (24s)',price:35},
     {name:'Allergex 10mg (10s)',price:30},
@@ -404,6 +389,7 @@ window.addEventListener('DOMContentLoaded', () => {
     {name:'Bandages (set)',price:25}
   ];
 
+  // === UTILS ===
   function renderItems(){
     itemsList.innerHTML = '';
     CATALOG.forEach((item,idx)=>{
@@ -468,6 +454,38 @@ window.addEventListener('DOMContentLoaded', () => {
     };
   }
 
+  function pad2(n){return String(n).padStart(2,'0');}
+
+  // delivery window guess
+  function nextETA(rush){
+    const now     = new Date();
+    const windows = [[8,10],[12,14],[16,18]];
+    const allowed = new Set([0,3,4,5,6]); // Sun,Wed,Thu,Fri,Sat
+    const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+    function fmt(date,[h1,h2]){
+      const sameDay = (date.toDateString()===new Date().toDateString());
+      if (sameDay){
+        return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
+      }
+      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
+    }
+
+    if (allowed.has(now.getDay())){
+      for(const w of windows){
+        if(now.getHours()<w[1]) return fmt(now,w);
+      }
+    }
+    for(let i=1;i<=7;i++){
+      const d = new Date(now);
+      d.setDate(now.getDate()+i);
+      if(allowed.has(d.getDay())){
+        return fmt(d,windows[0]);
+      }
+    }
+    return 'TBC';
+  }
+
   function toggleDepositBanner(total){
     const pay=selectedPay();
     if(pay==='deposit_cod'){
@@ -499,41 +517,6 @@ window.addEventListener('DOMContentLoaded', () => {
     botFeed.innerHTML='';
   }
 
-  function pad2(n){return String(n).padStart(2,'0');}
-
-  // Delivery slot estimator
-  function nextETA(rush){
-    const now     = new Date();
-    const windows = [[8,10],[12,14],[16,18]];
-    // allowed days: Sun=0, Wed=3, Thu=4, Fri=5, Sat=6
-    const allowed = new Set([0,3,4,5,6]);
-    const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-
-    function fmt(date,[h1,h2]){
-      const sameDay = (date.toDateString()===new Date().toDateString());
-      if (sameDay){
-        return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
-      }
-      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
-    }
-
-    if (allowed.has(now.getDay())){
-      for(const w of windows){
-        if(now.getHours()<w[1]) return fmt(now,w);
-      }
-    }
-
-    for(let i=1;i<=7;i++){
-      const d = new Date(now);
-      d.setDate(now.getDate()+i);
-      if(allowed.has(d.getDay())){
-        return fmt(d,windows[0]);
-      }
-    }
-
-    return 'TBC';
-  }
-
   function appendBot(msg,who='bot'){
     const wrap=document.createElement('div');
     wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
@@ -545,23 +528,39 @@ window.addEventListener('DOMContentLoaded', () => {
     botFeed.scrollTop = botFeed.scrollHeight;
   }
 
+  // mini heat indicator for admin: which zones are "cold" (drivers) vs "hot" (demand but no driver)
+  function demandBadge(zone){
+    const missCount = zoneDemandStats[zone]?.misses || 0;
+    if(missCount === 0) return "";
+    return `<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+      demand ${missCount}x / no driver
+    </span>`;
+  }
 
-  // === EVENT WIRING ===
-
-  // Show order modal (Start order buttons)
-  openOrderButtons.forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.addEventListener('click', openOrder);
+  // === MOBILE NAV EVENTS ===
+  const openMobile   = () => mobileNav.classList.remove('hidden');
+  const closeMobile  = () => mobileNav.classList.add('hidden');
+  mobileBtn?.addEventListener('click', openMobile);
+  mobileClose?.addEventListener('click', closeMobile);
+  document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{
+    closeMobile(); document.getElementById('openOrderBuilder')?.click();
+  });
+  document.getElementById('openDriverModalTopMobile')?.addEventListener('click', ()=>{
+    closeMobile(); document.getElementById('openDriverModal')?.click();
+  });
+  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{
+    closeMobile(); document.getElementById('adminLoginBtn')?.click();
   });
 
-  // Close order modal
-  if(closeBtn) closeBtn.addEventListener('click', closeOrder);
+  // === CART RENDER INIT ===
+  renderItems();
+  computeTotal();
 
-  // Recompute totals when zone / rush / items / qty / payment changes
-  if(zoneSelect) zoneSelect.addEventListener('change', ()=>{
+  // LISTENERS: recompute total, deposit, etc
+  zoneSelect?.addEventListener('change', ()=>{
     const s = computeTotal(); toggleDepositBanner(s.total);
   });
-  if(rushToggle) rushToggle.addEventListener('change', ()=>{
+  rushToggle?.addEventListener('change', ()=>{
     const s = computeTotal(); toggleDepositBanner(s.total);
   });
   document.addEventListener('change', e=>{
@@ -572,245 +571,379 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Add custom item to cart list
-  const addCustomBtn=document.getElementById('addCustomItem');
-  if(addCustomBtn){
-    addCustomBtn.addEventListener('click', e=>{
-      e.preventDefault();
-      const name = prompt('Item name');
-      const priceVal = prompt('Price (R)');
-      const price = Number(priceVal);
-      if(!name || !price || Number.isNaN(price)){ return; }
-      CATALOG.push({name,price});
-      renderItems();
-      const s=computeTotal(); toggleDepositBanner(s.total);
-    });
+  // add custom item
+  document.getElementById('addCustomItem')?.addEventListener('click', e=>{
+    e.preventDefault();
+    const name = prompt('Item name');
+    const priceVal = prompt('Price (R)');
+    const price = Number(priceVal);
+    if(!name || !price || Number.isNaN(price)){ return; }
+    CATALOG.push({name,price});
+    renderItems();
+    const s=computeTotal(); toggleDepositBanner(s.total);
+  });
+
+  // close bot modal
+  botClose?.addEventListener('click', closeBot);
+
+  // close order modal
+  closeBtn?.addEventListener('click', closeOrder);
+
+  // open modals
+  openOrderButtons.forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('click', openOrder);
+  });
+
+  // DRIVER MODAL OPEN/CLOSE
+  ;['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){
+      el.addEventListener('click',()=>{
+        driverModal.classList.remove('hidden');
+        driverModal.classList.add('flex');
+      });
+    }
+  });
+
+  closeDriver?.addEventListener('click',()=>{
+    driverModal.classList.add('hidden');
+    driverModal.classList.remove('flex');
+  });
+
+  // driver modal tabs
+  tabSignup?.addEventListener('click',()=>{
+    tabSignup.classList.add('bg-emerald-600','text-white');
+    tabLogin.classList.remove('bg-emerald-600','text-white');
+    formSignup.classList.remove('hidden');
+    formLogin.classList.add('hidden');
+  });
+  tabLogin?.addEventListener('click',()=>{
+    tabLogin.classList.add('bg-emerald-600','text-white');
+    tabSignup.classList.remove('bg-emerald-600','text-white');
+    formSignup.classList.add('hidden');
+    formLogin.classList.remove('hidden');
+  });
+
+  // helper to jitter a driver's starting pin on the map
+  function jitterAround(pt,meters){
+    const d=(meters||800)/111111;
+    const r=Math.random()*d;
+    const a=Math.random()*Math.PI*2;
+    return {
+      lat: pt.lat + r*Math.cos(a),
+      lng: pt.lng + r*Math.sin(a)
+    };
   }
 
-  // init cart UI once
-  renderItems();
-  computeTotal();
+  // SUBMIT DRIVER SIGNUP
+  formSignup?.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const name    = document.getElementById('drvName').value.trim();
+    const phone   = document.getElementById('drvPhone').value.trim();
+    const zone    = document.getElementById('drvZone').value;
+    const radius  = document.getElementById('drvRadius').value;
+    const vehicle = document.getElementById('drvVehicle').value.trim();
 
+    if(!name || !phone){
+      alert("Please enter name and phone.");
+      return;
+    }
 
-  // Close bot modal (X button)
-  if(botClose) botClose.addEventListener('click', closeBot);
+    // pick base hub by zone for map positioning
+    const hubMap = {
+      A:HUBS[0],
+      B:HUBS[1],
+      C:HUBS[2],
+      D:HUBS[3],
+      E:HUBS[5]
+    };
+    const hub   = hubMap[zone] || HUBS[0];
+    const start = jitterAround({lat:hub.lat,lng:hub.lng},1500);
 
+    // marker to "show" this driver is live
+    L.marker([start.lat,start.lng],{icon:carIcon(zone)}).addTo(heroMap);
+
+    const driverPayload = {
+        driver_id: `DRV-${Date.now().toString().slice(-6)}`,
+        name,
+        phone,
+        vehicle,
+        available: true,
+        current_location: { lat:start.lat, lng:start.lng },
+        meta: {
+          zone,
+          radius_km: radius
+        }
+    };
+
+    if(!DEMO_MODE){
+      try{
+        const r = await fetch(`${BASE_API}/drivers`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(driverPayload)
+        });
+
+        const j = await r.json().catch(()=>({}));
+        if (!r.ok || !j.ok){
+          alert("Driver save failed on server.");
+        } else {
+          console.log("driver create resp", j);
+        }
+      }catch(err){
+        console.error("driver create failed",err);
+      }
+    } else {
+      console.info("[DEMO] Would POST driver", driverPayload);
+    }
+
+    // WhatsApp notify admin: "new driver in zone X"
+    const text = `New driver sign-up
+Name: ${name}
+Phone: ${phone}
+Zone: ${zone}
+Radius: ${radius}km
+Vehicle: ${vehicle}`;
+    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
+
+    driverModal.classList.add('hidden');
+    driverModal.classList.remove('flex');
+  });
+
+  // fake driver login for now
+  formLogin?.addEventListener('submit',e=>{
+    e.preventDefault();
+    alert('Logged in (demo). Driver tasks coming next).');
+    driverModal.classList.add('hidden');
+    driverModal.classList.remove('flex');
+  });
 
   // === SUBMIT ORDER -> POST /orders ===
-  if(confirmBtn2){
-    confirmBtn2.addEventListener('click', async ()=>{
-      // Calculate totals & grab cart
-      const summary = computeTotal();
-      if (!summary.items.length){
-        alert('Please select at least one item.');
-        return;
-      }
+  confirmBtn2?.addEventListener('click', async ()=>{
+    const summary = computeTotal();
+    if (!summary.items.length){
+      alert('Please select at least one item.');
+      return;
+    }
 
-      // Collect customer info
-      const custName  = custNameEl.value.trim();
-      const custPhone = custPhoneEl.value.trim();
-      const custAddr  = custAddrEl.value.trim();
+    const custName  = custNameEl.value.trim();
+    const custPhone = custPhoneEl.value.trim();
+    const custAddr  = custAddrEl.value.trim();
+    if(!custName || !custPhone || !custAddr){
+      alert('Please fill name, WhatsApp and address.');
+      return;
+    }
 
-      if(!custName || !custPhone || !custAddr){
-        alert('Please fill name, WhatsApp and address.');
-        return;
-      }
+    const paymentMethod = selectedPay(); // 'card' / 'eft' / 'deposit_cod'
+    const eta           = nextETA(Boolean(summary.rush));
 
-      // Collect payment pref + ETA
-      const paymentMethod = selectedPay(); // 'card' / 'eft' / 'deposit_cod'
-      const eta           = nextETA(Boolean(summary.rush));
-
-      // Build the payload as Flask expects
-      const orderPayload = {
-        customer: {
-          name: custName,
-          phone: custPhone,
-          address: {
-            line1: custAddr,
-            suburb: `Zone ${summary.zoneVal}`,
-            coords: { lat: summary.hubLat, lng: summary.hubLng }
-          }
-        },
-        items: summary.items.map(it => ({
-          sku: null,               // we don't have SKUs in the UI yet
-          name: it.name,
-          qty: it.qty,
-          price: it.price
-        })),
-        subtotal: summary.itemsTotal,
-        delivery_fee: summary.fee + summary.rush,
-        total: summary.total,
-        payment: {
-          method: paymentMethod,
-          status: "pending",
-          provider_ref: null
-        },
-        created_by: "web",
-        route: {
-          eta_minutes: null,
-          distance_km: null,
-          eta_text: eta
-        },
-        meta: {
-          rush: !!summary.rush,
-          zone: summary.zoneVal
+    const orderPayload = {
+      customer: {
+        name: custName,
+        phone: custPhone,
+        address: {
+          line1: custAddr,
+          suburb: `Zone ${summary.zoneVal}`,
+          coords: { lat: summary.hubLat, lng: summary.hubLng }
         }
+      },
+      items: summary.items.map(it => ({
+        sku: null,
+        name: it.name,
+        qty: it.qty,
+        price: it.price
+      })),
+      subtotal: summary.itemsTotal,
+      delivery_fee: summary.fee + summary.rush,
+      total: summary.total,
+      payment: {
+        method: paymentMethod,
+        status: "pending",
+        provider_ref: null
+      },
+      created_by: "web",
+      route: {
+        eta_minutes: null,
+        distance_km: null,
+        eta_text: eta
+      },
+      meta: {
+        rush: !!summary.rush,
+        zone: summary.zoneVal
+      }
+    };
+
+    if(DEMO_MODE){
+      console.info("[DEMO] Would POST", orderPayload);
+      latestOrderData = {
+        order_public_id: "DEMO-" + Date.now().toString().slice(-6),
+        status: "pending",
+        fraud_score: 0.0,
+        total: summary.total,
+        zone: summary.zoneVal,
+        items: summary.items,
+        eta,
+        payment_method: paymentMethod,
+        wa_message:
+          `Yi Thume, my order is:\n` +
+          `Ref: DEMO-${Date.now().toString().slice(-6)}\n` +
+          `Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n` +
+          `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
+          `Total: R${summary.total}\n` +
+          `Expected: ${eta}\n` +
+          `Payment: ${paymentMethod}\n` +
+          `Please confirm + send payment link.`
       };
+    } else {
+      let data;
+      try {
+        const res = await fetch(`${BASE_API}/orders`, {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify(orderPayload)
+        });
 
-      // If we are in demo mode, we don't actually POST
-      if(DEMO_MODE){
-        console.info("[DEMO] Would POST", orderPayload);
-
-        latestOrderData = {
-          order_public_id: "DEMO-" + Date.now().toString().slice(-6),
-          status: "pending",
-          fraud_score: 0.0,
-          total: summary.total,
-          zone: summary.zoneVal,
-          items: summary.items,
-          eta,
-          payment_method: paymentMethod
-        };
-      } else {
-        // Real request to Flask
+        // Try to parse body regardless of status
         try {
-          const res = await fetch(`${BASE_API}/orders`, {
-            method:"POST",
-            headers:{ "Content-Type":"application/json" },
-            body: JSON.stringify(orderPayload)
-          });
+          data = await res.json();
+        } catch(e) {
+          data = null;
+        }
 
-          // handle non-200 (like 500 from Flask)
-          if(!res.ok){
-            console.error("Bad status", res.status);
-            alert("Order failed on server ("+res.status+").");
-            return;
-          }
-
-          let data;
-          try {
-            data = await res.json();
-          } catch(parseErr){
-            console.error("JSON parse error", parseErr);
-            alert("Server response wasn't JSON.");
-            return;
-          }
-
-          if(!data.ok){
-            console.error("Server said not ok", data);
-            alert("Order not accepted.");
-            return;
-          }
-
-          latestOrderData = {
-            order_public_id: data.order_public_id || data.order_id || ("YI-" + Date.now().toString().slice(-6)),
-            status:         data.status || "pending",
-            fraud_score:    data.fraud_score ?? null,
-            total:          summary.total,
-            zone:           summary.zoneVal,
-            items:          summary.items,
-            eta,
-            payment_method: paymentMethod
-          };
-
-        } catch(err){
-          console.error("Network/Fetch error", err);
-          alert("Network error creating order.");
+        // 409 = backend says "no driver in that zone right now"
+        if (res.status === 409 && data && data.error === "no_driver_available") {
+          alert(
+            data.message ||
+            `Sorry, no driver is currently available in your area (Zone ${orderPayload.meta.zone}). Please try later.`
+          );
           return;
         }
-      }
 
-      // Open bot modal and show summary
-      closeOrder();
-      openBot();
+        if(!res.ok){
+          console.error("Bad status", res.status, data);
+          alert("Order failed on server ("+res.status+").");
+          return;
+        }
 
-      appendBot(
-        `<b>YiThume</b> 🤖<br/>
-         Thanks for your order!<br/>
-         <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
-         <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
-         <b>Zone:</b> ${latestOrderData.zone}<br/>
-         <b>Total:</b> R${latestOrderData.total}<br/>
-         <b>Estimated window:</b> ${latestOrderData.eta}`
-      );
+        if(!data || !data.ok){
+          console.error("Server said not ok", data);
+          alert("Order not accepted.");
+          return;
+        }
 
-      if(latestOrderData.status === "review_required"){
-        appendBot(
-          `<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`
-        );
-      } else {
-        appendBot(
-          `Choose your payment method below and press <b>Next</b>.`
-        );
-      }
+        latestOrderData = {
+          order_public_id: data.order_public_id || data.order_id || ("YI-" + Date.now().toString().slice(-6)),
+          status:         data.status || "pending",
+          fraud_score:    data.fraud_score ?? null,
+          total:          summary.total,
+          zone:           summary.zoneVal,
+          items:          summary.items,
+          eta,
+          payment_method: paymentMethod,
+          wa_message:     data.wa_message || null
+        };
 
-      botPayChoice.value = latestOrderData.payment_method;
-    });
-  }
+        // update local heat stats that admin sees:
+        if (data.zone_demand_snapshot) {
+          // backend can return aggregated "misses per zone"
+          zoneDemandStats = data.zone_demand_snapshot;
+        }
 
-
-  // === BOT NEXT (explain payment flow to customer) ===
-  if(botNext){
-    botNext.addEventListener('click', ()=>{
-      if(!latestOrderData) return;
-      const pay = botPayChoice.value;
-      latestOrderData.payment_method = pay;
-
-      if(pay === 'eft'){
-        appendBot(
-          `<b>Instant EFT (Ozow)</b><br/>
-           We'll WhatsApp you a secure Ozow link.<br/>
-           Use ref <code>${latestOrderData.order_public_id}</code>.`
-        );
-      } else if(pay === 'card'){
-        appendBot(
-          `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
-           Use ref <code>${latestOrderData.order_public_id}</code>.`
-        );
-      } else {
-        const deposit = Math.ceil(latestOrderData.total*0.5);
-        appendBot(
-          `<b>50% deposit + COD</b><br/>
-           Pay deposit now: <b>R${deposit}</b>.<br/>
-           Balance due at delivery.<br/>
-           Ref <code>${latestOrderData.order_public_id}</code>.`
-        );
-      }
-
-      appendBot(
-        `When you're ready, press <b>Send to WhatsApp</b> so we can finalise your order.`
-      );
-    });
-  }
-
-
-  // === SEND TO WHATSAPP ===
-  if (botSendWA) {
-    botSendWA.addEventListener('click', () => {
-      if(!latestOrderData){
-        alert("No order data.");
+      } catch(err){
+        console.error("Network/Fetch error", err);
+        alert("Network error creating order.");
         return;
       }
+    }
 
-      const textLines = [
-        "YiThume order request:",
-        `Ref: ${latestOrderData.order_public_id}`,
-        `Zone: ${latestOrderData.zone}`,
-        `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
-        `Total: R${latestOrderData.total}`,
-        `ETA: ${latestOrderData.eta}`,
-        `Payment: ${latestOrderData.payment_method}`
-      ];
+    // SUCCESS UI
+    closeOrder();
+    openBot();
 
-      const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(textLines.join("\n"))}`;
-      window.open(wa,'_blank');
+    appendBot(
+      `<b>YiThume</b> 🤖<br/>
+       Thanks for your order!<br/>
+       <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
+       <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
+       <b>Zone:</b> ${latestOrderData.zone}<br/>
+       <b>Total:</b> R${latestOrderData.total}<br/>
+       <b>Estimated window:</b> ${latestOrderData.eta}`
+    );
 
-      botModal.classList.add('hidden');
-      botModal.classList.remove('flex');
-      alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
-    });
-  }
+    if(latestOrderData.status === "review_required"){
+      appendBot(
+        `<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`
+      );
+    } else {
+      appendBot(
+        `Choose your payment method below and press <b>Next</b>.`
+      );
+    }
 
+    botPayChoice.value = latestOrderData.payment_method;
+  });
+
+  // BOT NEXT
+  botNext?.addEventListener('click', ()=>{
+    if(!latestOrderData) return;
+    const pay = botPayChoice.value;
+    latestOrderData.payment_method = pay;
+
+    if(pay === 'eft'){
+      appendBot(
+        `<b>Instant EFT (Ozow)</b><br/>
+         We'll WhatsApp you a secure Ozow link.<br/>
+         Use ref <code>${latestOrderData.order_public_id}</code>.`
+      );
+    } else if(pay === 'card'){
+      appendBot(
+        `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
+         Use ref <code>${latestOrderData.order_public_id}</code>.`
+      );
+    } else {
+      const deposit = Math.ceil(latestOrderData.total*0.5);
+      appendBot(
+        `<b>50% deposit + COD</b><br/>
+         Pay deposit now: <b>R${deposit}</b>.<br/>
+         Balance due at delivery.<br/>
+         Ref <code>${latestOrderData.order_public_id}</code>.`
+      );
+    }
+
+    appendBot(
+      `When you're ready, press <b>Send to WhatsApp</b> so we can finalise your order.`
+    );
+  });
+
+  // SEND TO WHATSAPP
+  botSendWA?.addEventListener('click', () => {
+    if(!latestOrderData){
+      alert("No order data.");
+      return;
+    }
+
+    // prefer server-signed WA message (includes address, ETA, total)
+    const msg = latestOrderData.wa_message
+      ? latestOrderData.wa_message
+      : [
+          "Yi Thume, my order is:",
+          `Ref: ${latestOrderData.order_public_id}`,
+          `Deliver to: Zone ${latestOrderData.zone}`,
+          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
+          `Total: R${latestOrderData.total}`,
+          `Expected: ${latestOrderData.eta}`,
+          `Payment: ${latestOrderData.payment_method}`,
+          "Please confirm + send payment link."
+        ].join("\n");
+
+    const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}`;
+    window.open(wa,'_blank');
+
+    botModal.classList.add('hidden');
+    botModal.classList.remove('flex');
+    alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
+  });
 
   // === MAP VISUAL ===
   const heroEl  = document.getElementById('heroMap');
@@ -941,150 +1074,10 @@ window.addEventListener('DOMContentLoaded', () => {
     requestAnimationFrame(animate);
   }
   requestAnimationFrame(animate);
-
   setTimeout(()=>heroMap.invalidateSize(),180);
   window.addEventListener('resize',()=>heroMap.invalidateSize());
 
-
-  // === DRIVER MODAL ===
-  // open driver modal from any driver button
-  ['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el){
-      el.addEventListener('click',()=>{
-        driverModal.classList.remove('hidden');
-        driverModal.classList.add('flex');
-      });
-    }
-  });
-
-  // close driver modal
-  if(closeDriver){
-    closeDriver.addEventListener('click',()=>{
-      driverModal.classList.add('hidden');
-      driverModal.classList.remove('flex');
-    });
-  }
-
-  // tabs in driver modal
-  if(tabSignup){
-    tabSignup.addEventListener('click',()=>{
-      tabSignup.classList.add('bg-emerald-600','text-white');
-      tabLogin.classList.remove('bg-emerald-600','text-white');
-      formSignup.classList.remove('hidden');
-      formLogin.classList.add('hidden');
-    });
-  }
-  if(tabLogin){
-    tabLogin.addEventListener('click',()=>{
-      tabLogin.classList.add('bg-emerald-600','text-white');
-      tabSignup.classList.remove('bg-emerald-600','text-white');
-      formLogin.classList.remove('hidden');
-      formSignup.classList.add('hidden');
-    });
-  }
-
-  // helper for random-ish start location around hub
-  function jitterAround(pt,meters){
-    const d=(meters||800)/111111;
-    const r=Math.random()*d;
-    const a=Math.random()*Math.PI*2;
-    return {
-      lat: pt.lat + r*Math.cos(a),
-      lng: pt.lng + r*Math.sin(a)
-    };
-  }
-
-  // Submit driver signup -> POST /drivers
-  if(formSignup){
-    formSignup.addEventListener('submit', async e=>{
-      e.preventDefault();
-      const name    = document.getElementById('drvName').value.trim();
-      const phone   = document.getElementById('drvPhone').value.trim();
-      const zone    = document.getElementById('drvZone').value;
-      const radius  = document.getElementById('drvRadius').value;
-      const vehicle = document.getElementById('drvVehicle').value.trim();
-
-      if(!name || !phone){
-        alert("Please enter name and phone.");
-        return;
-      }
-
-      const hubMap = {
-        A:HUBS[0],
-        B:HUBS[1],
-        C:HUBS[2],
-        D:HUBS[3],
-        E:HUBS[5]
-      };
-      const hub   = hubMap[zone] || HUBS[0];
-      const start = jitterAround({lat:hub.lat,lng:hub.lng},1500);
-
-      // Marker on map so driver "appears"
-      L.marker([start.lat,start.lng],{icon:carIcon(zone)}).addTo(heroMap);
-
-      // Body for backend
-      const driverPayload = {
-        driver_id: `DRV-${Date.now().toString().slice(-6)}`,
-        name,
-        phone,
-        vehicle,
-        available: true,
-        current_location: { lat:start.lat, lng:start.lng },
-        meta: {
-          zone,
-          radius_km: radius
-        }
-      };
-
-      if(!DEMO_MODE){
-        try{
-          const r = await fetch(`${BASE_API}/drivers`,{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify(driverPayload)
-          });
-
-          if (!r.ok){
-            alert("Driver save failed on server ("+r.status+").");
-          } else {
-            const j = await r.json().catch(()=>({}));
-            console.log("driver create resp", j);
-          }
-        }catch(err){
-          console.error("driver create failed",err);
-        }
-      } else {
-        console.info("[DEMO] Would POST driver", driverPayload);
-      }
-
-      // Also ping you on WhatsApp so you see signup
-      const text = `New driver sign-up
-Name: ${name}
-Phone: ${phone}
-Zone: ${zone}
-Radius: ${radius}km
-Vehicle: ${vehicle}`;
-      window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
-
-      driverModal.classList.add('hidden');
-      driverModal.classList.remove('flex');
-    });
-  }
-
-  // fake login
-  if(formLogin){
-    formLogin.addEventListener('submit',e=>{
-      e.preventDefault();
-      alert('Logged in (demo). Driver tasks coming next).');
-      driverModal.classList.add('hidden');
-      driverModal.classList.remove('flex');
-    });
-  }
-
-
-  // === ADMIN ORDERS PANEL ===
-
+  // === ADMIN PANEL ===
   function openOrders(){
     ordersPanel.classList.remove('hidden');
     ordersPanel.classList.add('flex');
@@ -1094,10 +1087,9 @@ Vehicle: ${vehicle}`;
     ordersPanel.classList.add('hidden');
     ordersPanel.classList.remove('flex');
   }
-
   ordersClose?.addEventListener('click', closeOrders);
 
-  // Allow you to open panel from code if needed
+  // allow programmatic open
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
     if(!ordersPanel.classList.contains('hidden')) renderOrders();
@@ -1105,12 +1097,12 @@ Vehicle: ${vehicle}`;
 
   ordersRefresh?.addEventListener('click', renderOrders);
 
-  // You can hook auto-assign later to POST /orders/<id>/assign etc
+  // future: call backend auto-assign per order
   ordersAssign?.addEventListener('click', ()=>{
-    alert('Auto-assign will call /orders/<id>/assign for each pending paid order. Coming soon.');
+    alert('Auto-assign will call /orders/<id>/auto-assign for each pending order. Coming soon.');
   });
 
-  // Switch tabs buttons
+  // switch tabs (pending / review_required / assigned / delivered)
   document.querySelectorAll('.yt-o-tab').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       document.querySelectorAll('.yt-o-tab')
@@ -1121,9 +1113,9 @@ Vehicle: ${vehicle}`;
     });
   });
 
+  // light admin PIN gate
   adminBtn?.addEventListener('click', ()=>{
     const pin = prompt('Enter admin PIN:');
-    // Minimum lightweight check. You can upgrade this to real auth later.
     if(pin && pin.trim() !== ""){
       alert('Admin mode ON');
       openOrders();
@@ -1132,10 +1124,10 @@ Vehicle: ${vehicle}`;
     }
   });
 
-  // Fetch orders list by status from backend
+  // helper to fetch orders by status
   async function fetchOrdersByStatus(status){
     if(DEMO_MODE){
-      console.info("[DEMO] would GET orders?status=" + status);
+      // demo mode stub
       return [
         {
           order_id: "YI-DEMO123",
@@ -1153,18 +1145,14 @@ Vehicle: ${vehicle}`;
 
     try {
       const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
-      if(!res.ok){
-        console.error("fetchOrdersByStatus bad status", res.status);
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok || !data.ok){
         return [];
       }
-      let data;
-      try {
-        data = await res.json();
-      } catch(parseErr){
-        console.error("JSON parse err orders", parseErr);
-        return [];
+      // if backend also shipped zoneDemand snapshot, save it so we can show demandBadge()
+      if (data.zone_demand_snapshot){
+        zoneDemandStats = data.zone_demand_snapshot;
       }
-      if (!data.ok) return [];
       return Array.isArray(data.orders) ? data.orders : [];
     } catch(err){
       console.error("fetchOrdersByStatus error",err);
@@ -1175,6 +1163,7 @@ Vehicle: ${vehicle}`;
   async function renderOrders(){
     const data = await fetchOrdersByStatus(ordersTab);
 
+    // build panel
     ordersList.innerHTML = data.length
       ? ''
       : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
@@ -1184,14 +1173,14 @@ Vehicle: ${vehicle}`;
         .map(i=>`${i.name} x${i.qty}`)
         .join(', ');
 
-      // order_public_id vs _id vs order_id:
       const refDisplay =
         o.order_public_id ||
         o.order_id ||
-        o._id ||
+        o._internal_id ||
         "REF?";
 
-      const zoneDisplay = (o.meta && o.meta.zone) ? o.meta.zone : "";
+      const zoneDisplay =
+        (o.meta && o.meta.zone) ? o.meta.zone : "?";
 
       const fraudDisplay = (typeof o.fraud_score === "number")
         ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
@@ -1201,8 +1190,11 @@ Vehicle: ${vehicle}`;
       row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-2';
       row.innerHTML = `
         <div class="flex-1">
-          <div class="font-medium">
-            Ref ${refDisplay} • Zone ${zoneDisplay} • Total R${o.total}
+          <div class="font-medium flex flex-wrap items-center gap-1">
+            <span>Ref ${refDisplay}</span>
+            <span>• Zone ${zoneDisplay}</span>
+            <span>• Total R${o.total}</span>
+            ${demandBadge(zoneDisplay)}
           </div>
           <div class="text-xs text-slate-500">${itemsText}</div>
           <div class="text-xs text-slate-500">
@@ -1216,5 +1208,6 @@ Vehicle: ${vehicle}`;
 
 });
 </script>
+
 </body>
 </html>
