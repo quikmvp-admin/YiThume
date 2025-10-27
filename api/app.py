@@ -3,7 +3,6 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-# In-memory storage (resets on cold start)
 ORDERS = []
 DRIVERS = []
 
@@ -23,7 +22,6 @@ def _find(lst, key, value):
             return x
     return None
 
-# --- healthcheck ---
 @app.route("/", methods=["GET"])
 @app.route("/api/app", methods=["GET"])
 def health():
@@ -34,7 +32,6 @@ def health():
         "drivers_count": len(DRIVERS)
     }), 200
 
-# --- create order ---
 @app.route("/orders", methods=["POST"])
 @app.route("/api/app/orders", methods=["POST"])
 def create_order():
@@ -45,8 +42,8 @@ def create_order():
     total       = data.get("total", 0)
 
     order = {
-        "_internal_id": internal_id,       # internal tracking
-        "order_id": public_id,             # public ref shown to user
+        "_internal_id": internal_id,
+        "order_id": public_id,
         "created_at": _now_iso(),
         "customer": data.get("customer", {}),
         "items": data.get("items", []),
@@ -69,7 +66,6 @@ def create_order():
         "meta": data.get("meta", {})
     }
 
-    # basic "review" heuristic so your UI logic still works
     if total >= 500:
         order["status"] = "review_required"
         order["fraud_score"] = 0.8
@@ -86,7 +82,6 @@ def create_order():
         "fraud_flags": order["fraud_flags"]
     }), 201
 
-# --- list orders (admin panel) ---
 @app.route("/orders", methods=["GET"])
 @app.route("/api/app/orders", methods=["GET"])
 def list_orders():
@@ -94,7 +89,6 @@ def list_orders():
     rows = [o for o in ORDERS if (o["status"] == status)] if status else ORDERS
     return jsonify({"ok": True, "orders": rows}), 200
 
-# --- assign driver to order ---
 @app.route("/orders/<oid>/assign", methods=["POST"])
 @app.route("/api/app/orders/<oid>/assign", methods=["POST"])
 def assign_driver(oid):
@@ -116,7 +110,6 @@ def assign_driver(oid):
     order["status"] = "assigned"
     return jsonify({"ok": True}), 200
 
-# --- update order status ---
 @app.route("/orders/<oid>/status", methods=["POST"])
 @app.route("/api/app/orders/<oid>/status", methods=["POST"])
 def update_status(oid):
@@ -141,7 +134,6 @@ def update_status(oid):
 
     return jsonify({"ok": True}), 200
 
-# --- create driver ---
 @app.route("/drivers", methods=["POST"])
 @app.route("/api/app/drivers", methods=["POST"])
 def create_driver():
@@ -174,10 +166,9 @@ def create_driver():
         "driver_db_id": internal_id
     }), 201
 
-# --- list drivers ---
 @app.route("/drivers", methods=["GET"])
 @app.route("/api/app/drivers", methods=["GET"])
 def list_drivers():
     return jsonify({"ok": True, "drivers": DRIVERS}), 200
 
-# No app.run() here — Vercel imports `app`
+# no app.run(); Vercel imports `app`
