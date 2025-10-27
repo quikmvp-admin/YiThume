@@ -1,18 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-
-  // Tell Vercel "api/app.py is a Python 3.11 serverless function"
   "functions": {
     "api/app.py": {
       "runtime": "python3.11",
       "maxDuration": 10
     }
   },
-
-  // Rewrite all requests that start with /api/app
-  // so they are handled by that one function,
-  // but KEEP the original path (/api/app/orders etc)
-  // so Flask still sees /api/app/orders.
   "rewrites": [
     {
       "source": "/api/app/:path*",
