@@ -10,17 +10,21 @@ from bson.objectid import ObjectId
 # CONFIG
 # -----------------------
 
+# IMPORTANT:
+# On Vercel, set MONGO_URI in Project Settings → Environment Variables.
+# Do NOT hardcode your real username/password in git.
 MONGO_URI = os.environ.get(
     "MONGO_URI",
+    # fallback so local dev doesn't immediately explode.
+    # (This can be a local/test URI. Avoid committing real creds.)
     "mongodb+srv://username:password@cluster0.mongodb.net/yithume?retryWrites=true&w=majority"
-    # ↑ fallback for local dev. In Vercel, set MONGO_URI in Project Settings > Environment Variables.
 )
 
 client = MongoClient(MONGO_URI)
-db = client.yithume  # the DB name in Atlas
+db = client.yithume  # DB name in Atlas
 
 app = Flask(__name__)
-CORS(app)  # lets browser talk to this API
+CORS(app)  # allow browser -> serverless function POSTs
 
 
 # -----------------------
@@ -31,9 +35,11 @@ def make_order_id():
     return f"YI-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
 
 def inside_service_area(lat, lng):
-    # loose check
+    # loose check: if coords missing, allow it
     if lat is None or lng is None:
         return True
+
+    # rough EC bounding box
     min_lat, max_lat = -34.2, -33.0
     min_lng, max_lng = 25.5, 27.5
     return (min_lat <= lat <= max_lat) and (min_lng <= lng <= max_lng)
@@ -45,7 +51,7 @@ def rule_based_score(order_doc):
     phone = order_doc.get("customer", {}).get("phone")
     total_value = order_doc.get("total", 0)
 
-    # phone velocity
+    # 1. phone velocity (3+ orders in last hour from same number = suspicious)
     if phone:
         recent_same_phone = db.orders.count_documents({
             "customer.phone": phone,
@@ -55,7 +61,7 @@ def rule_based_score(order_doc):
             flags["phone_velocity"] = True
             score += 0.4
 
-        # duplicate in last 10 min
+        # 2. duplicate in last 10 min (same phone + same subtotal)
         recent_dup = db.orders.find_one({
             "customer.phone": phone,
             "subtotal": order_doc.get("subtotal", 0),
@@ -65,7 +71,7 @@ def rule_based_score(order_doc):
             flags["duplicate_order"] = True
             score += 0.3
 
-    # service area
+    # 3. service area check
     coords = (
         order_doc.get("customer", {})
                  .get("address", {})
@@ -77,10 +83,10 @@ def rule_based_score(order_doc):
         flags["address_out_of_area"] = True
         score += 0.5
 
-    # high order value vs average
+    # 4. high order value (3x avg)
     pipeline = [{"$group": {"_id": None, "avg": {"$avg": "$total"}}}]
     agg = list(db.orders.aggregate(pipeline))
-    avg_total = agg[0]["avg"] if agg else 50
+    avg_total = agg[0]["avg"] if agg else 50  # default baseline ~R50 if no history yet
 
     if total_value > avg_total * 3:
         flags["high_value"] = True
@@ -113,12 +119,12 @@ def log_audit(entity, entity_id, action, payload, by="system"):
 # ROUTES
 # -----------------------
 #
-# IMPORTANT:
-# The frontend calls /api/app/... in fetch().
-# Vercel rewrites /api/app/:path* -> /api/app (api/app.py),
-# and forwards the ORIGINAL path into Flask.
-# So these /api/app/... routes stay valid.
+# Thanks to vercel.json rewrites, any request that starts with
+# /api/app/... will be executed by THIS single function.
 #
+# We mount routes at both "/api/app/..." and also without the prefix
+# ("/orders") so you can hit them locally without the rewrite.
+# In production the browser will call "/api/app/..." paths.
 
 @app.route("/", methods=["GET"])
 @app.route("/api/app", methods=["GET"])
@@ -160,7 +166,7 @@ def create_order():
     res = db.orders.insert_one(order_doc)
     oid = res.inserted_id
 
-    # fraud rules
+    # simple fraud rules
     score, flags = rule_based_score(order_doc)
     order_status = "pending"
     if score >= 0.75:
@@ -293,7 +299,7 @@ def create_driver():
         },
         "weekly_payout_due": 0.0,
         "earnings_history": [],
-        "ratings": { "count": 0, "avg": None }
+        "ratings": {"count": 0, "avg": None}
     }
 
     res = db.drivers.insert_one(driver_doc)
@@ -317,6 +323,6 @@ def list_drivers():
         out.append(d)
     return jsonify({"ok": True, "drivers": out}), 200
 
-
-# DO NOT add app.run() at the bottom for Vercel.
-# Vercel imports this file and serves `app` automatically.
+# NOTE:
+# We intentionally do NOT put "if __name__ == '__main__': app.run(...)"
+# Vercel imports this file and serves `app` for you.
