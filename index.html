@@ -377,20 +377,25 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // === RUNTIME / GLOBAL STATE ===
   let latestOrderData = null; // filled on successful checkout
-  let zoneDemandStats = {};   // { "A": {misses:3}, "C":{misses:1}, ... } comes from backend (admin view)
+  let zoneDemandStats = {};   // { "A": {misses:3}, ... } from backend (admin view)
+
+  // cache for admin panel so Auto-Assign can loop orders already fetched
+  // shape: { pending: [ {...}, {...} ], assigned: [...], ... }
+  const currentOrdersByTab = {};
 
   // YEAR IN FOOTER
   const yearEl = document.getElementById('year');
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
   // === ELEMENT REFS ===
-  // mobile nav elements (new responsive drawer)
+  // mobile nav elements (responsive drawer)
   const mobileBtn       = document.getElementById('mobileMenuBtn');
   const mobileClose     = document.getElementById('mobileMenuClose');
   const mobileNav       = document.getElementById('mobileNav');         // wrapper (fixed inset-0)
-  const mobileSheet     = document.getElementById('mobileNavSheet');    // aside (slides in/out)
+  const mobileSheet     = document.getElementById('mobileNavSheet');    // sliding panel
   const mobileBackdrop  = document.getElementById('mobileNavBackdrop'); // dark overlay
 
+  // order builder / checkout modal
   const modal               = document.getElementById('orderBuilder');
   const openOrderButtons    = ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'];
   const closeBtn            = document.getElementById('closeOrderBuilder');
@@ -618,7 +623,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // after transition ends, hide wrapper so it stops intercepting clicks
     setTimeout(() => {
       mobileNav.classList.add('hidden');
-    }, 200); // keep in sync with duration-200 in CSS classes
+    }, 200); // sync with duration-200
   }
 
   mobileBtn?.addEventListener('click', openMobile);
@@ -676,7 +681,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // close order modal
   closeBtn?.addEventListener('click', closeOrder);
 
-  // open modals
+  // open order modal from CTAs
   openOrderButtons.forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.addEventListener('click', openOrder);
@@ -1183,10 +1188,65 @@ Vehicle: ${vehicle}`;
 
   ordersRefresh?.addEventListener('click', renderOrders);
 
-  // future: call backend auto-assign per order
-  ordersAssign?.addEventListener('click', ()=>{
-    alert('Auto-assign will call /orders/<id>/auto-assign for each pending order. Coming soon.');
-  });
+  // auto-assign helper: for each "pending" order in current tab, ask backend to /auto-assign
+  async function autoAssignForAll(){
+    const ordersInTab = currentOrdersByTab[ordersTab] || [];
+
+    // we only try to assign pending orders
+    const targets = ordersInTab.filter(o => o.status === 'pending');
+
+    if (targets.length === 0){
+      alert("No pending orders in this view to assign.");
+      return;
+    }
+
+    const results = [];
+
+    for (const o of targets){
+      const internalId =
+        o._internal_id ||
+        o.internal_id ||
+        null;
+
+      if(!internalId){
+        results.push(`❓ Missing ID for one order, skipped.`);
+        continue;
+      }
+
+      if (DEMO_MODE){
+        results.push(`✅ (demo) Order ${internalId} assigned to DRV-DEMO`);
+        continue;
+      }
+
+      try {
+        const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"}
+        });
+        const data = await res.json().catch(()=>({}));
+
+        if(res.ok && data && data.ok){
+          const driverId = data.driver_id || "driver?";
+          results.push(`✅ ${internalId} → ${driverId}`);
+        } else if (res.status === 409 && data && data.error === "no_driver_available") {
+          results.push(`⚠️ ${internalId}: no driver available in that area`);
+        } else {
+          results.push(`❌ ${internalId}: failed (${res.status})`);
+        }
+      } catch (err){
+        console.error("auto-assign error", err);
+        results.push(`❌ ${internalId}: network error`);
+      }
+    }
+
+    alert(results.join("\n"));
+
+    // refresh list so statuses update
+    renderOrders();
+  }
+
+  // hook button to real auto-assign
+  ordersAssign?.addEventListener('click', autoAssignForAll);
 
   // switch tabs (pending / review_required / assigned / delivered)
   document.querySelectorAll('.yt-o-tab').forEach(btn=>{
@@ -1214,8 +1274,9 @@ Vehicle: ${vehicle}`;
   async function fetchOrdersByStatus(status){
     if(DEMO_MODE){
       // demo mode stub
-      return [
+      const demoOrders = [
         {
+          _internal_id: "demo-abc123",
           order_id: "YI-DEMO123",
           status: status,
           total: 120,
@@ -1227,6 +1288,7 @@ Vehicle: ${vehicle}`;
           fraud_score: 0.07
         }
       ];
+      return demoOrders;
     }
 
     try {
@@ -1235,7 +1297,7 @@ Vehicle: ${vehicle}`;
       if(!res.ok || !data.ok){
         return [];
       }
-      // if backend also shipped zoneDemand snapshot, save it so we can show demandBadge()
+      // backend can optionally ship zoneDemand snapshot for demandBadge
       if (data.zone_demand_snapshot){
         zoneDemandStats = data.zone_demand_snapshot;
       }
@@ -1249,7 +1311,9 @@ Vehicle: ${vehicle}`;
   async function renderOrders(){
     const data = await fetchOrdersByStatus(ordersTab);
 
-    // build panel
+    // stash array for this tab so auto-assign can use it without re-fetching
+    currentOrdersByTab[ordersTab] = data;
+
     ordersList.innerHTML = data.length
       ? ''
       : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
@@ -1259,10 +1323,15 @@ Vehicle: ${vehicle}`;
         .map(i=>`${i.name} x${i.qty}`)
         .join(', ');
 
+      const internalId =
+        o._internal_id ||
+        o.internal_id ||
+        null;
+
       const refDisplay =
         o.order_public_id ||
         o.order_id ||
-        o._internal_id ||
+        internalId ||
         "REF?";
 
       const zoneDisplay =
@@ -1274,6 +1343,8 @@ Vehicle: ${vehicle}`;
 
       const row = document.createElement('div');
       row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-2';
+      row.setAttribute('data-order-id', internalId || '');
+      row.setAttribute('data-order-status', o.status || '');
       row.innerHTML = `
         <div class="flex-1">
           <div class="font-medium flex flex-wrap items-center gap-1">
@@ -1294,6 +1365,7 @@ Vehicle: ${vehicle}`;
 
 });
 </script>
+
 
 
 </body>
