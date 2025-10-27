@@ -3,43 +3,49 @@ import uuid
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from pymongo import MongoClient
+from pymongo import MongoClient, errors as mongo_errors
 
 # -------------------------------------------------
-# Mongo connection
+# ENV + LAZY MONGO
 # -------------------------------------------------
-#
-# On Vercel:
-#   Project Settings → Environment Variables
-#   Name: MONGO_URI
-#   Value: your full mongodb+srv://... string
-#
-# We default to a placeholder so local dev doesn't instantly die.
+
 MONGO_URI = os.environ.get(
     "MONGO_URI",
     "mongodb+srv://username:password@cluster0.mongodb.net/yithume?retryWrites=true&w=majority"
 )
 
-client = MongoClient(MONGO_URI)
-db = client["yithume"]  # DB name in Atlas
+# We'll create the client up front, but we won't assume it's valid until we try.
+mongo_client = MongoClient(MONGO_URI)
+DB_NAME = "yithume"
+
+def get_db():
+    """
+    Return a live db handle if Mongo works.
+    If Mongo is down / bad URI / not allowed, raise RuntimeError.
+    """
+    try:
+        # cheap ping to ensure connection works
+        mongo_client.admin.command("ping")
+        return mongo_client[DB_NAME]
+    except Exception as e:
+        raise RuntimeError(f"Mongo connection failed: {e}")
 
 
 # -------------------------------------------------
-# Flask app
+# FLASK APP
 # -------------------------------------------------
+
 app = Flask(__name__)
 CORS(app)
 
-
 # -------------------------------------------------
-# Helpers
+# HELPERS
 # -------------------------------------------------
 
 def _now_dt():
     return datetime.utcnow()
 
 def _now_iso():
-    # We'll store a machine datetime for sorting and a string for display
     return datetime.utcnow().isoformat() + "Z"
 
 def make_order_public_id():
@@ -47,21 +53,19 @@ def make_order_public_id():
     return f"YI-{ts}-{str(uuid.uuid4())[:6].upper()}"
 
 def safe_order_doc(doc):
-    """
-    Convert Mongo order doc to something safe for frontend.
-    - Drop Mongo _id (ObjectId)
-    - Convert datetimes to strings
-    """
     if not doc:
         return None
     out = dict(doc)
     out.pop("_id", None)
 
-    # normalize created_at for UI
-    if "created_at" in out and isinstance(out["created_at"], datetime):
+    # normalize datetimes
+    if isinstance(out.get("created_at"), datetime):
         out["created_at"] = out["created_at"].isoformat() + "Z"
+    if isinstance(out.get("assigned_at"), datetime):
+        out["assigned_at"] = out["assigned_at"].isoformat() + "Z"
+    if isinstance(out.get("delivered_at"), datetime):
+        out["delivered_at"] = out["delivered_at"].isoformat() + "Z"
 
-    # we already store created_at_iso separately anyway
     return out
 
 def safe_driver_doc(doc):
@@ -70,7 +74,6 @@ def safe_driver_doc(doc):
     out = dict(doc)
     out.pop("_id", None)
 
-    # normalize current_location.updated_at
     loc = out.get("current_location")
     if loc and isinstance(loc.get("updated_at"), datetime):
         loc["updated_at"] = loc["updated_at"].isoformat() + "Z"
@@ -80,24 +83,31 @@ def safe_driver_doc(doc):
 
 # -------------------------------------------------
 # ROUTES
-#   NOTE:
-#   Your frontend calls /api/app/...
-#   We also expose bare /... for local `flask run` testing.
+# (we expose both /api/app/... for production and /... for local dev)
 # -------------------------------------------------
-
 
 @app.route("/", methods=["GET"])
 @app.route("/api/app", methods=["GET"])
 def health():
-    orders_count = db.orders.count_documents({})
-    drivers_count = db.drivers.count_documents({"active": True})
-
-    return jsonify({
-        "ok": True,
-        "service": "YiThume (mongo)",
-        "orders_count": orders_count,
-        "drivers_count": drivers_count
-    }), 200
+    try:
+        db = get_db()
+        orders_count = db.orders.count_documents({})
+        drivers_count = db.drivers.count_documents({"active": True})
+        return jsonify({
+            "ok": True,
+            "service": "YiThume (mongo)",
+            "db": "up",
+            "orders_count": orders_count,
+            "drivers_count": drivers_count
+        }), 200
+    except RuntimeError as e:
+        # DB not reachable
+        return jsonify({
+            "ok": True,
+            "service": "YiThume (mongo)",
+            "db": "down",
+            "error": str(e)
+        }), 200
 
 
 # ---------------------------
@@ -108,15 +118,15 @@ def health():
 def create_order():
     data = request.json or {}
 
-    internal_id = str(uuid.uuid4())          # server-side primary ref
-    public_id   = make_order_public_id()     # human-friendly Ref
+    internal_id = str(uuid.uuid4())          # server-UUID
+    public_id   = make_order_public_id()     # human ref
     total       = data.get("total", 0)
 
     order_doc = {
-        "_internal_id": internal_id,         # used by admin panel actions
-        "order_id": public_id,               # shown to customer
-        "created_at": _now_dt(),             # datetime for sorting in Mongo
-        "created_at_iso": _now_iso(),        # human readable string
+        "_internal_id": internal_id,
+        "order_id": public_id,
+        "created_at": _now_dt(),
+        "created_at_iso": _now_iso(),
         "customer": data.get("customer", {}),
         "items": data.get("items", []),
         "subtotal": data.get("subtotal", 0),
@@ -138,16 +148,30 @@ def create_order():
         "meta": data.get("meta", {})
     }
 
-    # basic review rule so UI still shows "review_required"
+    # simple "review_required" rule
     if total >= 500:
         order_doc["status"] = "review_required"
         order_doc["fraud_score"] = 0.8
         order_doc["fraud_flags"] = {"high_value": True}
 
-    # insert into Mongo
-    db.orders.insert_one(order_doc)
+    try:
+        db = get_db()
+        db.orders.insert_one(order_doc)
+    except RuntimeError as e:
+        # Mongo unreachable
+        return jsonify({
+            "ok": False,
+            "error": "db_unavailable",
+            "details": str(e)
+        }), 500
+    except mongo_errors.PyMongoError as e:
+        # Driver blew up somewhere else
+        return jsonify({
+            "ok": False,
+            "error": "db_write_failed",
+            "details": str(e)
+        }), 500
 
-    # response shape matches what your frontend expects
     return jsonify({
         "ok": True,
         "order_db_id": internal_id,
@@ -165,56 +189,85 @@ def create_order():
 @app.route("/api/app/orders", methods=["GET"])
 def list_orders():
     status = request.args.get("status")
-
     query = {}
     if status:
         query["status"] = status
 
-    # newest first
-    cursor = (
-        db.orders
-          .find(query)
-          .sort("created_at", -1)
-          .limit(50)
-    )
+    try:
+        db = get_db()
+        cursor = (
+            db.orders
+              .find(query)
+              .sort("created_at", -1)
+              .limit(50)
+        )
+        out = [safe_order_doc(o) for o in cursor]
+        return jsonify({"ok": True, "orders": out}), 200
 
-    out = [safe_order_doc(o) for o in cursor]
-    return jsonify({"ok": True, "orders": out}), 200
+    except RuntimeError as e:
+        return jsonify({
+            "ok": False,
+            "error": "db_unavailable",
+            "details": str(e),
+            "orders": []
+        }), 500
+    except mongo_errors.PyMongoError as e:
+        return jsonify({
+            "ok": False,
+            "error": "db_read_failed",
+            "details": str(e),
+            "orders": []
+        }), 500
 
 
 # ---------------------------
-# ASSIGN DRIVER TO ORDER
+# ASSIGN DRIVER
 # ---------------------------
 @app.route("/orders/<oid>/assign", methods=["POST"])
 @app.route("/api/app/orders/<oid>/assign", methods=["POST"])
 def assign_driver(oid):
-    """
-    oid here is _internal_id for an order (not Mongo _id)
-    body.driver_id should be the driver's _internal_id
-    """
     body = request.json or {}
     driver_internal_id = body.get("driver_id")
     if not driver_internal_id:
         return jsonify({"ok": False, "error": "driver_id required"}), 400
 
-    order_doc = db.orders.find_one({"_internal_id": oid})
-    if not order_doc:
-        return jsonify({"ok": False, "error": "order not found"}), 404
+    try:
+        db = get_db()
 
-    driver_doc = db.drivers.find_one({"_internal_id": driver_internal_id, "active": True})
-    if not driver_doc:
-        return jsonify({"ok": False, "error": "driver not found"}), 404
+        order_doc = db.orders.find_one({"_internal_id": oid})
+        if not order_doc:
+            return jsonify({"ok": False, "error": "order not found"}), 404
 
-    db.orders.update_one(
-        {"_internal_id": oid},
-        {"$set": {
-            "assigned_driver_id": driver_internal_id,
-            "assigned_at": _now_dt(),
-            "status": "assigned"
-        }}
-    )
+        driver_doc = db.drivers.find_one({
+            "_internal_id": driver_internal_id,
+            "active": True
+        })
+        if not driver_doc:
+            return jsonify({"ok": False, "error": "driver not found"}), 404
 
-    return jsonify({"ok": True}), 200
+        db.orders.update_one(
+            {"_internal_id": oid},
+            {"$set": {
+                "assigned_driver_id": driver_internal_id,
+                "assigned_at": _now_dt(),
+                "status": "assigned"
+            }}
+        )
+
+        return jsonify({"ok": True}), 200
+
+    except RuntimeError as e:
+        return jsonify({
+            "ok": False,
+            "error": "db_unavailable",
+            "details": str(e)
+        }), 500
+    except mongo_errors.PyMongoError as e:
+        return jsonify({
+            "ok": False,
+            "error": "db_write_failed",
+            "details": str(e)
+        }), 500
 
 
 # ---------------------------
@@ -223,10 +276,6 @@ def assign_driver(oid):
 @app.route("/orders/<oid>/status", methods=["POST"])
 @app.route("/api/app/orders/<oid>/status", methods=["POST"])
 def update_status(oid):
-    """
-    Allows moving an order to in_transit / delivered / etc.
-    oid is _internal_id.
-    """
     body = request.json or {}
     new_status = body.get("status")
 
@@ -238,20 +287,36 @@ def update_status(oid):
     if new_status not in allowed:
         return jsonify({"ok": False, "error": "invalid status"}), 400
 
-    order_doc = db.orders.find_one({"_internal_id": oid})
-    if not order_doc:
-        return jsonify({"ok": False, "error": "order not found"}), 404
-
     update_fields = {"status": new_status}
     if new_status == "delivered":
         update_fields["delivered_at"] = _now_dt()
 
-    db.orders.update_one(
-        {"_internal_id": oid},
-        {"$set": update_fields}
-    )
+    try:
+        db = get_db()
 
-    return jsonify({"ok": True}), 200
+        order_doc = db.orders.find_one({"_internal_id": oid})
+        if not order_doc:
+            return jsonify({"ok": False, "error": "order not found"}), 404
+
+        db.orders.update_one(
+            {"_internal_id": oid},
+            {"$set": update_fields}
+        )
+
+        return jsonify({"ok": True}), 200
+
+    except RuntimeError as e:
+        return jsonify({
+            "ok": False,
+            "error": "db_unavailable",
+            "details": str(e)
+        }), 500
+    except mongo_errors.PyMongoError as e:
+        return jsonify({
+            "ok": False,
+            "error": "db_write_failed",
+            "details": str(e)
+        }), 500
 
 
 # ---------------------------
@@ -260,14 +325,6 @@ def update_status(oid):
 @app.route("/drivers", methods=["POST"])
 @app.route("/api/app/drivers", methods=["POST"])
 def create_driver():
-    """
-    Driver signup modal posts:
-      {
-        name, phone, vehicle, available, current_location: {lat,lng},
-        meta: { zone, radius_km }
-      }
-    We assign an internal id for that driver and save them.
-    """
     data = request.json or {}
     internal_id = str(uuid.uuid4())
 
@@ -290,12 +347,27 @@ def create_driver():
         "meta": data.get("meta", {})
     }
 
-    db.drivers.insert_one(driver_doc)
+    try:
+        db = get_db()
+        db.drivers.insert_one(driver_doc)
 
-    return jsonify({
-        "ok": True,
-        "driver_db_id": internal_id
-    }), 201
+        return jsonify({
+            "ok": True,
+            "driver_db_id": internal_id
+        }), 201
+
+    except RuntimeError as e:
+        return jsonify({
+            "ok": False,
+            "error": "db_unavailable",
+            "details": str(e)
+        }), 500
+    except mongo_errors.PyMongoError as e:
+        return jsonify({
+            "ok": False,
+            "error": "db_write_failed",
+            "details": str(e)
+        }), 500
 
 
 # ---------------------------
@@ -304,8 +376,25 @@ def create_driver():
 @app.route("/drivers", methods=["GET"])
 @app.route("/api/app/drivers", methods=["GET"])
 def list_drivers():
-    cursor = db.drivers.find({"active": True})
-    out = [safe_driver_doc(d) for d in cursor]
-    return jsonify({"ok": True, "drivers": out}), 200
+    try:
+        db = get_db()
+        cursor = db.drivers.find({"active": True})
+        out = [safe_driver_doc(d) for d in cursor]
+        return jsonify({"ok": True, "drivers": out}), 200
 
+    except RuntimeError as e:
+        return jsonify({
+            "ok": False,
+            "error": "db_unavailable",
+            "details": str(e),
+            "drivers": []
+        }), 500
+    except mongo_errors.PyMongoError as e:
+        return jsonify({
+            "ok": False,
+            "error": "db_read_failed",
+            "details": str(e),
+            "drivers": []
+        }), 500
 
+# no app.run(); Vercel imports `app`
