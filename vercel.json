@@ -1,15 +1,15 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
   "functions": {
     "api/app.py": {
-      "runtime": "python3.11",
+      "runtime": "@vercel/python",
       "maxDuration": 10
     }
   },
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/app/(.*)",
-      "destination": "/api/app"
+      "src": "/api/app(.*)",
+      "dest": "/api/app.py"
     }
   ]
 }
