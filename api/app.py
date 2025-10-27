@@ -12,15 +12,15 @@ from bson.objectid import ObjectId
 
 MONGO_URI = os.environ.get(
     "MONGO_URI",
-    # fallback so it doesn't instantly crash if env var isn't set in Vercel yet
     "mongodb+srv://username:password@cluster0.mongodb.net/yithume?retryWrites=true&w=majority"
+    # ↑ fallback for local dev. In Vercel, set MONGO_URI in Project Settings > Environment Variables.
 )
 
 client = MongoClient(MONGO_URI)
-db = client.yithume  # DB name
+db = client.yithume  # the DB name in Atlas
 
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # lets browser talk to this API
 
 
 # -----------------------
@@ -31,11 +31,9 @@ def make_order_id():
     return f"YI-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
 
 def inside_service_area(lat, lng):
-    # loose check, doesn't block legit orders if coords missing
+    # loose check
     if lat is None or lng is None:
         return True
-
-    # rough EC bounding box
     min_lat, max_lat = -34.2, -33.0
     min_lng, max_lng = 25.5, 27.5
     return (min_lat <= lat <= max_lat) and (min_lng <= lng <= max_lng)
@@ -47,7 +45,7 @@ def rule_based_score(order_doc):
     phone = order_doc.get("customer", {}).get("phone")
     total_value = order_doc.get("total", 0)
 
-    # 1. phone velocity
+    # phone velocity
     if phone:
         recent_same_phone = db.orders.count_documents({
             "customer.phone": phone,
@@ -57,7 +55,7 @@ def rule_based_score(order_doc):
             flags["phone_velocity"] = True
             score += 0.4
 
-        # 2. duplicate in last 10 min
+        # duplicate in last 10 min
         recent_dup = db.orders.find_one({
             "customer.phone": phone,
             "subtotal": order_doc.get("subtotal", 0),
@@ -67,7 +65,7 @@ def rule_based_score(order_doc):
             flags["duplicate_order"] = True
             score += 0.3
 
-    # 3. service area
+    # service area
     coords = (
         order_doc.get("customer", {})
                  .get("address", {})
@@ -79,7 +77,7 @@ def rule_based_score(order_doc):
         flags["address_out_of_area"] = True
         score += 0.5
 
-    # 4. high order value
+    # high order value vs average
     pipeline = [{"$group": {"_id": None, "avg": {"$avg": "$total"}}}]
     agg = list(db.orders.aggregate(pipeline))
     avg_total = agg[0]["avg"] if agg else 50
@@ -115,11 +113,11 @@ def log_audit(entity, entity_id, action, payload, by="system"):
 # ROUTES
 # -----------------------
 #
-# We mount each route twice:
-#   1. "/api/app/..."    <- what the browser will call (BASE_API=/api/app)
-#   2. "/.../..."        <- fallback/testing
-#
-# Vercel will route /api/app/... to this file because of vercel.json.
+# IMPORTANT:
+# The frontend calls /api/app/... in fetch().
+# Vercel rewrites /api/app/:path* -> /api/app (api/app.py),
+# and forwards the ORIGINAL path into Flask.
+# So these /api/app/... routes stay valid.
 #
 
 @app.route("/", methods=["GET"])
@@ -177,7 +175,7 @@ def create_order():
         }}
     )
 
-    # audit
+    # audit log
     log_audit("orders", oid, "create", {
         **order_doc,
         "fraud_score": score,
@@ -320,6 +318,5 @@ def list_drivers():
     return jsonify({"ok": True, "drivers": out}), 200
 
 
-# IMPORTANT:
-# DO NOT put "if __name__ == '__main__': app.run(...)" here.
-# On Vercel, this file is imported, not run like a normal server process.
+# DO NOT add app.run() at the bottom for Vercel.
+# Vercel imports this file and serves `app` automatically.
