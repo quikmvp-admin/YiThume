@@ -45,7 +45,11 @@
   <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
     <div class="flex items-center gap-2">
       <svg width="36" height="36" viewBox="0 0 36 36" class="rounded-2xl" aria-label="YiThume logo">
-        <defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#059669"/></linearGradient></defs>
+        <defs>
+          <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#059669"/>
+          </linearGradient>
+        </defs>
         <rect rx="12" width="36" height="36" fill="url(#g)"/>
         <path d="M10 12l5 8v4h-3v-3l-5-9h3zM26 12l-5 8v4h3v-3l5-9h-3z" fill="#fff"/>
       </svg>
@@ -63,38 +67,83 @@
 
     <div class="flex items-center gap-2">
       <!-- Mobile hamburger -->
-      <button id="mobileMenuBtn" class="md:hidden p-2 rounded-lg border border-slate-300" aria-label="Open menu">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <button id="mobileMenuBtn"
+        class="md:hidden p-2 rounded-lg border border-slate-300 active:scale-95 transition"
+        aria-label="Open menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path d="M4 6h16M4 12h16M4 18h16"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
       </button>
-      <!-- CTAs -->
+
+      <!-- CTAs (desktop / sm+) -->
       <div class="hidden sm:flex items-center gap-2">
-        <button id="openOrderBuilderTop" class="px-3 py-2 text-sm rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Start order</button>
-        <button id="openDriverModalTop" class="px-3 py-2 text-sm rounded-xl border border-slate-300 hover:bg-slate-100">Driver sign-in / up</button>
-        <!-- Admin login -->
-        <button id="adminLoginBtn" class="px-3 py-2 text-xs rounded-xl border border-slate-300 hover:bg-slate-100">Admin</button>
+        <button id="openOrderBuilderTop"
+          class="px-3 py-2 text-sm rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">
+          Start order
+        </button>
+        <button id="openDriverModalTop"
+          class="px-3 py-2 text-sm rounded-xl border border-slate-300 hover:bg-slate-100">
+          Driver sign-in / up
+        </button>
+
+        <button id="adminLoginBtn"
+          class="px-3 py-2 text-xs rounded-xl border border-slate-300 hover:bg-slate-100">
+          Admin
+        </button>
       </div>
     </div>
   </div>
 
   <!-- Mobile nav panel -->
-  <div id="mobileNav" class="hidden md:hidden fixed inset-0 z-50 bg-black/40">
-    <div class="absolute right-0 top-0 h-full w-72 bg-white shadow-xl p-4 overflow-y-auto">
-      <div class="flex items-center justify-between pb-3 border-b">
-        <div class="font-semibold">Menu</div>
-        <button id="mobileMenuClose" class="p-1 rounded hover:bg-slate-100" aria-label="Close menu">✕</button>
-      </div>
-      <nav class="mt-3 grid gap-2">
-        <a href="#how" class="py-2 px-2 rounded hover:bg-slate-50">How It Works</a>
-        <a href="#services" class="py-2 px-2 rounded hover:bg-slate-50">Services</a>
-        <a href="#pricing" class="py-2 px-2 rounded hover:bg-slate-50">Pricing & Zones</a>
-        <a href="#drivers" class="py-2 px-2 rounded hover:bg-slate-50">For Drivers</a>
-        <a href="#faq" class="py-2 px-2 rounded hover:bg-slate-50">FAQ</a>
-        <div class="h-px bg-slate-200 my-2"></div>
-        <button id="openOrderBuilderTopMobile" class="w-full py-2 rounded-xl bg-emerald-600 text-white">Start order</button>
-        <button id="openDriverModalTopMobile" class="w-full py-2 rounded-xl border border-slate-300">Driver sign-in / up</button>
-        <button id="adminLoginBtnMobile" class="w-full py-2 rounded-xl border border-slate-300">Admin</button>
-      </nav>
+  <!-- overlay -->
+  <div id="mobileNav"
+    class="fixed inset-0 z-[10000] hidden"  <!-- now super high -->
+    aria-hidden="true">
+
+    <!-- backdrop -->
+    <div id="mobileNavBackdrop"
+      class="absolute inset-0 bg-black/40 opacity-0 transition-opacity duration-200 ease-out">
     </div>
+
+    <!-- sheet -->
+    <aside id="mobileNavSheet"
+      class="absolute right-0 top-0 h-full w-72 max-w-[80%] bg-white shadow-xl border-l border-slate-200
+             translate-x-full transition-transform duration-200 ease-out
+             flex flex-col overflow-y-auto">
+
+      <div class="flex items-center justify-between p-4 border-b">
+        <div class="font-semibold">Menu</div>
+        <button id="mobileMenuClose"
+          class="p-1 rounded hover:bg-slate-100 active:scale-95 transition"
+          aria-label="Close menu">✕</button>
+      </div>
+
+      <nav class="mt-3 grid gap-2 text-sm px-4 pb-4">
+        <a href="#how" class="py-2 px-2 rounded hover:bg-slate-50 block">How It Works</a>
+        <a href="#services" class="py-2 px-2 rounded hover:bg-slate-50 block">Services</a>
+        <a href="#pricing" class="py-2 px-2 rounded hover:bg-slate-50 block">Pricing & Zones</a>
+        <a href="#drivers" class="py-2 px-2 rounded hover:bg-slate-50 block">For Drivers</a>
+        <a href="#faq" class="py-2 px-2 rounded hover:bg-slate-50 block">FAQ</a>
+
+        <div class="h-px bg-slate-200 my-3"></div>
+
+        <button id="openOrderBuilderTopMobile"
+          class="w-full py-2 rounded-xl bg-emerald-600 text-white text-center active:scale-[.98] transition">
+          Start order
+        </button>
+
+        <button id="openDriverModalTopMobile"
+          class="w-full py-2 rounded-xl border border-slate-300 text-center active:scale-[.98] transition">
+          Driver sign-in / up
+        </button>
+
+        <button id="adminLoginBtnMobile"
+          class="w-full py-2 rounded-xl border border-slate-300 text-center text-xs active:scale-[.98] transition">
+          Admin
+        </button>
+      </nav>
+    </aside>
   </div>
 </header>
 
@@ -335,9 +384,12 @@ window.addEventListener('DOMContentLoaded', () => {
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
   // === ELEMENT REFS ===
-  const mobileBtn    = document.getElementById('mobileMenuBtn');
-  const mobileClose  = document.getElementById('mobileMenuClose');
-  const mobileNav    = document.getElementById('mobileNav');
+  // mobile nav elements (new responsive drawer)
+  const mobileBtn       = document.getElementById('mobileMenuBtn');
+  const mobileClose     = document.getElementById('mobileMenuClose');
+  const mobileNav       = document.getElementById('mobileNav');         // wrapper (fixed inset-0)
+  const mobileSheet     = document.getElementById('mobileNavSheet');    // aside (slides in/out)
+  const mobileBackdrop  = document.getElementById('mobileNavBackdrop'); // dark overlay
 
   const modal               = document.getElementById('orderBuilder');
   const openOrderButtons    = ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'];
@@ -537,19 +589,54 @@ window.addEventListener('DOMContentLoaded', () => {
     </span>`;
   }
 
-  // === MOBILE NAV EVENTS ===
-  const openMobile   = () => mobileNav.classList.remove('hidden');
-  const closeMobile  = () => mobileNav.classList.add('hidden');
+  // === MOBILE NAV (drawer) ===
+  function lockScroll() {
+    document.body.style.overflow = 'hidden';
+  }
+  function unlockScroll() {
+    document.body.style.overflow = '';
+  }
+
+  function openMobile() {
+    // show wrapper
+    mobileNav.classList.remove('hidden');
+
+    // animate next frame so transition plays
+    requestAnimationFrame(() => {
+      mobileSheet.classList.remove('translate-x-full');
+      mobileBackdrop.classList.remove('opacity-0');
+      lockScroll();
+    });
+  }
+
+  function closeMobile() {
+    // animate out
+    mobileSheet.classList.add('translate-x-full');
+    mobileBackdrop.classList.add('opacity-0');
+    unlockScroll();
+
+    // after transition ends, hide wrapper so it stops intercepting clicks
+    setTimeout(() => {
+      mobileNav.classList.add('hidden');
+    }, 200); // keep in sync with duration-200 in CSS classes
+  }
+
   mobileBtn?.addEventListener('click', openMobile);
   mobileClose?.addEventListener('click', closeMobile);
+  mobileBackdrop?.addEventListener('click', closeMobile);
+
+  // trigger flows from inside mobile menu (and close it first)
   document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{
-    closeMobile(); document.getElementById('openOrderBuilder')?.click();
+    closeMobile();
+    document.getElementById('openOrderBuilder')?.click();
   });
   document.getElementById('openDriverModalTopMobile')?.addEventListener('click', ()=>{
-    closeMobile(); document.getElementById('openDriverModal')?.click();
+    closeMobile();
+    document.getElementById('openDriverModal')?.click();
   });
   document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{
-    closeMobile(); document.getElementById('adminLoginBtn')?.click();
+    closeMobile();
+    document.getElementById('adminLoginBtn')?.click();
   });
 
   // === CART RENDER INIT ===
@@ -636,6 +723,138 @@ window.addEventListener('DOMContentLoaded', () => {
     };
   }
 
+  // === MAP VISUAL ===
+  const heroEl  = document.getElementById('heroMap');
+  const heroMap = L.map(heroEl,{
+    zoomControl:false, dragging:false, scrollWheelZoom:false,
+    doubleClickZoom:false, boxZoom:false, touchZoom:false
+  }).setView([-33.20, 26.55], 8);
+
+  L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    {
+      attribution:'',
+      opacity:0.96,
+      noWrap:true,
+      detectRetina:true
+    }
+  ).addTo(heroMap);
+
+  const southAfricaBounds = L.latLngBounds(
+    [[-35.5, 16.0], [-22.0, 33.5]]
+  );
+  heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
+
+  const HUBS=[
+    {name:'Port Alfred',zone:'A',lat:-33.590,lng:26.890},
+    {name:'Bathurst',zone:'B',lat:-33.498,lng:26.833},
+    {name:'Kenton-on-Sea',zone:'C',lat:-33.686,lng:26.668},
+    {name:'Makhanda/Grahamstown',zone:'D',lat:-33.310,lng:26.520},
+    {name:'Alice',zone:'D',lat:-32.787,lng:26.834},
+    {name:'Alexandria',zone:'E',lat:-33.653,lng:26.404},
+    {name:'Alicedale',zone:'E',lat:-33.321,lng:26.078}
+  ];
+
+  const ROADS = [
+    [[HUBS[1].lat,HUBS[1].lng],[HUBS[0].lat,HUBS[0].lng]],
+    [[HUBS[2].lat,HUBS[2].lng],[HUBS[5].lat,HUBS[5].lng]],
+    [[HUBS[6].lat,HUBS[6].lng],[HUBS[3].lat,HUBS[3].lng]],
+    [[HUBS[3].lat,HUBS[3].lng],[HUBS[4].lat,HUBS[4].lng]],
+    [[HUBS[4].lat,HUBS[4].lng],[HUBS[0].lat,HUBS[0].lng]],
+    [[HUBS[3].lat,HUBS[3].lng],[HUBS[2].lat,HUBS[2].lng]],
+    [[HUBS[5].lat,HUBS[5].lng],[HUBS[0].lat,HUBS[0].lng]],
+    [[HUBS[6].lat,HUBS[6].lng],[HUBS[2].lat,HUBS[2].lng]]
+  ];
+
+  function carIcon(zone){
+    const cls=`car-dot car-${zone}`;
+    const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
+      <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
+      <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
+      <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
+      <rect x='10' y='9' width='4' height='3' fill='#f59e0b'/>
+      <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
+      <circle cx='18' cy='20' r='3' fill='#0f172a'/>
+      <circle cx='46' cy='20' r='3' fill='#0f172a'/>
+    </g></svg>`;
+    return L.divIcon({
+      className:cls,
+      html:svg,
+      iconSize:[24,12],
+      iconAnchor:[12,6]
+    });
+  }
+
+  const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
+    <path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
+  </svg>`;
+
+  const pkgIcon=L.divIcon({
+    className:'pkg-dot',
+    html:pkgSvg,
+    iconSize:[20,20],
+    iconAnchor:[10,10]
+  });
+
+  function lerp(a,b,t){return a+(b-a)*t;}
+  function posOnSeg(seg,t){
+    const [A,B]=seg;
+    return [lerp(A[0],B[0],t), lerp(A[1],B[1],t)];
+  }
+
+  const cars   = [];
+  const parcels= [];
+
+  function makeCar(zone){
+    const seg     = ROADS[(Math.random()*ROADS.length)|0];
+    const startT  = Math.random();
+    const dir     = Math.random()<.5 ? 1 : -1;
+    const speed   = 0.10+Math.random()*0.06;
+    const [lat,lng]=posOnSeg(seg,startT);
+    const m      = L.marker([lat,lng],{icon:carIcon(zone)}).addTo(heroMap);
+    cars.push({m,seg,t:startT,dir,speed});
+  }
+
+  function makeParcel(){
+    const seg     = ROADS[(Math.random()*ROADS.length)|0];
+    const startT  = Math.random();
+    const dir     = Math.random()<.5 ? 1 : -1;
+    const speed   = 0.12+Math.random()*0.06;
+    const [lat,lng]=posOnSeg(seg,startT);
+    const m      = L.marker([lat,lng],{icon:pkgIcon}).addTo(heroMap);
+    parcels.push({m,seg,t:startT,dir,speed});
+  }
+
+  for(let i=0;i<10;i++) makeCar(['A','B','C','D','E'][i%5]);
+  for(let i=0;i<6;i++)  makeParcel();
+
+  let lastTS = performance.now();
+  function animate(now){
+    const dt = Math.min((now-lastTS)/1000, 0.05);
+    lastTS = now;
+
+    for(const c of cars){
+      c.t += c.speed * c.dir * dt;
+      if(c.t>1){ c.t=1; c.dir=-1; }
+      else if(c.t<0){ c.t=0; c.dir=1; }
+      const [lat,lng] = posOnSeg(c.seg,c.t);
+      c.m.setLatLng([lat,lng]);
+    }
+
+    for(const p of parcels){
+      p.t += p.speed * p.dir * dt;
+      if(p.t>1){ p.t=1; p.dir=-1; }
+      else if(p.t<0){ p.t=0; p.dir=1; }
+      const [lat,lng] = posOnSeg(p.seg,p.t);
+      p.m.setLatLng([lat,lng]);
+    }
+
+    requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+  setTimeout(()=>heroMap.invalidateSize(),180);
+  window.addEventListener('resize',()=>heroMap.invalidateSize());
+
   // SUBMIT DRIVER SIGNUP
   formSignup?.addEventListener('submit', async e=>{
     e.preventDefault();
@@ -650,7 +869,7 @@ window.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // pick base hub by zone for map positioning
+    // base hub per zone for map marker
     const hubMap = {
       A:HUBS[0],
       B:HUBS[1],
@@ -661,20 +880,20 @@ window.addEventListener('DOMContentLoaded', () => {
     const hub   = hubMap[zone] || HUBS[0];
     const start = jitterAround({lat:hub.lat,lng:hub.lng},1500);
 
-    // marker to "show" this driver is live
+    // visually pop driver on map
     L.marker([start.lat,start.lng],{icon:carIcon(zone)}).addTo(heroMap);
 
     const driverPayload = {
-        driver_id: `DRV-${Date.now().toString().slice(-6)}`,
-        name,
-        phone,
-        vehicle,
-        available: true,
-        current_location: { lat:start.lat, lng:start.lng },
-        meta: {
-          zone,
-          radius_km: radius
-        }
+      driver_id: `DRV-${Date.now().toString().slice(-6)}`,
+      name,
+      phone,
+      vehicle,
+      available: true,
+      current_location: { lat:start.lat, lng:start.lng },
+      meta: {
+        zone,
+        radius_km: radius
+      }
     };
 
     if(!DEMO_MODE){
@@ -698,7 +917,7 @@ window.addEventListener('DOMContentLoaded', () => {
       console.info("[DEMO] Would POST driver", driverPayload);
     }
 
-    // WhatsApp notify admin: "new driver in zone X"
+    // WhatsApp notify admin
     const text = `New driver sign-up
 Name: ${name}
 Phone: ${phone}
@@ -711,7 +930,7 @@ Vehicle: ${vehicle}`;
     driverModal.classList.remove('flex');
   });
 
-  // fake driver login for now
+  // fake driver login
   formLogin?.addEventListener('submit',e=>{
     e.preventDefault();
     alert('Logged in (demo). Driver tasks coming next).');
@@ -846,7 +1065,6 @@ Vehicle: ${vehicle}`;
 
         // update local heat stats that admin sees:
         if (data.zone_demand_snapshot) {
-          // backend can return aggregated "misses per zone"
           zoneDemandStats = data.zone_demand_snapshot;
         }
 
@@ -930,7 +1148,7 @@ Vehicle: ${vehicle}`;
           "Yi Thume, my order is:",
           `Ref: ${latestOrderData.order_public_id}`,
           `Deliver to: Zone ${latestOrderData.zone}`,
-          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
+          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')} `,
           `Total: R${latestOrderData.total}`,
           `Expected: ${latestOrderData.eta}`,
           `Payment: ${latestOrderData.payment_method}`,
@@ -944,138 +1162,6 @@ Vehicle: ${vehicle}`;
     botModal.classList.remove('flex');
     alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
   });
-
-  // === MAP VISUAL ===
-  const heroEl  = document.getElementById('heroMap');
-  const heroMap = L.map(heroEl,{
-    zoomControl:false, dragging:false, scrollWheelZoom:false,
-    doubleClickZoom:false, boxZoom:false, touchZoom:false
-  }).setView([-33.20, 26.55], 8);
-
-  L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    {
-      attribution:'',
-      opacity:0.96,
-      noWrap:true,
-      detectRetina:true
-    }
-  ).addTo(heroMap);
-
-  const southAfricaBounds = L.latLngBounds(
-    [[-35.5, 16.0], [-22.0, 33.5]]
-  );
-  heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
-
-  const HUBS=[
-    {name:'Port Alfred',zone:'A',lat:-33.590,lng:26.890},
-    {name:'Bathurst',zone:'B',lat:-33.498,lng:26.833},
-    {name:'Kenton-on-Sea',zone:'C',lat:-33.686,lng:26.668},
-    {name:'Makhanda/Grahamstown',zone:'D',lat:-33.310,lng:26.520},
-    {name:'Alice',zone:'D',lat:-32.787,lng:26.834},
-    {name:'Alexandria',zone:'E',lat:-33.653,lng:26.404},
-    {name:'Alicedale',zone:'E',lat:-33.321,lng:26.078}
-  ];
-
-  const ROADS = [
-    [[HUBS[1].lat,HUBS[1].lng],[HUBS[0].lat,HUBS[0].lng]],
-    [[HUBS[2].lat,HUBS[2].lng],[HUBS[5].lat,HUBS[5].lng]],
-    [[HUBS[6].lat,HUBS[6].lng],[HUBS[3].lat,HUBS[3].lng]],
-    [[HUBS[3].lat,HUBS[3].lng],[HUBS[4].lat,HUBS[4].lng]],
-    [[HUBS[4].lat,HUBS[4].lng],[HUBS[0].lat,HUBS[0].lng]],
-    [[HUBS[3].lat,HUBS[3].lng],[HUBS[2].lat,HUBS[2].lng]],
-    [[HUBS[5].lat,HUBS[5].lng],[HUBS[0].lat,HUBS[0].lng]],
-    [[HUBS[6].lat,HUBS[6].lng],[HUBS[2].lat,HUBS[2].lng]]
-  ];
-
-  function carIcon(zone){
-    const cls=`car-dot car-${zone}`;
-    const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
-      <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
-      <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
-      <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
-      <rect x='10' y='9' width='4' height='3' fill='#f59e0b'/>
-      <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
-      <circle cx='18' cy='20' r='3' fill='#0f172a'/>
-      <circle cx='46' cy='20' r='3' fill='#0f172a'/>
-    </g></svg>`;
-    return L.divIcon({
-      className:cls,
-      html:svg,
-      iconSize:[24,12],
-      iconAnchor:[12,6]
-    });
-  }
-
-  const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
-    <path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
-  </svg>`;
-
-  const pkgIcon=L.divIcon({
-    className:'pkg-dot',
-    html:pkgSvg,
-    iconSize:[20,20],
-    iconAnchor:[10,10]
-  });
-
-  function lerp(a,b,t){return a+(b-a)*t;}
-  function posOnSeg(seg,t){
-    const [A,B]=seg;
-    return [lerp(A[0],B[0],t), lerp(A[1],B[1],t)];
-  }
-
-  const cars   = [];
-  const parcels= [];
-
-  function makeCar(zone){
-    const seg     = ROADS[(Math.random()*ROADS.length)|0];
-    const startT  = Math.random();
-    const dir     = Math.random()<.5 ? 1 : -1;
-    const speed   = 0.10+Math.random()*0.06;
-    const [lat,lng]=posOnSeg(seg,startT);
-    const m      = L.marker([lat,lng],{icon:carIcon(zone)}).addTo(heroMap);
-    cars.push({m,seg,t:startT,dir,speed});
-  }
-
-  function makeParcel(){
-    const seg     = ROADS[(Math.random()*ROADS.length)|0];
-    const startT  = Math.random();
-    const dir     = Math.random()<.5 ? 1 : -1;
-    const speed   = 0.12+Math.random()*0.06;
-    const [lat,lng]=posOnSeg(seg,startT);
-    const m      = L.marker([lat,lng],{icon:pkgIcon}).addTo(heroMap);
-    parcels.push({m,seg,t:startT,dir,speed});
-  }
-
-  for(let i=0;i<10;i++) makeCar(['A','B','C','D','E'][i%5]);
-  for(let i=0;i<6;i++)  makeParcel();
-
-  let lastTS = performance.now();
-  function animate(now){
-    const dt = Math.min((now-lastTS)/1000, 0.05);
-    lastTS = now;
-
-    for(const c of cars){
-      c.t += c.speed * c.dir * dt;
-      if(c.t>1){ c.t=1; c.dir=-1; }
-      else if(c.t<0){ c.t=0; c.dir=1; }
-      const [lat,lng] = posOnSeg(c.seg,c.t);
-      c.m.setLatLng([lat,lng]);
-    }
-
-    for(const p of parcels){
-      p.t += p.speed * p.dir * dt;
-      if(p.t>1){ p.t=1; p.dir=-1; }
-      else if(p.t<0){ p.t=0; p.dir=1; }
-      const [lat,lng] = posOnSeg(p.seg,p.t);
-      p.m.setLatLng([lat,lng]);
-    }
-
-    requestAnimationFrame(animate);
-  }
-  requestAnimationFrame(animate);
-  setTimeout(()=>heroMap.invalidateSize(),180);
-  window.addEventListener('resize',()=>heroMap.invalidateSize());
 
   // === ADMIN PANEL ===
   function openOrders(){
@@ -1208,6 +1294,7 @@ Vehicle: ${vehicle}`;
 
 });
 </script>
+
 
 </body>
 </html>
