@@ -1,27 +1,84 @@
-<!doctype html>
+```html
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>YiThume — Health delivered. Fast.</title>
   <meta name="description" content="YiThume delivers OTC meds to remote areas. Order on website, confirm on WhatsApp. Port Alfred, Bathurst, Kenton-on-Sea, Makhanda, Alice, Alexandria, Alicedale." />
+
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
   <style>
     :root{
       --emerald-600:#059669; --emerald-500:#10b981; --emerald-400:#34d399; --emerald-800:#047857; --emerald-900:#065f46;
       --map-bg:#f6f8f9; --hero-h: 360px;
     }
     @media (max-width:640px){ :root{ --hero-h: 280px; } }
-    .leaflet-pane, .leaflet-top, .leaflet-bottom { z-index: 10 !important; }
-    #heroMap{height:var(--hero-h);border-radius:16px;position:relative;overflow:hidden;background:var(--map-bg);}
+
+    /* Leaflet tweaks */
+    .leaflet-pane,
+    .leaflet-top,
+    .leaflet-bottom { z-index: 10 !important; }
+    #heroMap{
+      height:var(--hero-h);
+      border-radius:16px;
+      position:relative;
+      overflow:hidden;
+      background:var(--map-bg);
+    }
     .leaflet-control-container{display:none;}
-    .car-dot{transform:translate(-50%,-50%);} .car-dot svg{width:18px;height:18px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.18));}
-    .car-A path{fill:var(--emerald-600);} .car-B path{fill:var(--emerald-500);} .car-C path{fill:var(--emerald-400);} .car-D path{fill:var(--emerald-800);} .car-E path{fill:var(--emerald-900);} 
-    .pkg-dot{transform:translate(-50%,-50%);} .pkg-dot svg{width:20px;height:20px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))}
-    .tint{position:absolute; inset:0; background:linear-gradient(180deg,rgba(5,150,105,.04),rgba(5,150,105,.03)); pointer-events:none;}
-    .ec-badge{position:absolute; left:14px; bottom:12px; padding:6px 10px; border-radius:10px; background:rgba(15,23,42,.75); color:#fff; font-size:12px; backdrop-filter: blur(2px);}
+
+    /* Moving markers */
+    .car-dot{transform:translate(-50%,-50%);}
+    .car-dot svg{
+      width:18px;
+      height:18px;
+      filter:drop-shadow(0 1px 1px rgba(0,0,0,.18));
+    }
+    .car-A path{fill:var(--emerald-600);}
+    .car-B path{fill:var(--emerald-500);}
+    .car-C path{fill:var(--emerald-400);}
+    .car-D path{fill:var(--emerald-800);}
+    .car-E path{fill:var(--emerald-900);}
+
+    .pkg-dot{transform:translate(-50%,-50%);}
+    .pkg-dot svg{
+      width:20px;
+      height:20px;
+      filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))
+    }
+
+    /* Overlay tint + badge */
+    .tint{
+      position:absolute;
+      inset:0;
+      background:linear-gradient(180deg,rgba(5,150,105,.04),rgba(5,150,105,.03));
+      pointer-events:none;
+    }
+    .ec-badge{
+      position:absolute;
+      left:14px;
+      bottom:12px;
+      padding:6px 10px;
+      border-radius:10px;
+      background:rgba(15,23,42,.75);
+      color:#fff;
+      font-size:12px;
+      line-height:1.2;
+      backdrop-filter: blur(2px);
+    }
+
+    /* Body scroll lock class */
+    .overflow-locked {
+      overflow: hidden;
+      touch-action: none;
+    }
   </style>
 </head>
 <body class="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-900">
@@ -43,10 +100,10 @@
     </div>
 
     <!-- Desktop nav -->
-    <nav class="hidden md:flex items-center gap-6">
+    <nav class="hidden md:flex items-center gap-6" aria-label="Primary">
       <a href="#how" class="text-sm hover:text-emerald-700">How It Works</a>
       <a href="#services" class="text-sm hover:text-emerald-700">Services</a>
-      <a href="#pricing" class="text-sm hover:text-emerald-700">Pricing & Zones</a>
+      <a href="#pricing" class="text-sm hover:text-emerald-700">Pricing &amp; Zones</a>
       <a href="#drivers" class="text-sm hover:text-emerald-700">For Drivers</a>
       <a href="#faq" class="text-sm hover:text-emerald-700">FAQ</a>
     </nav>
@@ -55,12 +112,14 @@
       <!-- Mobile hamburger -->
       <button id="mobileMenuBtn"
         class="md:hidden p-2 rounded-lg border border-slate-300 active:scale-95 transition"
-        aria-label="Open menu">
-        <svg id="mobileMenuIconOpen" width="20" height="20" viewBox="0 0 24 24" fill="none">
+        aria-label="Open menu"
+        aria-expanded="false"
+        aria-controls="mobileNavDropdown">
+        <svg id="mobileMenuIconOpen" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M4 6h16M4 12h16M4 18h16"
             stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
-        <svg id="mobileMenuIconClose" width="20" height="20" viewBox="0 0 24 24" class="hidden" fill="none">
+        <svg id="mobileMenuIconClose" width="20" height="20" viewBox="0 0 24 24" class="hidden" fill="none" aria-hidden="true">
           <path d="M6 6L18 18M6 18L18 6"
             stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
@@ -87,13 +146,14 @@
 
   <!-- Mobile dropdown nav -->
   <div id="mobileNavDropdown"
-       class="md:hidden hidden border-t border-slate-200 bg-white shadow-xl">
+       class="md:hidden hidden border-t border-slate-200 bg-white shadow-xl"
+       role="menu" aria-label="Mobile navigation">
     <nav class="px-4 py-4 text-sm flex flex-col gap-2 max-w-6xl mx-auto w-full">
-      <a href="#how" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link">How It Works</a>
-      <a href="#services" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link">Services</a>
-      <a href="#pricing" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link">Pricing & Zones</a>
-      <a href="#drivers" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link">For Drivers</a>
-      <a href="#faq" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link">FAQ</a>
+      <a href="#how" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link" role="menuitem">How It Works</a>
+      <a href="#services" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link" role="menuitem">Services</a>
+      <a href="#pricing" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link" role="menuitem">Pricing &amp; Zones</a>
+      <a href="#drivers" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link" role="menuitem">For Drivers</a>
+      <a href="#faq" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link" role="menuitem">FAQ</a>
 
       <div class="h-px bg-slate-200 my-3"></div>
 
@@ -122,20 +182,52 @@
     <div class="flex">
       <div class="rounded-3xl border bg-white p-6 shadow-sm h-full w-full min-h-[var(--hero-h)] flex flex-col">
         <div>
-          <h1 class="text-4xl sm:text-5xl font-bold leading-tight">Health delivered. <span class="text-emerald-600">Fast</span>.</h1>
-          <p class="mt-4 text-slate-700 max-w-xl">Order on the website, then we confirm and send a secure payment link in WhatsApp. Clear pricing, trusted local drivers.</p>
+          <h1 class="text-4xl sm:text-5xl font-bold leading-tight">
+            Health delivered. <span class="text-emerald-600">Fast</span>.
+          </h1>
+          <p class="mt-4 text-slate-700 max-w-xl">
+            Order on the website, then we confirm and send a secure payment link in WhatsApp. Clear pricing, trusted local drivers.
+          </p>
         </div>
         <ul class="mt-6 grid grid-cols-2 gap-3 text-sm">
-          <li class="flex items-start gap-2"><span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span><div><b>Website ➜ WhatsApp</b><div class="text-slate-500 text-xs">No app needed</div></div></li>
-          <li class="flex items-start gap-2"><span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span><div><b>Same-day windows</b><div class="text-slate-500 text-xs">08–10 • 12–14 • 16–18</div></div></li>
-          <li class="flex items-start gap-2"><span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span><div><b>Card or EFT</b><div class="text-slate-500 text-xs">Yoco link / Ozow EFT</div></div></li>
-          <li class="flex items-start gap-2"><span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span><div><b>Deposit + COD</b><div class="text-slate-500 text-xs">Returning customers only</div></div></li>
+          <li class="flex items-start gap-2">
+            <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span>
+            <div>
+              <b>Website ➜ WhatsApp</b>
+              <div class="text-slate-500 text-xs">No app needed</div>
+            </div>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span>
+            <div>
+              <b>Same-day windows</b>
+              <div class="text-slate-500 text-xs">08–10 • 12–14 • 16–18</div>
+            </div>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span>
+            <div>
+              <b>Card or EFT</b>
+              <div class="text-slate-500 text-xs">Yoco link / Ozow EFT</div>
+            </div>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">✓</span>
+            <div>
+              <b>Deposit + COD</b>
+              <div class="text-slate-500 text-xs">Returning customers only</div>
+            </div>
+          </li>
         </ul>
         <div class="mt-6 flex flex-col sm:flex-row gap-3">
-          <button id="openOrderBuilder" class="px-5 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">Start order</button>
-          <button id="openDriverModal" class="px-5 py-3 rounded-2xl border border-slate-300 text-slate-800 text-sm font-medium hover:bg-slate-100">Sign up / Log in (Driver)</button>
+          <button id="openOrderBuilder" class="px-5 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
+            Start order
+          </button>
+          <button id="openDriverModal" class="px-5 py-3 rounded-2xl border border-slate-300 text-slate-800 text-sm font-medium hover:bg-slate-100">
+            Sign up / Log in (Driver)
+          </button>
         </div>
-        <div class="mt-3 text-xs text-slate-500">Build your basket here — we’ll send it to WhatsApp for confirmation & payment.</div>
+        <div class="mt-3 text-xs text-slate-500">Build your basket here — we’ll send it to WhatsApp for confirmation &amp; payment.</div>
         <div class="mt-auto"></div>
       </div>
     </div>
@@ -143,9 +235,13 @@
     <!-- Right map card -->
     <div class="flex">
       <div class="rounded-3xl border bg-white p-3 shadow-sm h-full w-full relative min-h-[var(--hero-h)]">
-        <div class="flex items-center justify-between px-1 pb-2"><div class="text-sm text-slate-600">Coverage map</div><span class="px-2 py-1 text-xs rounded-lg bg-emerald-100 text-emerald-700">LIVE</span></div>
-        <div id="heroMap" class="rounded-2xl"></div>
-        <div class="tint"></div><div class="ec-badge">Eastern Cape</div>
+        <div class="flex items-center justify-between px-1 pb-2">
+          <div class="text-sm text-slate-600">Coverage map</div>
+          <span class="px-2 py-1 text-xs rounded-lg bg-emerald-100 text-emerald-700">LIVE</span>
+        </div>
+        <div id="heroMap" class="rounded-2xl" aria-label="Active delivery coverage map"></div>
+        <div class="tint" aria-hidden="true"></div>
+        <div class="ec-badge">Eastern Cape</div>
       </div>
     </div>
   </div>
@@ -156,10 +252,30 @@
   <div class="max-w-6xl mx-auto px-4 sm:px-6">
     <h2 class="text-2xl sm:text-3xl font-bold">How YiThume Works</h2>
     <div class="mt-6 grid md:grid-cols-4 gap-4">
-      <div class="p-5 rounded-2xl bg-white border shadow-sm"><div class="text-sm text-slate-500">Step 1</div><div class="mt-1 font-semibold">Build order</div><p class="mt-2 text-sm text-slate-700">Choose items and delivery zone on the website.</p></div>
-      <div class="p-5 rounded-2xl bg-white border shadow-sm"><div class="text-sm text-slate-500">Step 2</div><div class="mt-1 font-semibold">WhatsApp confirm</div><p class="mt-2 text-sm text-slate-700">We send summary + payment instructions in WhatsApp.</p></div>
-      <div class="p-5 rounded-2xl bg-white border shadow-sm"><div class="text-sm text-slate-500">Step 3</div><div class="mt-1 font-semibold">Pay online</div><p class="mt-2 text-sm text-slate-700">Card link (Yoco) or Instant EFT (Ozow). Returning customers can do 50% deposit + COD.</p></div>
-      <div class="p-5 rounded-2xl bg-white border shadow-sm"><div class="text-sm text-slate-500">Step 4</div><div class="mt-1 font-semibold">Delivery</div><p class="mt-2 text-sm text-slate-700">We dispatch a verified local driver in your time window.</p></div>
+      <div class="p-5 rounded-2xl bg-white border shadow-sm">
+        <div class="text-sm text-slate-500">Step 1</div>
+        <div class="mt-1 font-semibold">Build order</div>
+        <p class="mt-2 text-sm text-slate-700">Choose items and delivery zone on the website.</p>
+      </div>
+      <div class="p-5 rounded-2xl bg-white border shadow-sm">
+        <div class="text-sm text-slate-500">Step 2</div>
+        <div class="mt-1 font-semibold">WhatsApp confirm</div>
+        <p class="mt-2 text-sm text-slate-700">We send summary + payment instructions in WhatsApp.</p>
+      </div>
+      <div class="p-5 rounded-2xl bg-white border shadow-sm">
+        <div class="text-sm text-slate-500">Step 3</div>
+        <div class="mt-1 font-semibold">Pay online</div>
+        <p class="mt-2 text-sm text-slate-700">
+          Card link (Yoco) or Instant EFT (Ozow). Returning customers can do 50% deposit + COD.
+        </p>
+      </div>
+      <div class="p-5 rounded-2xl bg-white border shadow-sm">
+        <div class="text-sm text-slate-500">Step 4</div>
+        <div class="mt-1 font-semibold">Delivery</div>
+        <p class="mt-2 text-sm text-slate-700">
+          We dispatch a verified local driver in your time window.
+        </p>
+      </div>
     </div>
   </div>
 </section>
@@ -167,16 +283,42 @@
 <!-- Pricing & Zones -->
 <section id="pricing" class="py-12 sm:py-16 border-t border-slate-200">
   <div class="max-w-6xl mx-auto px-4 sm:px-6">
-    <h2 class="text-2xl sm:text-3xl font-bold">Pricing & Zones</h2>
+    <h2 class="text-2xl sm:text-3xl font-bold">Pricing &amp; Zones</h2>
     <div class="mt-6 overflow-hidden rounded-2xl border bg-white">
       <table class="w-full text-sm">
-        <thead class="bg-slate-50 text-slate-600"><tr><th class="py-3 px-4 text-left">Zone</th><th class="py-3 px-4 text-left">Areas</th><th class="py-3 px-4 text-left">Delivery Fee</th></tr></thead>
+        <thead class="bg-slate-50 text-slate-600">
+          <tr>
+            <th class="py-3 px-4 text-left">Zone</th>
+            <th class="py-3 px-4 text-left">Areas</th>
+            <th class="py-3 px-4 text-left">Delivery Fee</th>
+          </tr>
+        </thead>
         <tbody>
-          <tr class="border-t"><td class="py-3 px-4 font-medium">Zone A</td><td class="py-3 px-4">Port Alfred, Nemato, East Beach, Seafield</td><td class="py-3 px-4">R25</td></tr>
-          <tr class="border-t"><td class="py-3 px-4 font-medium">Zone B</td><td class="py-3 px-4">Bathurst, Eluce/Elitsi</td><td class="py-3 px-4">R35</td></tr>
-          <tr class="border-t"><td class="py-3 px-4 font-medium">Zone C</td><td class="py-3 px-4">Kenton-on-Sea, Bushmans River, Boesmansriviermond</td><td class="py-3 px-4">R45</td></tr>
-          <tr class="border-t"><td class="py-3 px-4 font-medium">Zone D</td><td class="py-3 px-4">Makhanda/Grahamstown, Eirini</td><td class="py-3 px-4">R60</td></tr>
-          <tr class="border-t"><td class="py-3 px-4 font-medium">Zone E</td><td class="py-3 px-4">Alexandria, Alicedale, Surrounding Rural Areas</td><td class="py-3 px-4">R70</td></tr>
+          <tr class="border-t">
+            <td class="py-3 px-4 font-medium">Zone A</td>
+            <td class="py-3 px-4">Port Alfred, Nemato, East Beach, Seafield</td>
+            <td class="py-3 px-4">R25</td>
+          </tr>
+          <tr class="border-t">
+            <td class="py-3 px-4 font-medium">Zone B</td>
+            <td class="py-3 px-4">Bathurst, Eluce/Elitsi</td>
+            <td class="py-3 px-4">R35</td>
+          </tr>
+          <tr class="border-t">
+            <td class="py-3 px-4 font-medium">Zone C</td>
+            <td class="py-3 px-4">Kenton-on-Sea, Bushmans River, Boesmansriviermond</td>
+            <td class="py-3 px-4">R45</td>
+          </tr>
+          <tr class="border-t">
+            <td class="py-3 px-4 font-medium">Zone D</td>
+            <td class="py-3 px-4">Makhanda/Grahamstown, Eirini</td>
+            <td class="py-3 px-4">R60</td>
+          </tr>
+          <tr class="border-t">
+            <td class="py-3 px-4 font-medium">Zone E</td>
+            <td class="py-3 px-4">Alexandria, Alicedale, Surrounding Rural Areas</td>
+            <td class="py-3 px-4">R70</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -189,10 +331,32 @@
   <div class="max-w-6xl mx-auto px-4 sm:px-6">
     <h2 class="text-2xl sm:text-3xl font-bold">FAQ</h2>
     <div class="mt-6 grid md:grid-cols-2 gap-4">
-      <details class="p-4 rounded-xl bg-white border shadow-sm"><summary class="font-medium cursor-pointer">How do I pay?</summary><p class="mt-2 text-sm text-slate-700">We send a secure <b>Yoco card link</b> or <b>Ozow Instant EFT</b> via WhatsApp. Returning customers may use <b>50% deposit + COD</b> for the balance at delivery.</p></details>
-      <details class="p-4 rounded-xl bg-white border shadow-sm"><summary class="font-medium cursor-pointer">Cash on delivery?</summary><p class="mt-2 text-sm text-slate-700">To keep orders safe, first-time customers pay online. For repeat customers, COD is available with a <b>50% deposit</b>. Drivers wait up to 5 minutes. Failed delivery forfeits the deposit.</p></details>
-      <details class="p-4 rounded-xl bg-white border shadow-sm"><summary class="font-medium cursor-pointer">Do you give medical advice?</summary><p class="mt-2 text-sm text-slate-700">No. YiThume provides delivery only. Always follow your healthcare provider’s guidance.</p></details>
-      <details class="p-4 rounded-xl bg-white border shadow-sm"><summary class="font-medium cursor-pointer">Where do you operate?</summary><p class="mt-2 text-sm text-slate-700">Port Alfred, Bathurst, Kenton-on-Sea, Makhanda/Grahamstown, Alice, Alexandria, Alicedale (more soon).</p></details>
+      <details class="p-4 rounded-xl bg-white border shadow-sm">
+        <summary class="font-medium cursor-pointer">How do I pay?</summary>
+        <p class="mt-2 text-sm text-slate-700">
+          We send a secure <b>Yoco card link</b> or <b>Ozow Instant EFT</b> via WhatsApp. Returning customers may use
+          <b>50% deposit + COD</b> for the balance at delivery.
+        </p>
+      </details>
+      <details class="p-4 rounded-xl bg-white border shadow-sm">
+        <summary class="font-medium cursor-pointer">Cash on delivery?</summary>
+        <p class="mt-2 text-sm text-slate-700">
+          To keep orders safe, first-time customers pay online. For repeat customers, COD is available with a
+          <b>50% deposit</b>. Drivers wait up to 5 minutes. Failed delivery forfeits the deposit.
+        </p>
+      </details>
+      <details class="p-4 rounded-xl bg-white border shadow-sm">
+        <summary class="font-medium cursor-pointer">Do you give medical advice?</summary>
+        <p class="mt-2 text-sm text-slate-700">
+          No. YiThume provides delivery only. Always follow your healthcare provider’s guidance.
+        </p>
+      </details>
+      <details class="p-4 rounded-xl bg-white border shadow-sm">
+        <summary class="font-medium cursor-pointer">Where do you operate?</summary>
+        <p class="mt-2 text-sm text-slate-700">
+          Port Alfred, Bathurst, Kenton-on-Sea, Makhanda/Grahamstown, Alice, Alexandria, Alicedale (more soon).
+        </p>
+      </details>
     </div>
   </div>
 </section>
@@ -203,26 +367,39 @@
     <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
       <div>
         <div class="font-semibold">YiThume</div>
-        <div class="text-xs text-slate-500">Delivery service only • POPIA compliant • © <span id="year"></span></div>
+        <div class="text-xs text-slate-500">
+          Delivery service only • POPIA compliant • © <span id="year"></span>
+        </div>
       </div>
       <div class="flex flex-col sm:flex-row gap-3">
-        <button id="openOrderBuilderFooter" class="px-3 py-2 text-sm rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Start order</button>
-        <button id="openDriverModalFooter" class="px-3 py-2 text-sm rounded-xl border border-slate-300 hover:bg-slate-100">Driver sign-in / up</button>
-        <button id="openStoreModalFooter" class="px-3 py-2 text-sm rounded-xl border border-emerald-300 text-emerald-700 hover:bg-emerald-50">Add your store</button>
+        <button id="openOrderBuilderFooter"
+          class="px-3 py-2 text-sm rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">
+          Start order
+        </button>
+        <button id="openDriverModalFooter"
+          class="px-3 py-2 text-sm rounded-xl border border-slate-300 hover:bg-slate-100">
+          Driver sign-in / up
+        </button>
+        <button id="openStoreModalFooter"
+          class="px-3 py-2 text-sm rounded-xl border border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+          Add your store
+        </button>
       </div>
     </div>
   </div>
 </footer>
 
 <!-- Driver Auth Modal -->
-<div id="driverModal" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999] overflow-y-auto">
-  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-md flex flex-col">
+<div id="driverModal"
+     class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999] overflow-y-auto"
+     role="dialog" aria-modal="true" aria-labelledby="driverModalTitle">
+  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-md flex flex-col outline-none" tabindex="-1">
     <div class="flex items-center justify-between p-4 border-b">
       <div class="font-semibold">
-        <div>Driver Portal</div>
+        <div id="driverModalTitle">Driver Portal</div>
         <div class="text-xs text-slate-500">Get paid weekly per drop</div>
       </div>
-      <button id="closeDriverModal" class="text-slate-500 hover:text-slate-700">✕</button>
+      <button id="closeDriverModal" class="text-slate-500 hover:text-slate-700" aria-label="Close driver modal">✕</button>
     </div>
 
     <div class="p-4 text-sm">
@@ -264,7 +441,9 @@
           <input id="drvVehicle" class="mt-1 w-full border rounded-lg p-2" placeholder="e.g. Polo Vivo" />
         </label>
 
-        <button type="submit" class="w-full py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">Submit</button>
+        <button type="submit" class="w-full py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">
+          Submit
+        </button>
       </form>
 
       <!-- Login form -->
@@ -274,21 +453,25 @@
           <input id="drvLoginPhone" class="mt-1 w-full border rounded-lg p-2" placeholder="2782..." required />
         </label>
 
-        <button type="submit" class="w-full py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">Log in</button>
+        <button type="submit" class="w-full py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">
+          Log in
+        </button>
       </form>
     </div>
   </div>
 </div>
 
-<!-- Driver Dashboard Modal -->
-<div id="driverDashModal" class="fixed inset-0 hidden items-start justify-center pt-12 sm:pt-16 bg-black/40 p-4 z-[10000] overflow-y-auto">
-  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-md flex flex-col">
+<!-- Driver Dashboard Modal (Demo) -->
+<div id="driverDashModal"
+     class="fixed inset-0 hidden items-start justify-center pt-12 sm:pt-16 bg-black/40 p-4 z-[10000] overflow-y-auto"
+     role="dialog" aria-modal="true" aria-labelledby="driverDashTitle">
+  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-md flex flex-col outline-none" tabindex="-1">
     <div class="flex items-center justify-between p-4 border-b">
       <div class="font-semibold">
-        <div>Driver Dashboard</div>
+        <div id="driverDashTitle">Driver Dashboard</div>
         <div class="text-xs text-slate-500">Your current stats</div>
       </div>
-      <button id="closeDriverDash" class="text-slate-500 hover:text-slate-700">✕</button>
+      <button id="closeDriverDash" class="text-slate-500 hover:text-slate-700" aria-label="Close driver dashboard modal">✕</button>
     </div>
 
     <div class="p-4 text-sm space-y-3">
@@ -302,7 +485,9 @@
       </div>
       <div class="rounded-lg border p-3">
         <div class="text-xs text-slate-500">Your zone / km radius</div>
-        <div class="text-lg font-semibold"><span id="driverZoneDisplay">A</span> / <span id="driverRadiusDisplay">10km</span></div>
+        <div class="text-lg font-semibold">
+          <span id="driverZoneDisplay">A</span> / <span id="driverRadiusDisplay">10km</span>
+        </div>
       </div>
       <div class="text-[11px] text-slate-500 leading-snug">
         Drivers are paid weekly by EFT.
@@ -312,17 +497,19 @@
 </div>
 
 <!-- Bot-style Checkout Modal -->
-<div id="botChat" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9500] overflow-y-auto">
-  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-md flex flex-col max-h-[80vh]">
+<div id="botChat"
+     class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9500] overflow-y-auto"
+     role="dialog" aria-modal="true" aria-labelledby="botChatTitle">
+  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-md flex flex-col max-h-[80vh] outline-none" tabindex="-1">
     <div class="flex items-center justify-between p-4 border-b">
       <div class="font-semibold flex flex-col">
-        <span>Checkout</span>
+        <span id="botChatTitle">Checkout</span>
         <span class="text-xs text-slate-500">We’ll confirm in WhatsApp</span>
       </div>
-      <button id="closeBot" class="text-slate-500 hover:text-slate-700">✕</button>
+      <button id="closeBot" class="text-slate-500 hover:text-slate-700" aria-label="Close checkout modal">✕</button>
     </div>
 
-    <div id="botFeed" class="flex-1 overflow-y-auto p-4 space-y-2 text-sm bg-slate-50"></div>
+    <div id="botFeed" class="flex-1 overflow-y-auto p-4 space-y-2 text-sm bg-slate-50" aria-live="polite"></div>
 
     <div class="p-4 border-t space-y-3 text-sm">
       <label class="block">
@@ -335,46 +522,60 @@
       </label>
 
       <div class="flex gap-2">
-        <button id="botNext" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">Next</button>
-        <button id="botSendWA" class="flex-1 py-2 rounded-xl border border-slate-300 font-medium hover:bg-slate-100 hidden">Send to WhatsApp</button>
+        <button id="botNext" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">
+          Next
+        </button>
+        <button id="botSendWA" class="flex-1 py-2 rounded-xl border border-slate-300 font-medium hover:bg-slate-100 hidden">
+          Send to WhatsApp
+        </button>
       </div>
     </div>
   </div>
 </div>
 
 <!-- FAKE Payment Modal -->
-<div id="payModal" class="fixed inset-0 hidden items-start justify-center pt-20 bg-black/60 p-4 z-[9600] overflow-y-auto">
-  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-sm flex flex-col">
+<div id="payModal"
+     class="fixed inset-0 hidden items-start justify-center pt-20 bg-black/60 p-4 z-[9600] overflow-y-auto"
+     role="dialog" aria-modal="true" aria-labelledby="payModalTitle">
+  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-sm flex flex-col outline-none" tabindex="-1">
     <div class="flex items-center justify-between p-4 border-b">
       <div class="font-semibold flex flex-col">
-        <span>Secure Payment (Demo)</span>
+        <span id="payModalTitle">Secure Payment (Demo)</span>
         <span class="text-xs text-slate-500">Not a real gateway yet</span>
       </div>
-      <button id="closePayModal" class="text-slate-500 hover:text-slate-700">✕</button>
+      <button id="closePayModal" class="text-slate-500 hover:text-slate-700" aria-label="Close payment modal">✕</button>
     </div>
 
     <div class="p-4 text-sm space-y-2">
       <div><b>Order Ref:</b> <span id="payOrderRef">--</span></div>
       <div><b>Amount:</b> R<span id="payAmount">0</span></div>
-      <div class="text-[11px] text-slate-500 leading-snug">We'll send an actual Yoco / Ozow link in WhatsApp once confirmed.</div>
+      <div class="text-[11px] text-slate-500 leading-snug">
+        We'll send an actual Yoco / Ozow link in WhatsApp once confirmed.
+      </div>
     </div>
 
     <div class="p-4 border-t flex flex-col sm:flex-row gap-2 text-sm">
-      <button id="btnFakePayNow" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">Mark paid (demo)</button>
-      <button id="btnCancelPay" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">Cancel</button>
+      <button id="btnFakePayNow" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">
+        Mark paid (demo)
+      </button>
+      <button id="btnCancelPay" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">
+        Cancel
+      </button>
     </div>
   </div>
 </div>
 
 <!-- Order Builder Modal -->
-<div id="orderBuilder" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9000] overflow-y-auto">
-  <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border flex flex-col max-h-[85vh]">
+<div id="orderBuilder"
+     class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9000] overflow-y-auto"
+     role="dialog" aria-modal="true" aria-labelledby="orderBuilderTitle">
+  <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border flex flex-col max-h-[85vh] outline-none" tabindex="-1">
     <div class="flex items-center justify-between p-4 border-b">
       <div class="font-semibold flex flex-col">
-        <span>Your Order</span>
+        <span id="orderBuilderTitle">Your Order</span>
         <span class="text-xs text-slate-500">We’ll confirm by WhatsApp</span>
       </div>
-      <button id="closeOrderBuilder" class="text-slate-500 hover:text-slate-700">✕</button>
+      <button id="closeOrderBuilder" class="text-slate-500 hover:text-slate-700" aria-label="Close order builder modal">✕</button>
     </div>
 
     <div class="flex-1 overflow-y-auto p-4 space-y-5 text-sm">
@@ -399,7 +600,9 @@
         </select>
         <div class="flex items-center gap-2 mt-2">
           <input id="rushToggle" type="checkbox" class="h-4 w-4" />
-          <label for="rushToggle" class="text-xs text-slate-600">Rush (+R30 when available)<span id="rushNote" class="text-[10px] text-amber-700"></span></label>
+          <label for="rushToggle" class="text-xs text-slate-600">
+            Rush (+R30 when available)<span id="rushNote" class="text-[10px] text-amber-700"></span>
+          </label>
         </div>
       </div>
 
@@ -420,7 +623,7 @@
         <textarea id="custAddress" class="mt-1 w-full border rounded-lg p-2" rows="2" placeholder="House number, street, area" required></textarea>
       </label>
 
-      <!-- Payment choice (same as botPayChoice options) -->
+      <!-- Payment choice -->
       <div>
         <div class="text-xs text-slate-600 font-medium mb-1">How will you pay?</div>
         <div class="space-y-2">
@@ -451,7 +654,8 @@
       </div>
 
       <!-- Deposit banner -->
-      <div id="depositBanner" class="hidden rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[11px] leading-snug p-2">
+      <div id="depositBanner"
+           class="hidden rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[11px] leading-snug p-2">
         You’ll pay a deposit of R<span id="depositAmt">0</span> to lock your driver. Balance on delivery.
       </div>
 
@@ -468,8 +672,9 @@
     </div>
 
     <div class="p-4 border-t flex flex-col sm:flex-row gap-2 text-sm">
-      <button id="confirmOrderBtn" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">
-        Confirm & Continue
+      <button id="confirmOrderBtn"
+              class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">
+        Confirm &amp; Continue
       </button>
       <button class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100" id="cancelOrderBuilder">
         Cancel
@@ -479,45 +684,64 @@
 </div>
 
 <!-- Orders Panel (Admin) -->
-<div id="ordersPanel" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[11000] overflow-y-auto">
-  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-2xl flex flex-col max-h-[85vh]">
+<div id="ordersPanel"
+     class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[11000] overflow-y-auto"
+     role="dialog" aria-modal="true" aria-labelledby="ordersPanelTitle">
+  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-2xl flex flex-col max-h-[85vh] outline-none" tabindex="-1">
     <div class="flex items-center justify-between p-4 border-b">
       <div class="font-semibold flex flex-col">
-        <span>Orders Admin</span>
+        <span id="ordersPanelTitle">Orders Admin</span>
         <span class="text-xs text-slate-500">Assign drivers • Mark delivered</span>
       </div>
-      <button id="closeOrdersPanel" class="text-slate-500 hover:text-slate-700">✕</button>
+      <button id="closeOrdersPanel" class="text-slate-500 hover:text-slate-700" aria-label="Close admin panel">✕</button>
     </div>
 
     <!-- tabs -->
-    <div class="p-4 border-b flex flex-wrap gap-2 text-xs">
-      <button class="yt-o-tab px-3 py-1 rounded-lg bg-emerald-600 text-white" data-o-tab="pending">Pending</button>
-      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="review_required">Review</button>
-      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="assigned">Assigned</button>
-      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="in_transit">In transit</button>
-      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="delivered">Delivered</button>
+    <div class="p-4 border-b flex flex-wrap gap-2 text-xs" role="tablist" aria-label="Order status filter">
+      <button class="yt-o-tab px-3 py-1 rounded-lg bg-emerald-600 text-white" data-o-tab="pending" role="tab" aria-selected="true">
+        Pending
+      </button>
+      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="review_required" role="tab" aria-selected="false">
+        Review
+      </button>
+      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="assigned" role="tab" aria-selected="false">
+        Assigned
+      </button>
+      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="in_transit" role="tab" aria-selected="false">
+        In transit
+      </button>
+      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="delivered" role="tab" aria-selected="false">
+        Delivered
+      </button>
     </div>
 
-    <div class="flex-1 overflow-y-auto p-4 space-y-4 text-sm" id="ordersList">
+    <div class="flex-1 overflow-y-auto p-4 space-y-4 text-sm" id="ordersList" aria-live="polite">
       <!-- JS fills orders -->
     </div>
 
     <div class="p-4 border-t flex flex-col sm:flex-row gap-2 text-sm">
-      <button id="ordersRefresh" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">Refresh</button>
-      <button id="ordersAssign" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">Auto assign all</button>
+      <button id="ordersRefresh" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">
+        Refresh
+      </button>
+      <button id="ordersAssign"
+              class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">
+        Auto assign all
+      </button>
     </div>
   </div>
 </div>
 
 <!-- Store Onboarding Modal -->
-<div id="storeModal" class="fixed inset-0 hidden items-start justify-center pt-12 sm:pt-16 bg-black/40 p-4 z-[12000] overflow-y-auto">
-  <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border flex flex-col">
+<div id="storeModal"
+     class="fixed inset-0 hidden items-start justify-center pt-12 sm:pt-16 bg-black/40 p-4 z-[12000] overflow-y-auto"
+     role="dialog" aria-modal="true" aria-labelledby="storeModalTitle">
+  <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border flex flex-col outline-none" tabindex="-1">
     <div class="flex items-center justify-between p-4 border-b">
       <div class="font-semibold flex flex-col">
-        <span>Add Your Store</span>
+        <span id="storeModalTitle">Add Your Store</span>
         <span class="text-xs text-slate-500">We’ll list your items for delivery</span>
       </div>
-      <button id="closeStoreModal" class="text-slate-500 hover:text-slate-700">✕</button>
+      <button id="closeStoreModal" class="text-slate-500 hover:text-slate-700" aria-label="Close store modal">✕</button>
     </div>
 
     <div class="p-4 space-y-4 text-sm">
@@ -556,8 +780,12 @@
     </div>
 
     <div class="p-4 border-t flex flex-col sm:flex-row gap-2 text-sm">
-      <button id="submitStore" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">Submit store</button>
-      <button id="cancelStore" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">Cancel</button>
+      <button id="submitStore" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">
+        Submit store
+      </button>
+      <button id="cancelStore" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">
+        Cancel
+      </button>
     </div>
   </div>
 </div>
@@ -568,10 +796,18 @@ window.addEventListener('DOMContentLoaded', () => {
   const BASE_API = "/api/app";
   const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
-  const DEMO_MODE       = true; // set true for front-end demo
+  const DEMO_MODE       = true; // toggle false when backend is real
 
   function waText(str) {
     return encodeURIComponent(str);
+  }
+
+  // === BODY SCROLL LOCK HELPERS ===
+  function lockScroll(){
+    document.body.classList.add('overflow-locked');
+  }
+  function unlockScroll(){
+    document.body.classList.remove('overflow-locked');
   }
 
   // === RUNTIME / GLOBAL STATE ===
@@ -583,13 +819,16 @@ window.addEventListener('DOMContentLoaded', () => {
   // store onboarding state
   const storeItems = []; // {name, price}
 
-  // YEAR
+  // === YEAR FOOTER ===
   const yearEl = document.getElementById('year');
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
   // === ELEMENT REFS ===
   // mobile nav
   const mobileBtn       = document.getElementById('mobileMenuBtn');
+  const mobileDropdown  = document.getElementById('mobileNavDropdown');
+  const mobileIconOpen  = document.getElementById('mobileMenuIconOpen');
+  const mobileIconClose = document.getElementById('mobileMenuIconClose');
 
   // order builder / checkout modal
   const modal               = document.getElementById('orderBuilder');
@@ -652,7 +891,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Store modal refs
   const storeModal          = document.getElementById('storeModal');
-  const openStoreFooter     = document.getElementById('openStoreModalFooter'); // only footer btn now
+  const openStoreFooter     = document.getElementById('openStoreModalFooter');
   const closeStoreModalBtn  = document.getElementById('closeStoreModal');
   const cancelStoreBtn      = document.getElementById('cancelStore');
   const submitStoreBtn      = document.getElementById('submitStore');
@@ -688,6 +927,7 @@ window.addEventListener('DOMContentLoaded', () => {
             type="number"
             min="1"
             value="1"
+            aria-label="Quantity for ${item.name}"
             data-idx="${idx}"
             class="itemQty w-14 border rounded-lg p-1"
           />
@@ -711,7 +951,7 @@ window.addEventListener('DOMContentLoaded', () => {
       .filter(c => c.checked)
       .map(c => {
         const i   = Number(c.dataset.idx);
-        const qty = Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value || 1);
+        const qty = Number(document.querySelector(\`.itemQty[data-idx="\${i}"]\`).value || 1);
         return {
           name:  CATALOG[i].name,
           price: Number(CATALOG[i].price),
@@ -747,9 +987,9 @@ window.addEventListener('DOMContentLoaded', () => {
     function fmt(date,[h1,h2]){
       const sameDay = (date.toDateString()===new Date().toDateString());
       if (sameDay){
-        return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
+        return \`\${pad2(h1)}:00–\${pad2(h2)}:00 \${rush?'today (rush)':'today'}\`;
       }
-      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
+      return \`\${dayNames[date.getDay()]} \${pad2(h1)}:00–\${pad2(h2)}:00\`;
     }
 
     if (allowed.has(now.getDay())){
@@ -777,15 +1017,27 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // === MODAL OPEN/CLOSE HELPERS ===
+  function openFlex(el){
+    if(!el) return;
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+    lockScroll();
+  }
+  function closeFlex(el){
+    if(!el) return;
+    el.classList.add('hidden');
+    el.classList.remove('flex');
+    unlockScroll();
+  }
+
   function openOrder(){
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    openFlex(modal);
     const s = computeTotal();
     toggleDepositBanner(s.total);
   }
   function closeOrder(){
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
+    closeFlex(modal);
   }
 
   function openBot(){
@@ -793,18 +1045,55 @@ window.addEventListener('DOMContentLoaded', () => {
     botNext.textContent = "Next";
     botSendWA.classList.add('hidden');
     botFeed.innerHTML = "";
-    botModal.classList.remove('hidden');
-    botModal.classList.add('flex');
+    openFlex(botModal);
   }
   function closeBot(){
-    botModal.classList.add('hidden');
-    botModal.classList.remove('flex');
     botFeed.innerHTML='';
+    closeFlex(botModal);
+  }
+
+  function openPayModal(orderRef, amount){
+    if(!payModal) return;
+    payOrderRef.textContent = orderRef || '--';
+    payAmountEl.textContent = amount || '0';
+    openFlex(payModal);
+  }
+  function closePayModal(){
+    closeFlex(payModal);
+  }
+
+  function openDriverWindow(){
+    openFlex(driverModal);
+  }
+  function closeDriverWindow(){
+    closeFlex(driverModal);
+  }
+
+  function openStoreModal(){
+    openFlex(storeModal);
+  }
+  function closeStoreModal(){
+    closeFlex(storeModal);
+  }
+
+  function openOrders(){
+    openFlex(ordersPanel);
+    renderOrders();
+  }
+  function closeOrders(){
+    closeFlex(ordersPanel);
+  }
+
+  function openDriverDash(){
+    openFlex(driverDashModal);
+  }
+  function closeDriverDashWindow(){
+    closeFlex(driverDashModal);
   }
 
   function appendBot(msg,who='bot'){
     const wrap=document.createElement('div');
-    wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
+    wrap.className = \`flex \${who==='bot'?'justify-start':'justify-end'}\`;
     wrap.innerHTML = `
       <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
         ${msg}
@@ -821,33 +1110,34 @@ window.addEventListener('DOMContentLoaded', () => {
     </span>`;
   }
 
-  // === MOBILE NAV ===
-  const mobileDropdown   = document.getElementById('mobileNavDropdown');
-  const mobileIconOpen   = document.getElementById('mobileMenuIconOpen');
-  const mobileIconClose  = document.getElementById('mobileMenuIconClose');
-
+  // === MOBILE NAV TOGGLE ===
   function toggleMobileMenu() {
     const isHidden = mobileDropdown.classList.contains('hidden');
     if (isHidden) {
       mobileDropdown.classList.remove('hidden');
       mobileIconOpen.classList.add('hidden');
       mobileIconClose.classList.remove('hidden');
+      mobileBtn.setAttribute('aria-expanded', 'true');
     } else {
       mobileDropdown.classList.add('hidden');
       mobileIconOpen.classList.remove('hidden');
       mobileIconClose.classList.add('hidden');
+      mobileBtn.setAttribute('aria-expanded', 'false');
     }
   }
   mobileBtn?.addEventListener('click', toggleMobileMenu);
 
+  // Close mobile menu when navigating
   document.querySelectorAll('#mobileNavDropdown .mobile-nav-link').forEach(el => {
     el.addEventListener('click', () => {
       mobileDropdown.classList.add('hidden');
       mobileIconOpen.classList.remove('hidden');
       mobileIconClose.classList.add('hidden');
+      mobileBtn.setAttribute('aria-expanded', 'false');
     });
   });
 
+  // Bridge mobile menu CTA buttons to desktop handlers
   document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{
     document.getElementById('openOrderBuilder')?.click();
   });
@@ -858,7 +1148,7 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('adminLoginBtn')?.click();
   });
 
-  // INIT CART UI
+  // === INIT CART UI ===
   renderItems();
   computeTotal();
 
@@ -878,7 +1168,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // custom item to basket
+  // Add custom item to basket
   document.getElementById('addCustomItem')?.addEventListener('click', e=>{
     e.preventDefault();
     const name = prompt('Item name');
@@ -890,53 +1180,37 @@ window.addEventListener('DOMContentLoaded', () => {
     const s=computeTotal(); toggleDepositBanner(s.total);
   });
 
-  // close modals (order/bot/pay)
+  // === MODAL CLOSE BUTTONS ===
   botClose?.addEventListener('click', closeBot);
   closeBtn?.addEventListener('click', closeOrder);
   cancelOrderBuilder?.addEventListener('click', closeOrder);
 
-  function openPayModal(orderRef, amount){
-    if(!payModal) return;
-    payOrderRef.textContent = orderRef || '--';
-    payAmountEl.textContent = amount || '0';
-    payModal.classList.remove('hidden');
-    payModal.classList.add('flex');
-  }
-  function closePayModal(){
-    if(!payModal) return;
-    payModal.classList.add('hidden');
-    payModal.classList.remove('flex');
-  }
   closePayModalBtn?.addEventListener('click', closePayModal);
   btnCancelPay?.addEventListener('click', closePayModal);
+
+  // === Payment demo action ===
   btnFakePayNow?.addEventListener('click', ()=>{
     alert('Demo payment captured. Admin will verify manually.');
     closePayModal();
   });
 
-  // open order modal CTAs
+  // === OPEN ORDER MODAL BUTTONS ===
   openOrderButtons.forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.addEventListener('click', openOrder);
   });
 
-  // DRIVER MODAL OPEN/CLOSE
+  // === DRIVER MODAL open/close ===
   ;['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){
-      el.addEventListener('click',()=>{
-        driverModal.classList.remove('hidden');
-        driverModal.classList.add('flex');
-      });
+      el.addEventListener('click',openDriverWindow);
     }
   });
 
-  closeDriver?.addEventListener('click',()=>{
-    driverModal.classList.add('hidden');
-    driverModal.classList.remove('flex');
-  });
+  closeDriver?.addEventListener('click',closeDriverWindow);
 
-  // tabs toggle in driver modal
+  // Driver tabs
   tabSignup?.addEventListener('click',()=>{
     tabSignup.classList.add('bg-emerald-600','text-white');
     tabLogin.classList.remove('bg-emerald-600','text-white');
@@ -950,22 +1224,392 @@ window.addEventListener('DOMContentLoaded', () => {
     formLogin.classList.remove('hidden');
   });
 
-  // helper jitter pin
-  function jitterAround(pt,meters){
-    const d=(meters||800)/111111;
-    const r=Math.random()*d;
-    const a=Math.random()*Math.PI*2;
-    return {
-      lat: pt.lat + r*Math.cos(a),
-      lng: pt.lng + r*Math.sin(a)
-    };
+  // === DRIVER DASH close ===
+  closeDriverDash?.addEventListener('click', closeDriverDashWindow);
+
+  // === STORE MODAL ===
+  function renderStoreItems(){
+    storeItemsList.innerHTML = '';
+    storeItems.forEach((it,idx)=>{
+      const row = document.createElement('div');
+      row.className = "flex items-center justify-between border rounded-lg p-2";
+      row.innerHTML = `
+        <div class="text-sm">
+          <div class="font-medium">${it.name}</div>
+          <div class="text-xs text-slate-500">R${it.price}</div>
+        </div>
+        <button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline">remove</button>
+      `;
+      storeItemsList.appendChild(row);
+    });
+
+    // hook remove buttons
+    storeItemsList.querySelectorAll('.removeStoreItem').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const i = Number(btn.getAttribute('data-idx'));
+        storeItems.splice(i,1);
+        renderStoreItems();
+      });
+    });
   }
 
-  // MAP
+  openStoreFooter?.addEventListener('click', openStoreModal);
+  closeStoreModalBtn?.addEventListener('click', closeStoreModal);
+  cancelStoreBtn?.addEventListener('click', closeStoreModal);
+
+  addStoreItemBtn?.addEventListener('click', e=>{
+    e.preventDefault();
+    const name = prompt('Item name?');
+    const priceVal = prompt('Price (R)?');
+    const price = Number(priceVal);
+    if(!name || !price || Number.isNaN(price)){ return; }
+    storeItems.push({name, price});
+    renderStoreItems();
+  });
+
+  submitStoreBtn?.addEventListener('click', async ()=>{
+    const storeName  = storeNameEl.value.trim();
+    const storePhone = storePhoneEl.value.trim();
+    const zone       = storeZoneEl.value;
+
+    if(!storeName || !storePhone){
+      alert("Please add store name & WhatsApp.");
+      return;
+    }
+    if(storeItems.length === 0){
+      if(!confirm("No items added yet. Submit anyway?")){
+        return;
+      }
+    }
+
+    const payload = {
+      store_id: `STORE-${Date.now().toString().slice(-6)}`,
+      name: storeName,
+      phone: storePhone,
+      zone: zone,
+      items: storeItems.map(it=>({
+        name: it.name,
+        price: it.price
+      }))
+    };
+
+    if(!DEMO_MODE){
+      try{
+        const r = await fetch(`${BASE_API}/stores`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(payload)
+        });
+        const j = await r.json().catch(()=>({}));
+        if(!r.ok || !j.ok){
+          alert("Store save failed on server.");
+        } else {
+          console.log("store create resp", j);
+        }
+      }catch(err){
+        console.error("store create failed",err);
+      }
+    } else {
+      console.info("[DEMO] Would POST store", payload);
+    }
+
+    const adminMsg =
+`New store signup:
+Name: ${storeName}
+Phone: ${storePhone}
+Zone: ${zone}
+Items:
+${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
+
+    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(adminMsg)}`,'_blank');
+
+    alert("Thanks! We'll review your store.");
+    closeStoreModal();
+
+    // reset form
+    storeNameEl.value = '';
+    storePhoneEl.value = '';
+    storeZoneEl.value = 'A';
+    storeItems.splice(0,storeItems.length);
+    renderStoreItems();
+  });
+
+  // === ADMIN PANEL ===
+  ordersClose?.addEventListener('click', closeOrders);
+
+  window.addEventListener('yt-open-orders', openOrders);
+  window.addEventListener('yt-orders-updated', ()=>{
+    if(!ordersPanel.classList.contains('hidden')) renderOrders();
+  });
+
+  ordersRefresh?.addEventListener('click', renderOrders);
+
+  async function assignOneOrder(internalId){
+    if(!internalId){
+      alert("Missing order id.");
+      return;
+    }
+
+    if(DEMO_MODE){
+      alert(`[DEMO] Would auto-assign ${internalId}`);
+      return;
+    }
+
+    try{
+      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"}
+      });
+      const data = await res.json().catch(()=>({}));
+
+      if(res.ok && data && data.ok){
+        alert(`Assigned: ${internalId} -> ${data.driver_id || 'driver?'}`);
+      } else if (res.status === 409 && data && data.error === "no_driver_available") {
+        alert(`No driver available for ${internalId}`);
+      } else {
+        alert(`Failed to assign ${internalId} (${res.status})`);
+      }
+    }catch(err){
+      console.error("assignOneOrder err",err);
+      alert(`Network error assigning ${internalId}`);
+    }
+
+    renderOrders();
+  }
+
+  async function markDelivered(internalId){
+    if(!internalId){
+      alert("Missing order id.");
+      return;
+    }
+
+    if(DEMO_MODE){
+      alert(`[DEMO] Would mark delivered ${internalId}`);
+      return;
+    }
+
+    try{
+      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({status:"delivered"})
+      });
+      const data = await res.json().catch(()=>({}));
+      if(res.ok && data && data.ok){
+        alert(`Marked delivered: ${internalId}`);
+      } else {
+        alert(`Failed to mark delivered (${res.status})`);
+      }
+    }catch(err){
+      console.error("markDelivered err",err);
+      alert(`Network error marking delivered ${internalId}`);
+    }
+
+    renderOrders();
+  }
+
+  async function autoAssignForAll(){
+    const ordersInTab = currentOrdersByTab[ordersTab] || [];
+    const targets = ordersInTab.filter(o => o.status === 'pending');
+
+    if (targets.length === 0){
+      alert("No pending orders in this view to assign.");
+      return;
+    }
+
+    const results = [];
+    for (const o of targets){
+      const internalId = o._internal_id || o.internal_id || null;
+      if(!internalId){
+        results.push(`❓ Missing ID for an order, skipped.`);
+        continue;
+      }
+
+      if (DEMO_MODE){
+        results.push(`✅ (demo) ${internalId} -> DRV-DEMO`);
+        continue;
+      }
+
+      try {
+        const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"}
+        });
+        const data = await res.json().catch(()=>({}));
+
+        if(res.ok && data && data.ok){
+          const driverId = data.driver_id || "driver?";
+          results.push(`✅ ${internalId} → ${driverId}`);
+        } else if (res.status === 409 && data && data.error === "no_driver_available") {
+          results.push(`⚠️ ${internalId}: no driver`);
+        } else {
+          results.push(`❌ ${internalId}: failed (${res.status})`);
+        }
+      } catch (err){
+        console.error("autoAssignForAll error", err);
+        results.push(`❌ ${internalId}: network error`);
+      }
+    }
+
+    alert(results.join("\n"));
+    renderOrders();
+  }
+  ordersAssign?.addEventListener('click', autoAssignForAll);
+
+  // update tab UI
+  document.querySelectorAll('.yt-o-tab').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.yt-o-tab')
+        .forEach(x=>{
+          x.classList.remove('bg-emerald-600','text-white');
+          x.setAttribute('aria-selected','false');
+        });
+      btn.classList.add('bg-emerald-600','text-white');
+      btn.setAttribute('aria-selected','true');
+      ordersTab = btn.dataset.oTab;
+      renderOrders();
+    });
+  });
+
+  // Admin PIN gate
+  adminBtn?.addEventListener('click', ()=>{
+    const pin = prompt('Enter admin PIN:');
+    if(pin && pin.trim() !== ""){
+      alert('Admin mode ON');
+      openOrders();
+    } else {
+      alert('Invalid PIN');
+    }
+  });
+
+  async function fetchOrdersByStatus(status){
+    if(DEMO_MODE){
+      return [
+        {
+          _internal_id: "demo-abc123",
+          order_id: "YI-DEMO123",
+          status: status,
+          total: 120,
+          items: [
+            {name:"Panado 500mg (24s)",qty:1},
+            {name:"Cough Syrup 100ml",qty:2}
+          ],
+          meta: { zone:"A" },
+          fraud_score: 0.07
+        }
+      ];
+    }
+
+    try {
+      const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok || !data.ok){
+        return [];
+      }
+      if (data.zone_demand_snapshot){
+        zoneDemandStats = data.zone_demand_snapshot;
+      }
+      return Array.isArray(data.orders) ? data.orders : [];
+    } catch(err){
+      console.error("fetchOrdersByStatus error",err);
+      return [];
+    }
+  }
+
+  async function renderOrders(){
+    const data = await fetchOrdersByStatus(ordersTab);
+    currentOrdersByTab[ordersTab] = data;
+
+    ordersList.innerHTML = data.length
+      ? ''
+      : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
+
+    for(const o of data){
+      const itemsText = (o.items || [])
+        .map(i=>`${i.name} x${i.qty}`)
+        .join(', ');
+
+      const internalId =
+        o._internal_id ||
+        o.internal_id ||
+        null;
+
+      const refDisplay =
+        o.order_public_id ||
+        o.order_id ||
+        internalId ||
+        "REF?";
+
+      const zoneDisplay =
+        (o.meta && o.meta.zone) ? o.meta.zone : "?";
+
+      const fraudDisplay = (typeof o.fraud_score === "number")
+        ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
+        : "";
+
+      const isDelivered = o.status === "delivered";
+      const canAssign   = (o.status === "pending" || o.status === "review_required") && !isDelivered;
+      const canDeliver  = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
+
+      const row = document.createElement('div');
+      row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
+      row.setAttribute('data-order-id', internalId || '');
+      row.setAttribute('data-order-status', o.status || '');
+
+      row.innerHTML = `
+        <div class="flex-1 min-w-0">
+          <div class="font-medium flex flex-wrap items-center gap-1">
+            <span>Ref ${refDisplay}</span>
+            <span>• Zone ${zoneDisplay}</span>
+            <span>• Total R${o.total}</span>
+            ${demandBadge(zoneDisplay)}
+          </div>
+          <div class="text-xs text-slate-500 break-words">${itemsText}</div>
+          <div class="text-xs text-slate-500">
+            Status: ${o.status}${fraudDisplay}
+          </div>
+        </div>
+        <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
+          <button
+            class="btn-assign px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            ${(!canAssign || !internalId) ? 'disabled' : ''}
+            data-id="${internalId || ''}">
+            Assign
+          </button>
+          <button
+            class="btn-delivered px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            ${(!canDeliver || !internalId) ? 'disabled' : ''}
+            data-id="${internalId || ''}">
+            Delivered
+          </button>
+        </div>
+      `;
+      ordersList.appendChild(row);
+    }
+
+    ordersList.querySelectorAll('.btn-assign').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const id = btn.getAttribute('data-id');
+        assignOneOrder(id);
+      });
+    });
+    ordersList.querySelectorAll('.btn-delivered').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const id = btn.getAttribute('data-id');
+        markDelivered(id);
+      });
+    });
+  }
+
+  // === MAP SETUP ===
   const heroEl  = document.getElementById('heroMap');
   const heroMap = L.map(heroEl,{
-    zoomControl:false, dragging:false, scrollWheelZoom:false,
-    doubleClickZoom:false, boxZoom:false, touchZoom:false
+    zoomControl:false,
+    dragging:false,
+    scrollWheelZoom:false,
+    doubleClickZoom:false,
+    boxZoom:false,
+    touchZoom:false
   }).setView([-33.20, 26.55], 8);
 
   L.tileLayer(
@@ -1005,7 +1649,7 @@ window.addEventListener('DOMContentLoaded', () => {
   ];
 
   function carIcon(zone){
-    const cls=`car-dot car-${zone}`;
+    const cls=\`car-dot car-\${zone}\`;
     const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
       <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
       <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
@@ -1038,10 +1682,20 @@ window.addEventListener('DOMContentLoaded', () => {
   function posOnSeg(seg,t){
     const [A,B]=seg;
     return [lerp(A[0],B[0],t), lerp(A[1],B[1],t)];
-    }
+  }
 
   const cars   = [];
   const parcels= [];
+
+  function jitterAround(pt,meters){
+    const d=(meters||800)/111111;
+    const r=Math.random()*d;
+    const a=Math.random()*Math.PI*2;
+    return {
+      lat: pt.lat + r*Math.cos(a),
+      lng: pt.lng + r*Math.sin(a)
+    };
+  }
 
   function makeCar(zone){
     const seg     = ROADS[(Math.random()*ROADS.length)|0];
@@ -1093,7 +1747,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setTimeout(()=>heroMap.invalidateSize(),180);
   window.addEventListener('resize',()=>heroMap.invalidateSize());
 
-  // DRIVER SIGNUP
+  // === DRIVER SIGNUP ===
   formSignup?.addEventListener('submit', async e=>{
     e.preventDefault();
     const name    = document.getElementById('drvName').value.trim();
@@ -1158,15 +1812,15 @@ Radius: ${radius}km
 Vehicle: ${vehicle}`;
     window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
 
-    driverModal.classList.add('hidden');
-    driverModal.classList.remove('flex');
+    closeDriverWindow();
 
-    // demo dashboard fill
+    // fill dashboard demo
     if(driverDashModal){
       if(driverPayoutDueEl) driverPayoutDueEl.textContent = '0';
       if(driverNextWindowEl) driverNextWindowEl.textContent = 'Fri 17:00';
       if(driverZoneDisplayEl) driverZoneDisplayEl.textContent = zone;
       if(driverRadiusDisplayEl) driverRadiusDisplayEl.textContent = radius+'km';
+      openDriverDash();
     }
   });
 
@@ -1174,17 +1828,10 @@ Vehicle: ${vehicle}`;
   formLogin?.addEventListener('submit',e=>{
     e.preventDefault();
     alert('Logged in (demo). Opening dashboard.');
-    driverModal.classList.add('hidden');
-    driverModal.classList.remove('flex');
+    closeDriverWindow();
     if(driverDashModal){
-      driverDashModal.classList.remove('hidden');
-      driverDashModal.classList.add('flex');
+      openDriverDash();
     }
-  });
-
-  closeDriverDash?.addEventListener('click',()=>{
-    driverDashModal?.classList.add('hidden');
-    driverDashModal?.classList.remove('flex');
   });
 
   // === SUBMIT ORDER ===
@@ -1384,7 +2031,7 @@ Vehicle: ${vehicle}`;
       botSendWA.classList.remove('hidden');
       botNext.textContent = "Pay now";
 
-      // ALSO pop fake pay portal (demo)
+      // Pop fake pay portal (demo)
       openPayModal(latestOrderData.order_public_id, latestOrderData.total);
 
       botStage = 1;
@@ -1419,397 +2066,18 @@ Vehicle: ${vehicle}`;
     const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}`;
     window.open(wa,'_blank');
 
-    botModal.classList.add('hidden');
-    botModal.classList.remove('flex');
+    closeBot();
     alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
   });
 
-  // === STORE MODAL ===
-  function renderStoreItems(){
-    storeItemsList.innerHTML = '';
-    storeItems.forEach((it,idx)=>{
-      const row = document.createElement('div');
-      row.className = "flex items-center justify-between border rounded-lg p-2";
-      row.innerHTML = `
-        <div class="text-sm">
-          <div class="font-medium">${it.name}</div>
-          <div class="text-xs text-slate-500">R${it.price}</div>
-        </div>
-        <button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline">remove</button>
-      `;
-      storeItemsList.appendChild(row);
-    });
-
-    // hook remove buttons
-    storeItemsList.querySelectorAll('.removeStoreItem').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const i = Number(btn.getAttribute('data-idx'));
-        storeItems.splice(i,1);
-        renderStoreItems();
-      });
-    });
-  }
-
-  function openStoreModal(){
-    storeModal.classList.remove('hidden');
-    storeModal.classList.add('flex');
-  }
-  function closeStoreModal(){
-    storeModal.classList.add('hidden');
-    storeModal.classList.remove('flex');
-  }
-
-  openStoreFooter?.addEventListener('click', openStoreModal);
-  closeStoreModalBtn?.addEventListener('click', closeStoreModal);
-  cancelStoreBtn?.addEventListener('click', closeStoreModal);
-
-  addStoreItemBtn?.addEventListener('click', e=>{
-    e.preventDefault();
-    const name = prompt('Item name?');
-    const priceVal = prompt('Price (R)?');
-    const price = Number(priceVal);
-    if(!name || !price || Number.isNaN(price)){ return; }
-    storeItems.push({name, price});
-    renderStoreItems();
-  });
-
-  submitStoreBtn?.addEventListener('click', async ()=>{
-    const storeName  = storeNameEl.value.trim();
-    const storePhone = storePhoneEl.value.trim();
-    const zone       = storeZoneEl.value;
-
-    if(!storeName || !storePhone){
-      alert("Please add store name & WhatsApp.");
-      return;
-    }
-    if(storeItems.length === 0){
-      if(!confirm("No items added yet. Submit anyway?")){
-        return;
-      }
-    }
-
-    const payload = {
-      store_id: `STORE-${Date.now().toString().slice(-6)}`,
-      name: storeName,
-      phone: storePhone,
-      zone: zone,
-      items: storeItems.map(it=>({
-        name: it.name,
-        price: it.price
-      }))
-    };
-
-    if(!DEMO_MODE){
-      try{
-        const r = await fetch(`${BASE_API}/stores`, {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify(payload)
-        });
-        const j = await r.json().catch(()=>({}));
-        if(!r.ok || !j.ok){
-          alert("Store save failed on server.");
-        } else {
-          console.log("store create resp", j);
-        }
-      }catch(err){
-        console.error("store create failed",err);
-      }
-    } else {
-      console.info("[DEMO] Would POST store", payload);
-    }
-
-    // WhatsApp admin alert
-    const adminMsg =
-`New store signup:
-Name: ${storeName}
-Phone: ${storePhone}
-Zone: ${zone}
-Items:
-${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
-    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(adminMsg)}`,'_blank');
-
-    alert("Thanks! We'll review your store.");
-    closeStoreModal();
-
-    // reset form
-    storeNameEl.value = '';
-    storePhoneEl.value = '';
-    storeZoneEl.value = 'A';
-    storeItems.splice(0,storeItems.length);
-    renderStoreItems();
-  });
-
-  // === ADMIN PANEL ===
-  function openOrders(){
-    ordersPanel.classList.remove('hidden');
-    ordersPanel.classList.add('flex');
-    renderOrders();
-  }
-  function closeOrders(){
-    ordersPanel.classList.add('hidden');
-    ordersPanel.classList.remove('flex');
-  }
-  ordersClose?.addEventListener('click', closeOrders);
-
+  // === OPEN ORDERS PANEL VIA EVENT ===
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
     if(!ordersPanel.classList.contains('hidden')) renderOrders();
   });
 
-  ordersRefresh?.addEventListener('click', renderOrders);
-
-  async function assignOneOrder(internalId){
-    if(!internalId){
-      alert("Missing order id.");
-      return;
-    }
-
-    if(DEMO_MODE){
-      alert(`[DEMO] Would auto-assign ${internalId}`);
-      return;
-    }
-
-    try{
-      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"}
-      });
-      const data = await res.json().catch(()=>({}));
-
-      if(res.ok && data && data.ok){
-        alert(`Assigned: ${internalId} -> ${data.driver_id || 'driver?'}`);
-      } else if (res.status === 409 && data && data.error === "no_driver_available") {
-        alert(`No driver available for ${internalId}`);
-      } else {
-        alert(`Failed to assign ${internalId} (${res.status})`);
-      }
-    }catch(err){
-      console.error("assignOneOrder err",err);
-      alert(`Network error assigning ${internalId}`);
-    }
-
-    renderOrders();
-  }
-
-  async function markDelivered(internalId){
-    if(!internalId){
-      alert("Missing order id.");
-      return;
-    }
-
-    if(DEMO_MODE){
-      alert(`[DEMO] Would mark delivered ${internalId}`);
-      return;
-    }
-
-    try{
-      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({status:"delivered"})
-      });
-      const data = await res.json().catch(()=>({}));
-      if(res.ok && data && data.ok){
-        alert(`Marked delivered: ${internalId}`);
-      } else {
-        alert(`Failed to mark delivered (${res.status})`);
-      }
-    }catch(err){
-      console.error("markDelivered err",err);
-      alert(`Network error marking delivered ${internalId}`);
-    }
-
-    renderOrders();
-  }
-
-  async function autoAssignForAll(){
-    const ordersInTab = currentOrdersByTab[ordersTab] || [];
-    const targets = ordersInTab.filter(o => o.status === 'pending');
-
-    if (targets.length === 0){
-      alert("No pending orders in this view to assign.");
-      return;
-    }
-
-    const results = [];
-    for (const o of targets){
-      const internalId = o._internal_id || o.internal_id || null;
-      if(!internalId){
-        results.push(`❓ Missing ID for an order, skipped.`);
-        continue;
-      }
-
-      if (DEMO_MODE){
-        results.push(`✅ (demo) ${internalId} -> DRV-DEMO`);
-        continue;
-      }
-
-      try {
-        const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
-          method: "POST",
-          headers: {"Content-Type":"application/json"}
-        });
-        const data = await res.json().catch(()=>({}));
-
-        if(res.ok && data && data.ok){
-          const driverId = data.driver_id || "driver?";
-          results.push(`✅ ${internalId} → ${driverId}`);
-        } else if (res.status === 409 && data && data.error === "no_driver_available") {
-          results.push(`⚠️ ${internalId}: no driver`);
-        } else {
-          results.push(`❌ ${internalId}: failed (${res.status})`);
-        }
-      } catch (err){
-        console.error("autoAssignForAll error", err);
-        results.push(`❌ ${internalId}: network error`);
-      }
-    }
-
-    alert(results.join("\n"));
-    renderOrders();
-  }
-  ordersAssign?.addEventListener('click', autoAssignForAll);
-
-  document.querySelectorAll('.yt-o-tab').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      document.querySelectorAll('.yt-o-tab')
-        .forEach(x=>x.classList.remove('bg-emerald-600','text-white'));
-      btn.classList.add('bg-emerald-600','text-white');
-      ordersTab = btn.dataset.oTab;
-      renderOrders();
-    });
-  });
-
-  adminBtn?.addEventListener('click', ()=>{
-    const pin = prompt('Enter admin PIN:');
-    if(pin && pin.trim() !== ""){
-      alert('Admin mode ON');
-      openOrders();
-    } else {
-      alert('Invalid PIN');
-    }
-  });
-
-  async function fetchOrdersByStatus(status){
-    if(DEMO_MODE){
-      return [
-        {
-          _internal_id: "demo-abc123",
-          order_id: "YI-DEMO123",
-          status: status,
-          total: 120,
-          items: [
-            {name:"Panado 500mg (24s)",qty:1},
-            {name:"Cough Syrup 100ml",qty:2}
-          ],
-          meta: { zone:"A" },
-          fraud_score: 0.07
-        }
-      ];
-    }
-
-    try {
-      const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
-      const data = await res.json().catch(()=>({}));
-      if(!res.ok || !data.ok){
-        return [];
-      }
-      if (data.zone_demand_snapshot){
-        zoneDemandStats = data.zone_demand_snapshot;
-      }
-      return Array.isArray(data.orders) ? data.orders : [];
-    } catch(err){
-      console.error("fetchOrdersByStatus error",err);
-      return [];
-    }
-  }
-
-  async function renderOrders(){
-    const data = await fetchOrdersByStatus(ordersTab);
-    currentOrdersByTab[ordersTab] = data;
-
-    ordersList.innerHTML = data.length
-      ? ''
-      : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
-
-    for(const o of data){
-      const itemsText = (o.items || [])
-        .map(i=>`${i.name} x${i.qty}`)
-        .join(', ');
-
-      const internalId =
-        o._internal_id ||
-        o.internal_id ||
-        null;
-
-      const refDisplay =
-        o.order_public_id ||
-        o.order_id ||
-        internalId ||
-        "REF?";
-
-      const zoneDisplay =
-        (o.meta && o.meta.zone) ? o.meta.zone : "?";
-
-      const fraudDisplay = (typeof o.fraud_score === "number")
-        ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
-        : "";
-
-      const isDelivered = o.status === "delivered";
-      const canAssign   = (o.status === "pending" || o.status === "review_required") && !isDelivered;
-      const canDeliver  = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
-
-      const row = document.createElement('div');
-      row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
-      row.setAttribute('data-order-id', internalId || '');
-      row.setAttribute('data-order-status', o.status || '');
-
-      row.innerHTML = `
-        <div class="flex-1 min-w-0">
-          <div class="font-medium flex flex-wrap items-center gap-1">
-            <span>Ref ${refDisplay}</span>
-            <span>• Zone ${zoneDisplay}</span>
-            <span>• Total R${o.total}</span>
-            ${demandBadge(zoneDisplay)}
-          </div>
-          <div class="text-xs text-slate-500 break-words">${itemsText}</div>
-          <div class="text-xs text-slate-500">
-            Status: ${o.status}${fraudDisplay}
-          </div>
-        </div>
-        <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
-          <button
-            class="btn-assign px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            ${(!canAssign || !internalId) ? 'disabled' : ''}
-            data-id="${internalId || ''}">
-            Assign
-          </button>
-          <button
-            class="btn-delivered px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
-            ${(!canDeliver || !internalId) ? 'disabled' : ''}
-            data-id="${internalId || ''}">
-            Delivered
-          </button>
-        </div>
-      `;
-      ordersList.appendChild(row);
-    }
-
-    ordersList.querySelectorAll('.btn-assign').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const id = btn.getAttribute('data-id');
-        assignOneOrder(id);
-      });
-    });
-    ordersList.querySelectorAll('.btn-delivered').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const id = btn.getAttribute('data-id');
-        markDelivered(id);
-      });
-    });
-  }
 });
 </script>
 </body>
 </html>
+```
