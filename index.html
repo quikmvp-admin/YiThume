@@ -312,7 +312,7 @@
 
 <script>
 window.addEventListener('DOMContentLoaded', () => {
-  // === CONFIG & GLOBALS THAT WERE MISSING ===
+  // === CONFIG & GLOBALS ===
   const BASE_API = "/api/app";
   const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
@@ -488,7 +488,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function nextETA(rush){
     const now     = new Date();
     const windows = [[8,10],[12,14],[16,18]];
-    const allowed = new Set([0,3,4,5,6]); // Sun,Wed,Thu,Fri,Sat
+       const allowed = new Set([0,3,4,5,6]); // Sun,Wed,Thu,Fri,Sat
     const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
     function fmt(date,[h1,h2]){
@@ -789,7 +789,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function makeCar(zone){
     const seg     = ROADS[(Math.random()*ROADS.length)|0];
     const startT  = Math.random();
-    Iconst dir     = Math.random()<.5 ? 1 : -1;
+    const dir     = Math.random()<.5 ? 1 : -1;
     const speed   = 0.10+Math.random()*0.06;
     const [lat,lng]=posOnSeg(seg,startT);
     const m      = L.marker([lat,lng],{icon:carIcon(zone)}).addTo(heroMap);
@@ -1000,7 +1000,7 @@ Vehicle: ${vehicle}`;
           `Yi Thume, my order is:\n` +
           `Ref: DEMO-${Date.now().toString().slice(-6)}\n` +
           `Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n` +
-          `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
+          `Items: ${summary.items.map(i=>\`${i.name} x\${i.qty}\`).join(', ')}\n` +
           `Total: R${summary.total}\n` +
           `Expected: ${eta}\n` +
           `Payment: ${paymentMethod}\n` +
@@ -1072,7 +1072,7 @@ Vehicle: ${vehicle}`;
       `<b>YiThume</b> 🤖<br/>
        Thanks for your order!<br/>
        <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
-       <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
+       <b>Items:</b> ${latestOrderData.items.map(i=>\`${i.name} x\${i.qty}\`).join(', ')}<br/>
        <b>Zone:</b> ${latestOrderData.zone}<br/>
        <b>Total:</b> R${latestOrderData.total}<br/>
        <b>Estimated window:</b> ${latestOrderData.eta}`
@@ -1152,7 +1152,7 @@ Vehicle: ${vehicle}`;
           "Yi Thume, my order is:",
           `Ref: ${latestOrderData.order_public_id}`,
           `Deliver to: Zone ${latestOrderData.zone}`,
-          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
+          `Items: ${latestOrderData.items.map(i=>\`${i.name} x\${i.qty}\`).join(', ')}`,
           `Total: R${latestOrderData.total}`,
           `Expected: ${latestOrderData.eta}`,
           `Payment: ${latestOrderData.payment_method}`,
