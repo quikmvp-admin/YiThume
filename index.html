@@ -888,6 +888,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const ordersRefresh       = document.getElementById('ordersRefresh');
   let   ordersTab           = 'pending';
 
+  // Admin mobile buttons (mirror desktop)
+  const adminBtnMobile      = document.getElementById('adminLoginBtnMobile');
+
   // Store modal refs
   const storeModal          = document.getElementById('storeModal');
   const openStoreFooter     = document.getElementById('openStoreModalFooter');
@@ -950,7 +953,7 @@ window.addEventListener('DOMContentLoaded', () => {
       .filter(c => c.checked)
       .map(c => {
         const i   = Number(c.dataset.idx);
-        const qty = Number(document.querySelector(\`.itemQty[data-idx="\${i}"]\`).value || 1);
+        const qty = Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value || 1);
         return {
           name:  CATALOG[i].name,
           price: Number(CATALOG[i].price),
@@ -980,15 +983,16 @@ window.addEventListener('DOMContentLoaded', () => {
   function nextETA(rush){
     const now     = new Date();
     const windows = [[8,10],[12,14],[16,18]];
-    const allowed = new Set([0,3,4,5,6]); // Sun,Wed,Thu,Fri,Sat
+    // allow: Sun(0) Wed(3) Thu(4) Fri(5) Sat(6)
+    const allowed = new Set([0,3,4,5,6]);
     const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
     function fmt(date,[h1,h2]){
       const sameDay = (date.toDateString()===new Date().toDateString());
       if (sameDay){
-        return \`\${pad2(h1)}:00–\${pad2(h2)}:00 \${rush?'today (rush)':'today'}\`;
+        return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
       }
-      return \`\${dayNames[date.getDay()]} \${pad2(h1)}:00–\${pad2(h2)}:00\`;
+      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
     }
 
     if (allowed.has(now.getDay())){
@@ -1092,7 +1096,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function appendBot(msg,who='bot'){
     const wrap=document.createElement('div');
-    wrap.className = \`flex \${who==='bot'?'justify-start':'justify-end'}\`;
+    wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
     wrap.innerHTML = `
       <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
         ${msg}
@@ -1206,7 +1210,6 @@ window.addEventListener('DOMContentLoaded', () => {
       el.addEventListener('click',openDriverWindow);
     }
   });
-
   closeDriver?.addEventListener('click',closeDriverWindow);
 
   // Driver tabs
@@ -1335,6 +1338,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   // === ADMIN PANEL ===
   ordersClose?.addEventListener('click', closeOrders);
+
+  // Also allow admin via mobile Admin button
+  adminBtnMobile?.addEventListener('click', () => {
+    adminBtn?.click();
+  });
 
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
@@ -1648,7 +1656,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   ];
 
   function carIcon(zone){
-    const cls=\`car-dot car-\${zone}\`;
+    const cls=`car-dot car-${zone}`;
     const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
       <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
       <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
@@ -2079,4 +2087,3 @@ Vehicle: ${vehicle}`;
 </script>
 </body>
 </html>
-```
