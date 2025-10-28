@@ -312,6 +312,16 @@
 
 <script>
 window.addEventListener('DOMContentLoaded', () => {
+  // === CONFIG & GLOBALS THAT WERE MISSING ===
+  const BASE_API = "/api/app";
+  const WHATSAPP_NUMBER = "270691456201";
+  const ADMIN_WHATSAPP  = "270691456201";
+  const DEMO_MODE       = false;
+
+  function waText(str) {
+    return encodeURIComponent(str);
+  }
+
   // === RUNTIME / GLOBAL STATE ===
   let latestOrderData = null;
   let zoneDemandStats = {};
@@ -448,7 +458,7 @@ window.addEventListener('DOMContentLoaded', () => {
       .filter(c => c.checked)
       .map(c => {
         const i   = Number(c.dataset.idx);
-        const qty = Number(document.querySelector(\`.itemQty[data-idx="\${i}"]\`).value || 1);
+        const qty = Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value || 1);
         return {
           name:  CATALOG[i].name,
           price: Number(CATALOG[i].price),
@@ -484,9 +494,9 @@ window.addEventListener('DOMContentLoaded', () => {
     function fmt(date,[h1,h2]){
       const sameDay = (date.toDateString()===new Date().toDateString());
       if (sameDay){
-        return \`\${pad2(h1)}:00–\${pad2(h2)}:00 \${rush?'today (rush)':'today'}\`;
+        return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
       }
-      return \`\${dayNames[date.getDay()]} \${pad2(h1)}:00–\${pad2(h2)}:00\`;
+      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
     }
 
     if (allowed.has(now.getDay())){
@@ -540,11 +550,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function appendBot(msg,who='bot'){
     const wrap=document.createElement('div');
-    wrap.className = \`flex \${who==='bot'?'justify-start':'justify-end'}\`;
-    wrap.innerHTML = \`
-      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm \${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
-        \${msg}
-      </div>\`;
+    wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
+    wrap.innerHTML = `
+      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
+        ${msg}
+      </div>`;
     botFeed.appendChild(wrap);
     botFeed.scrollTop = botFeed.scrollHeight;
   }
@@ -552,9 +562,9 @@ window.addEventListener('DOMContentLoaded', () => {
   function demandBadge(zone){
     const missCount = zoneDemandStats[zone]?.misses || 0;
     if(missCount === 0) return "";
-    return \`<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-      demand \${missCount}x / no driver
-    </span>\`;
+    return `<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+      demand ${missCount}x / no driver
+    </span>`;
   }
 
   // === MOBILE NAV ===
@@ -738,7 +748,7 @@ window.addEventListener('DOMContentLoaded', () => {
   ];
 
   function carIcon(zone){
-    const cls=\`car-dot car-\${zone}\`;
+    const cls=`car-dot car-${zone}`;
     const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
       <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
       <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
@@ -779,7 +789,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function makeCar(zone){
     const seg     = ROADS[(Math.random()*ROADS.length)|0];
     const startT  = Math.random();
-    const dir     = Math.random()<.5 ? 1 : -1;
+    Iconst dir     = Math.random()<.5 ? 1 : -1;
     const speed   = 0.10+Math.random()*0.06;
     const [lat,lng]=posOnSeg(seg,startT);
     const m      = L.marker([lat,lng],{icon:carIcon(zone)}).addTo(heroMap);
@@ -990,7 +1000,7 @@ Vehicle: ${vehicle}`;
           `Yi Thume, my order is:\n` +
           `Ref: DEMO-${Date.now().toString().slice(-6)}\n` +
           `Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n` +
-          `Items: ${summary.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}\n` +
+          `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
           `Total: R${summary.total}\n` +
           `Expected: ${eta}\n` +
           `Payment: ${paymentMethod}\n` +
@@ -1062,7 +1072,7 @@ Vehicle: ${vehicle}`;
       `<b>YiThume</b> 🤖<br/>
        Thanks for your order!<br/>
        <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
-       <b>Items:</b> ${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}<br/>
+       <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
        <b>Zone:</b> ${latestOrderData.zone}<br/>
        <b>Total:</b> R${latestOrderData.total}<br/>
        <b>Estimated window:</b> ${latestOrderData.eta}`
@@ -1142,7 +1152,7 @@ Vehicle: ${vehicle}`;
           "Yi Thume, my order is:",
           `Ref: ${latestOrderData.order_public_id}`,
           `Deliver to: Zone ${latestOrderData.zone}`,
-          `Items: ${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}`,
+          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
           `Total: R${latestOrderData.total}`,
           `Expected: ${latestOrderData.eta}`,
           `Payment: ${latestOrderData.payment_method}`,
@@ -1544,6 +1554,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 });
 </script>
+
 
 </body>
 </html>
