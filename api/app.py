@@ -19,23 +19,19 @@ mongo_client = MongoClient(MONGO_URI)
 DB_NAME = "yithume"
 
 def get_db():
-    """Return a live db handle if Mongo works, else raise RuntimeError."""
-    try:
-        mongo_client.admin.command("ping")
-        return mongo_client[DB_NAME]
-    except Exception as e:
-        raise RuntimeError(f"Mongo connection failed: {e}")
+    mongo_client.admin.command("ping")
+    return mongo_client[DB_NAME]
 
 # -------------------------------------------------
 # CONFIG / CONSTANTS
 # -------------------------------------------------
-ITEM_MARGIN_RATE = 0.12      # 12% margin if no explicit item.cost
-PLATFORM_FEE_RATE = 0.10     # 10% of delivery fee goes to platform on single-drop
-BATCH_BONUS_PER_EXTRA = 0.25 # each extra stop adds 25% of fee
-BATCH_BONUS_CAP = 0.60       # cap bonus at +60% of fee total
-CLUSTER_WINDOW_MIN = 120     # 2hr batch window
-AUTO_ASSIGN_RADIUS_KM = 12   # max km to auto-assign driver
-SERVICE_BBOX = {             # rough EC bounding box (tune later)
+ITEM_MARGIN_RATE = 0.12
+PLATFORM_FEE_RATE = 0.10
+BATCH_BONUS_PER_EXTRA = 0.25
+BATCH_BONUS_CAP = 0.60
+CLUSTER_WINDOW_MIN = 120
+AUTO_ASSIGN_RADIUS_KM = 12
+SERVICE_BBOX = {
     "min_lat": -34.2, "max_lat": -33.0,
     "min_lng":  25.5, "max_lng":  27.5
 }
@@ -60,28 +56,22 @@ def make_order_public_id():
     return f"YI-{ts}-{str(uuid.uuid4())[:6].upper()}"
 
 def safe_doc(doc):
-    """Strip Mongo _id and turn datetimes into ISO strings for JSON."""
     if not doc:
         return None
     out = dict(doc)
     out.pop("_id", None)
-
     for k in ("created_at", "assigned_at", "delivered_at"):
         if isinstance(out.get(k), datetime):
             out[k] = out[k].isoformat() + "Z"
-
     loc = out.get("current_location")
     if loc and isinstance(loc.get("updated_at"), datetime):
         loc["updated_at"] = loc["updated_at"].isoformat() + "Z"
-
     return out
 
 def phone_ok(p):
-    # WhatsApp numbers like "2782..." etc (10-15 digits)
     return bool(re.fullmatch(r"\d{10,15}", str(p or "").strip()))
 
 def inside_service_area(lat, lng):
-    # If we don't have coords, allow it (don't hard-block). We'll tighten later.
     if lat is None or lng is None:
         return True
     bb = SERVICE_BBOX
@@ -91,7 +81,6 @@ def inside_service_area(lat, lng):
     )
 
 def haversine_km(lat1, lon1, lat2, lon2):
-    """Distance between 2 lat/lng points in KM. Returns None if missing."""
     if None in (lat1, lon1, lat2, lon2):
         return None
     r = 6371.0
@@ -101,7 +90,6 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return 2 * r * asin(sqrt(a))
 
 def ensure_indexes(db):
-    """Create useful indexes if they don't exist (idempotent)."""
     db.orders.create_index([("created_at", DESCENDING)])
     db.orders.create_index([("_internal_id", ASCENDING)], unique=True)
     db.orders.create_index([("customer.phone", ASCENDING), ("created_at", DESCENDING)])
@@ -117,8 +105,10 @@ def ensure_indexes(db):
 
     db.payouts.create_index([("driver_id", ASCENDING), ("created_at", DESCENDING)])
 
+    db.stores.create_index([("_internal_id", ASCENDING)], unique=True)
+    db.store_items.create_index([("store_id", ASCENDING)])
+
 def wa_order_text(order):
-    """Build WhatsApp message body sent back to frontend."""
     items_list = ", ".join(
         [f"{i.get('name')} x{i.get('qty')}" for i in order.get("items", [])]
     )
@@ -140,16 +130,7 @@ def wa_order_text(order):
     ]
     return "\n".join(lines)
 
-# ---------------- Fraud / legitimacy rules -----------------------------
 def rule_based_fraud_score(db, order_doc):
-    """
-    Very lightweight heuristics:
-    - bad phone
-    - same phone blasting multiple orders in last 60m
-    - duplicate subtotal in last 10m
-    - clearly outside service bbox
-    - way above rolling avg spend
-    """
     score = 0.0
     flags = {}
 
@@ -158,7 +139,6 @@ def rule_based_fraud_score(db, order_doc):
         flags["bad_phone"] = True
         score += 0.2
 
-    # phone velocity (orders in last 60 minutes)
     recent_count = (
         db.orders.count_documents({
             "customer.phone": phone,
@@ -169,7 +149,6 @@ def rule_based_fraud_score(db, order_doc):
         flags["phone_velocity"] = True
         score += 0.4
 
-    # duplicate-ish subtotal in last 10m
     if phone:
         dup = db.orders.find_one({
             "customer.phone": phone,
@@ -180,33 +159,24 @@ def rule_based_fraud_score(db, order_doc):
             flags["duplicate_like"] = True
             score += 0.3
 
-    # rough out-of-area check
     coords = (((order_doc.get("customer") or {}).get("address") or {}).get("coords") or {})
     if not inside_service_area(coords.get("lat"), coords.get("lng")):
         flags["out_of_area"] = True
         score += 0.5
 
-    # extremely high basket vs avg
     pipeline = [{"$group": {"_id": None, "avg": {"$avg": "$total"}}}]
     agg = list(db.orders.aggregate(pipeline))
-    avg_total = agg[0]["avg"] if agg else 50  # default baseline ~R50
+    avg_total = agg[0]["avg"] if agg else 50
     if order_doc.get("total", 0) > avg_total * 3:
         flags["high_value"] = True
         score += 0.2
 
     return min(score, 1.0), flags
 
-# ---------------- Driver availability / dispatch -----------------------
 def find_available_driver(db, zone, drop_lat=None, drop_lng=None):
-    """
-    1. Prefer drivers in same zone, active+available.
-    2. If we have customer coords, choose closest within AUTO_ASSIGN_RADIUS_KM.
-    3. Otherwise just first matching driver.
-    """
     q = {"active": True, "available": True}
     if zone:
         q["meta.zone"] = zone
-
     candidates = list(db.drivers.find(q))
     if not candidates:
         return None
@@ -224,52 +194,34 @@ def find_available_driver(db, zone, drop_lat=None, drop_lng=None):
         if km <= AUTO_ASSIGN_RADIUS_KM and km < best_d:
             best = d
             best_d = km
-
     return best or candidates[0]
 
 def cluster_key(order_doc):
-    """
-    Used to group drops for batching / driver earnings.
-    We cluster by (zone + coarse address keyword + 2hr window start).
-    """
     addr  = ((order_doc.get("customer") or {}).get("address") or {})
     zone  = (order_doc.get("meta") or {}).get("zone", "")
     line1 = (addr.get("line1") or "").strip().lower()
 
-    # Grab first word / landmark as coarse anchor
     coarse = re.split(r"[,\s]+", line1)[0] if line1 else "unknown"
 
     now = _now_dt()
-    # round hour down to nearest 2h block, e.g. 13:xx -> 12:00 block
     block_hours = (now.hour // (CLUSTER_WINDOW_MIN // 60)) * (CLUSTER_WINDOW_MIN // 60)
     window_start = now.replace(hour=block_hours, minute=0, second=0, microsecond=0)
     bucket_str = window_start.strftime("%Y%m%d%H%M")
 
     return f"{zone}:{coarse}:{bucket_str}"
 
-# ---------------- Earnings / settlement logic --------------------------
 def compute_earnings(order_doc, prior_in_cluster=0):
-    """
-    We split delivery_fee between driver and platform, and we apply batching
-    bonus if same driver is doing multiple clustered drops in same 2h block.
-    We also add margin on items for the platform.
-    """
     fee = float(order_doc.get("delivery_fee", 0))
 
-    # baseline split
     platform_cut = fee * PLATFORM_FEE_RATE
     driver_cut   = fee - platform_cut
 
-    # batching bonus: each extra drop in that cluster gives driver more money
-    # prior_in_cluster = number of previous delivered orders in this cluster window
     if prior_in_cluster > 0:
-        # e.g. 1 extra stop => +25% of fee to driver
         bonus_pct = min(prior_in_cluster * BATCH_BONUS_PER_EXTRA, BATCH_BONUS_CAP)
         bonus_amt = bonus_pct * fee
         driver_cut += bonus_amt
         platform_cut = max(0.0, fee - driver_cut)
 
-    # product margin
     items = order_doc.get("items", [])
     margin = 0.0
     for it in items:
@@ -282,13 +234,9 @@ def compute_earnings(order_doc, prior_in_cluster=0):
             margin += (price * ITEM_MARGIN_RATE) * qty
 
     platform_total = platform_cut + margin
-
     return round(driver_cut, 2), round(platform_total, 2)
 
 def accrue_driver_earning(db, driver_internal_id, amount, reason, order_id):
-    """
-    Add money to driver's weekly_payout_due and append to earnings_history.
-    """
     db.drivers.update_one(
         {"_internal_id": driver_internal_id},
         {
@@ -302,9 +250,7 @@ def accrue_driver_earning(db, driver_internal_id, amount, reason, order_id):
         }
     )
 
-# ---------------- Demand heatlog (no-driver zones) ---------------------
 def log_zone_demand(db, zone, coords, phone):
-    """Record when someone tried to order in a zone but no driver was available."""
     db.zone_demand.insert_one({
         "zone": zone,
         "ts": _now_dt(),
@@ -313,11 +259,6 @@ def log_zone_demand(db, zone, coords, phone):
     })
 
 def recent_zone_demand_snapshot(db):
-    """
-    For admin dashboard heat bubbles.
-    Count how many 'no driver available' events per zone in the last 24h.
-    Returns dict like { "A":{"misses":2}, "C":{"misses":1} }
-    """
     since = _now_dt() - timedelta(hours=24)
     pipe = [
         {"$match": {"ts": {"$gte": since}}},
@@ -329,13 +270,10 @@ def recent_zone_demand_snapshot(db):
         out[z] = {"misses": row["count"]}
     return out
 
-# -------------------------------------------------
-# STARTUP: try indexes
-# -------------------------------------------------
+# init indexes
 try:
     ensure_indexes(get_db())
 except Exception:
-    # On cold boot without working DB, just continue.
     pass
 
 # -------------------------------------------------
@@ -345,23 +283,20 @@ except Exception:
 @app.route("/", methods=["GET"])
 @app.route("/api/app", methods=["GET"])
 def health():
-    """
-    Health check for uptime monitors and debugging.
-    Frontend doesn't call this for user flow, but it's nice to test:
-    GET /api/app
-    """
     try:
         db = get_db()
         orders_count = db.orders.count_documents({})
         drivers_count = db.drivers.count_documents({"active": True})
+        stores_count  = db.stores.count_documents({})
         return jsonify({
             "ok": True,
             "service": "YiThume (mongo+logic)",
             "db": "up",
             "orders_count": orders_count,
-            "drivers_count": drivers_count
+            "drivers_count": drivers_count,
+            "stores_count": stores_count
         }), 200
-    except RuntimeError as e:
+    except Exception as e:
         return jsonify({
             "ok": True,
             "service": "YiThume (mongo+logic)",
@@ -369,18 +304,11 @@ def health():
             "error": str(e)
         }), 200
 
-# ---------------- CREATE ORDER (front-end Checkout button) -------------
+
+# ---------------- CREATE ORDER -------------------
 @app.route("/orders", methods=["POST"])
 @app.route("/api/app/orders", methods=["POST"])
 def create_order():
-    """
-    Frontend calls this when user hits Checkout in the modal.
-    We:
-    - verify driver exists in that zone / area
-    - run fraud heuristics
-    - save order
-    - return wa_message so frontend can open WhatsApp with it
-    """
     data = request.json or {}
 
     internal_id = str(uuid.uuid4())
@@ -400,20 +328,22 @@ def create_order():
         "delivery_fee": data.get("delivery_fee", 0),
         "total": total,
 
-        "payment": data.get("payment", {
-            "method": "cash",
-            "status": "pending",
-            "provider_ref": None
-        }),
+        # NEW: add fake_checkout_url so front-end can "open" it
+        "payment": {
+            "method": data.get("payment", {}).get("method", "card"),
+            "status": "pending",  # 'pending' | 'paid'
+            "provider_ref": None,
+            "fake_checkout_url": f"https://fake-pay.yithume.local/checkout/{internal_id}"
+        },
 
-        "status": "pending",            # may become 'review_required'
+        "status": "pending",
         "assigned_driver_id": None,
         "assigned_at": None,
         "delivered_at": None,
 
-        "route": data.get("route", {}), # contains eta_text from frontend
+        "route": data.get("route", {}),
         "created_by": data.get("created_by", "web"),
-        "meta": data.get("meta", {}),   # contains zone, rush, etc
+        "meta": data.get("meta", {}),
 
         "fraud_score": 0.0,
         "fraud_flags": {},
@@ -428,8 +358,6 @@ def create_order():
 
     try:
         db = get_db()
-
-        # STEP 1: gate based on driver availability for that zone / area
         zone   = (order_doc["meta"] or {}).get("zone")
         coords = (((order_doc.get("customer") or {}).get("address") or {}).get("coords") or {})
         candidate_driver = find_available_driver(
@@ -440,14 +368,12 @@ def create_order():
         )
 
         if not candidate_driver:
-            # log demand so admin can see "Zone C = high demand, no drivers"
             log_zone_demand(
                 db,
                 zone,
                 coords,
                 (order_doc.get("customer") or {}).get("phone")
             )
-
             return jsonify({
                 "ok": False,
                 "error": "no_driver_available",
@@ -458,22 +384,16 @@ def create_order():
                 )
             }), 409
 
-        # STEP 2: fraud / trust
         fs, ff = rule_based_fraud_score(db, order_doc)
         order_doc["fraud_score"], order_doc["fraud_flags"] = fs, ff
         if fs >= 0.75:
             order_doc["status"] = "review_required"
 
-        # STEP 3: cluster key for batching economics
         order_doc["cluster_key"] = cluster_key(order_doc)
 
-        # STEP 4: save
         db.orders.insert_one(order_doc)
 
-        # STEP 5: build WhatsApp message for frontend
         wa_msg = wa_order_text(order_doc)
-
-        # STEP 6: also send fresh zone_demand snapshot so admin panel can show heat
         zd_snapshot = recent_zone_demand_snapshot(db)
 
         return jsonify({
@@ -484,30 +404,20 @@ def create_order():
             "fraud_score": fs,
             "fraud_flags": ff,
             "wa_message": wa_msg,
-            "zone_demand_snapshot": zd_snapshot
+            "zone_demand_snapshot": zd_snapshot,
+            "payment_portal_url": order_doc["payment"]["fake_checkout_url"]  # <-- front-end can show "Pay"
         }), 201
 
-    except RuntimeError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_unavailable",
-            "details": str(e)
-        }), 500
     except mongo_errors.PyMongoError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_write_failed",
-            "details": str(e)
-        }), 500
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
-# ---------------- LIST ORDERS (admin panel tabs) -----------------------
+
+# ---------------- LIST ORDERS (ADMIN) -----------
 @app.route("/orders", methods=["GET"])
 @app.route("/api/app/orders", methods=["GET"])
 def list_orders():
-    """
-    Admin panel calls this with ?status=pending / assigned / delivered / etc
-    We also return zone_demand_snapshot so you can see where you need drivers.
-    """
     status = request.args.get("status")
     q = {"status": status} if status else {}
 
@@ -515,7 +425,6 @@ def list_orders():
         db = get_db()
         cur = db.orders.find(q).sort("created_at", DESCENDING).limit(50)
         orders_out = [safe_doc(o) for o in cur]
-
         zd_snapshot = recent_zone_demand_snapshot(db)
 
         return jsonify({
@@ -524,29 +433,50 @@ def list_orders():
             "zone_demand_snapshot": zd_snapshot
         }), 200
 
-    except RuntimeError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_unavailable",
-            "details": str(e),
-            "orders": []
-        }), 500
     except mongo_errors.PyMongoError as e:
         return jsonify({
-            "ok": False,
-            "error": "db_read_failed",
-            "details": str(e),
-            "orders": []
+            "ok": False, "error": "db_read_failed", "details": str(e), "orders": []
+        }), 500
+    except Exception as e:
+        return jsonify({
+            "ok": False, "error": "server_error", "details": str(e), "orders": []
         }), 500
 
-# ---------------- AUTO-ASSIGN (best nearby driver) ---------------------
+
+# ---------------- MARK PAID (ADMIN) ------------
+@app.route("/orders/<oid>/mark-paid", methods=["POST"])
+@app.route("/api/app/orders/<oid>/mark-paid", methods=["POST"])
+def mark_paid(oid):
+    """
+    Admin confirms money arrived.
+    Sets payment.status = 'paid'.
+    (Later we only dispatch paid orders except COD cases.)
+    """
+    try:
+        db = get_db()
+        o = db.orders.find_one({"_internal_id": oid})
+        if not o:
+            return jsonify({"ok": False, "error": "order not found"}), 404
+
+        payment = o.get("payment", {})
+        payment["status"] = "paid"
+
+        db.orders.update_one(
+            {"_internal_id": oid},
+            {"$set": {"payment": payment}}
+        )
+        return jsonify({"ok": True}), 200
+
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+
+# ---------------- AUTO-ASSIGN DRIVER ----------
 @app.route("/orders/<oid>/auto-assign", methods=["POST"])
 @app.route("/api/app/orders/<oid>/auto-assign", methods=["POST"])
 def auto_assign(oid):
-    """
-    Future: from admin "Auto-Assign" button.
-    Finds best driver and marks order assigned.
-    """
     try:
         db = get_db()
         o = db.orders.find_one({"_internal_id": oid})
@@ -573,31 +503,18 @@ def auto_assign(oid):
                 "status": "assigned"
             }}
         )
-        return jsonify({
-            "ok": True,
-            "driver_id": d["_internal_id"]
-        }), 200
+        return jsonify({"ok": True, "driver_id": d["_internal_id"]}), 200
 
-    except RuntimeError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_unavailable",
-            "details": str(e)
-        }), 500
     except mongo_errors.PyMongoError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_write_failed",
-            "details": str(e)
-        }), 500
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
-# ---------------- MANUAL ASSIGN (admin picks driver) -------------------
+
+# ---------------- MANUAL ASSIGN DRIVER --------
 @app.route("/orders/<oid>/assign", methods=["POST"])
 @app.route("/api/app/orders/<oid>/assign", methods=["POST"])
 def assign_driver(oid):
-    """
-    Admin manually chooses driver_id and posts {driver_id:"..."}
-    """
     body = request.json or {}
     driver_id = body.get("driver_id")
     if not driver_id:
@@ -622,30 +539,16 @@ def assign_driver(oid):
         )
         return jsonify({"ok": True}), 200
 
-    except RuntimeError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_unavailable",
-            "details": str(e)
-        }), 500
     except mongo_errors.PyMongoError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_write_failed",
-            "details": str(e)
-        }), 500
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
-# ---------------- UPDATE STATUS (driver flow / delivery complete) ------
+
+# ---------------- UPDATE ORDER STATUS ---------
 @app.route("/orders/<oid>/status", methods=["POST"])
 @app.route("/api/app/orders/<oid>/status", methods=["POST"])
 def update_status(oid):
-    """
-    Driver (or admin) moves order through lifecycle.
-    When we hit 'delivered':
-    - timestamp delivered_at
-    - compute settlement for that driver
-    - accrue payout to driver's weekly_payout_due
-    """
     body = request.json or {}
     new_status = body.get("status")
 
@@ -668,10 +571,8 @@ def update_status(oid):
         if new_status == "delivered":
             update_set["delivered_at"] = _now_dt()
 
-            # batch economics:
             ck = o.get("cluster_key")
             since = _now_dt() - timedelta(minutes=CLUSTER_WINDOW_MIN)
-            # how many orders in same bucket already delivered recently by same driver
             prior = db.orders.count_documents({
                 "cluster_key": ck,
                 "delivered_at": {"$gte": since},
@@ -689,7 +590,6 @@ def update_status(oid):
                 "settled": False
             }
 
-            # push money onto driver weekly ledger
             if o.get("assigned_driver_id"):
                 accrue_driver_earning(
                     db,
@@ -706,27 +606,16 @@ def update_status(oid):
 
         return jsonify({"ok": True}), 200
 
-    except RuntimeError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_unavailable",
-            "details": str(e)
-        }), 500
     except mongo_errors.PyMongoError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_write_failed",
-            "details": str(e)
-        }), 500
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
-# ---------------- DRIVERS ----------------------------------------------
+
+# ---------------- DRIVERS ---------------------
 @app.route("/drivers", methods=["POST"])
 @app.route("/api/app/drivers", methods=["POST"])
 def create_driver():
-    """
-    Called when a driver signs up in the modal.
-    We create a driver record and mark them available in their zone.
-    """
     data = request.json or {}
     internal_id = str(uuid.uuid4())
 
@@ -754,7 +643,13 @@ def create_driver():
             "avg": None
         },
 
-        "meta": data.get("meta", {})  # e.g. { zone:"C", radius_km:"10" }
+        "docs": {
+            "id_doc_ref": None,
+            "licence_ref": None,
+            "vehicle_reg_ref": None
+        },
+
+        "meta": data.get("meta", {})  # zone, radius_km, etc.
     }
 
     try:
@@ -765,25 +660,15 @@ def create_driver():
             "driver_db_id": internal_id
         }), 201
 
-    except RuntimeError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_unavailable",
-            "details": str(e)
-        }), 500
     except mongo_errors.PyMongoError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_write_failed",
-            "details": str(e)
-        }), 500
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 @app.route("/drivers", methods=["GET"])
 @app.route("/api/app/drivers", methods=["GET"])
 def list_drivers():
-    """
-    Admin / debug endpoint to show active drivers.
-    """
     try:
         db = get_db()
         cur = db.drivers.find({"active": True})
@@ -792,31 +677,68 @@ def list_drivers():
             "drivers": [safe_doc(d) for d in cur]
         }), 200
 
-    except RuntimeError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_unavailable",
-            "details": str(e),
-            "drivers": []
-        }), 500
     except mongo_errors.PyMongoError as e:
         return jsonify({
-            "ok": False,
-            "error": "db_read_failed",
-            "details": str(e),
-            "drivers": []
+            "ok": False, "error": "db_read_failed", "details": str(e), "drivers": []
+        }), 500
+    except Exception as e:
+        return jsonify({
+            "ok": False, "error": "server_error", "details": str(e), "drivers": []
         }), 500
 
-# ---------------- PAYOUTS WEEKLY CLOSE ---------------------------------
+
+# NEW: driver profile detail (for driver dashboard modal)
+@app.route("/drivers/<driver_id>", methods=["GET"])
+@app.route("/api/app/drivers/<driver_id>", methods=["GET"])
+def get_driver(driver_id):
+    try:
+        db = get_db()
+        d = db.drivers.find_one({"_internal_id": driver_id})
+        if not d:
+            return jsonify({"ok": False, "error": "driver not found"}), 404
+        return jsonify({
+            "ok": True,
+            "driver": safe_doc(d)
+        }), 200
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_read_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+
+# NEW: driver docs upload meta (for licence etc)
+@app.route("/drivers/<driver_id>/docs", methods=["POST"])
+@app.route("/api/app/drivers/<driver_id>/docs", methods=["POST"])
+def update_driver_docs(driver_id):
+    """
+    For now it's just text references/URLs.
+    Later you replace with S3 upload etc.
+    """
+    body = request.json or {}
+    doc_updates = {
+        "docs.id_doc_ref": body.get("id_doc_ref"),
+        "docs.licence_ref": body.get("licence_ref"),
+        "docs.vehicle_reg_ref": body.get("vehicle_reg_ref")
+    }
+    try:
+        db = get_db()
+        res = db.drivers.update_one(
+            {"_internal_id": driver_id},
+            {"$set": {k:v for k,v in doc_updates.items() if v is not None}}
+        )
+        if res.matched_count == 0:
+            return jsonify({"ok": False, "error": "driver not found"}), 404
+        return jsonify({"ok": True}), 200
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+
+# ---------------- WEEKLY CLOSE / PAYOUTS ------
 @app.route("/settlements/weekly-close", methods=["POST"])
 @app.route("/api/app/settlements/weekly-close", methods=["POST"])
 def weekly_close():
-    """
-    Manual admin action:
-    - snapshot each driver's weekly_payout_due into payouts[]
-    - reset their weekly_payout_due to 0
-    (you still actually send them money offline, this just records it)
-    """
     body = request.json or {}
     note = body.get("note", "weekly close")
 
@@ -835,11 +757,10 @@ def weekly_close():
                 "amount": round(due, 2),
                 "note": note,
                 "created_at": _now_dt(),
-                "status": "pending"  # later you can mark 'paid'
+                "status": "pending"
             }
             db.payouts.insert_one(payout)
 
-            # reset driver's running balance
             db.drivers.update_one(
                 {"_internal_id": d["_internal_id"]},
                 {"$set": {"weekly_payout_due": 0.0}}
@@ -855,17 +776,72 @@ def weekly_close():
             "payouts": created
         }), 200
 
-    except RuntimeError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_unavailable",
-            "details": str(e)
-        }), 500
     except mongo_errors.PyMongoError as e:
-        return jsonify({
-            "ok": False,
-            "error": "db_write_failed",
-            "details": str(e)
-        }), 500
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
-# no app.run(); Vercel will import `app`
+
+# ---------------- STORES / ITEMS --------------
+@app.route("/stores", methods=["POST"])
+@app.route("/api/app/stores", methods=["POST"])
+def create_store():
+    """
+    A local shop / clinic / spaza can onboard themselves.
+    For now it's lightweight text info.
+    """
+    data = request.json or {}
+    internal_id = str(uuid.uuid4())
+
+    store_doc = {
+        "_internal_id": internal_id,
+        "name": data.get("name"),
+        "owner_name": data.get("owner_name"),
+        "phone": data.get("phone"),
+        "zone": data.get("zone"),
+        "address": data.get("address"),
+        "created_at": _now_dt()
+    }
+
+    try:
+        db = get_db()
+        db.stores.insert_one(store_doc)
+        return jsonify({"ok": True, "store_id": internal_id}), 201
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+
+@app.route("/stores/<store_id>/items", methods=["POST"])
+@app.route("/api/app/stores/<store_id>/items", methods=["POST"])
+def add_store_item(store_id):
+    """
+    Store owner adds products that customers can order for delivery.
+    """
+    data = request.json or {}
+    item_id = str(uuid.uuid4())
+
+    item_doc = {
+        "_internal_id": item_id,
+        "store_id": store_id,
+        "name": data.get("name"),
+        "price": data.get("price"),
+        "sku": data.get("sku"),
+        "created_at": _now_dt(),
+        "active": True
+    }
+
+    try:
+        db = get_db()
+        if not db.stores.find_one({"_internal_id": store_id}):
+            return jsonify({"ok": False, "error": "store not found"}), 404
+
+        db.store_items.insert_one(item_doc)
+        return jsonify({"ok": True, "item_id": item_id}), 201
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+# no app.run(); for serverless import
