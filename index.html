@@ -25,16 +25,6 @@
   </style>
 </head>
 <body class="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-900">
-<script>
-  const BASE_API = "/api/app";
-  const WHATSAPP_NUMBER = "270691456201";
-  const ADMIN_WHATSAPP  = "270691456201";
-  const DEMO_MODE       = false;
-
-  function waText(str) {
-    return encodeURIComponent(str);
-  }
-</script>
 
 <!-- Header -->
 <header class="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200">
@@ -59,7 +49,6 @@
       <a href="#pricing" class="text-sm hover:text-emerald-700">Pricing & Zones</a>
       <a href="#drivers" class="text-sm hover:text-emerald-700">For Drivers</a>
       <a href="#faq" class="text-sm hover:text-emerald-700">FAQ</a>
-      <!-- REMOVED store button from nav -->
     </nav>
 
     <div class="flex items-center gap-2">
@@ -105,7 +94,6 @@
       <a href="#pricing" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link">Pricing & Zones</a>
       <a href="#drivers" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link">For Drivers</a>
       <a href="#faq" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link">FAQ</a>
-      <!-- REMOVED store button from mobile nav -->
 
       <div class="h-px bg-slate-200 my-3"></div>
 
@@ -228,33 +216,297 @@
 
 <!-- Driver Auth Modal -->
 <div id="driverModal" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9999] overflow-y-auto">
-  <!-- ...unchanged driver modal content... -->
-  <!-- (keeping as-is from your version) -->
+  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-md flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b">
+      <div class="font-semibold">
+        <div>Driver Portal</div>
+        <div class="text-xs text-slate-500">Get paid weekly per drop</div>
+      </div>
+      <button id="closeDriverModal" class="text-slate-500 hover:text-slate-700">✕</button>
+    </div>
+
+    <div class="p-4 text-sm">
+      <div class="flex gap-2 mb-4">
+        <button id="tabSignup" class="flex-1 py-2 text-center rounded-lg bg-emerald-600 text-white">Sign up</button>
+        <button id="tabLogin"  class="flex-1 py-2 text-center rounded-lg border border-slate-300">Log in</button>
+      </div>
+
+      <!-- Signup form -->
+      <form id="driverFormSignup" class="space-y-3">
+        <label class="block">
+          <div class="text-xs font-medium text-slate-600">Full Name</div>
+          <input id="drvName" class="mt-1 w-full border rounded-lg p-2" placeholder="Name" required />
+        </label>
+
+        <label class="block">
+          <div class="text-xs font-medium text-slate-600">WhatsApp Number</div>
+          <input id="drvPhone" class="mt-1 w-full border rounded-lg p-2" placeholder="2782..." required />
+        </label>
+
+        <label class="block">
+          <div class="text-xs font-medium text-slate-600">Your Zone</div>
+          <select id="drvZone" class="mt-1 w-full border rounded-lg p-2">
+            <option value="A">Zone A – Port Alfred</option>
+            <option value="B">Zone B – Bathurst</option>
+            <option value="C">Zone C – Kenton</option>
+            <option value="D">Zone D – Makhanda / Grahamstown / Alice</option>
+            <option value="E">Zone E – Alexandria / Alicedale</option>
+          </select>
+        </label>
+
+        <label class="block">
+          <div class="text-xs font-medium text-slate-600">How far you’ll drive (km)</div>
+          <input id="drvRadius" type="number" min="1" class="mt-1 w-full border rounded-lg p-2" value="10" />
+        </label>
+
+        <label class="block">
+          <div class="text-xs font-medium text-slate-600">Vehicle (car, bakkie, scooter, etc.)</div>
+          <input id="drvVehicle" class="mt-1 w-full border rounded-lg p-2" placeholder="e.g. Polo Vivo" />
+        </label>
+
+        <button type="submit" class="w-full py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">Submit</button>
+      </form>
+
+      <!-- Login form -->
+      <form id="driverFormLogin" class="space-y-3 hidden">
+        <label class="block">
+          <div class="text-xs font-medium text-slate-600">WhatsApp Number</div>
+          <input id="drvLoginPhone" class="mt-1 w-full border rounded-lg p-2" placeholder="2782..." required />
+        </label>
+
+        <button type="submit" class="w-full py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">Log in</button>
+      </form>
+    </div>
+  </div>
 </div>
 
 <!-- Driver Dashboard Modal -->
 <div id="driverDashModal" class="fixed inset-0 hidden items-start justify-center pt-12 sm:pt-16 bg-black/40 p-4 z-[10000] overflow-y-auto">
-  <!-- ...unchanged dashboard content... -->
+  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-md flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b">
+      <div class="font-semibold">
+        <div>Driver Dashboard</div>
+        <div class="text-xs text-slate-500">Your current stats</div>
+      </div>
+      <button id="closeDriverDash" class="text-slate-500 hover:text-slate-700">✕</button>
+    </div>
+
+    <div class="p-4 text-sm space-y-3">
+      <div class="rounded-lg border p-3">
+        <div class="text-xs text-slate-500">Payout due</div>
+        <div class="text-lg font-semibold">R<span id="driverPayoutDue">0</span></div>
+      </div>
+      <div class="rounded-lg border p-3">
+        <div class="text-xs text-slate-500">Next delivery window</div>
+        <div class="text-lg font-semibold" id="driverNextWindow">Fri 17:00</div>
+      </div>
+      <div class="rounded-lg border p-3">
+        <div class="text-xs text-slate-500">Your zone / km radius</div>
+        <div class="text-lg font-semibold"><span id="driverZoneDisplay">A</span> / <span id="driverRadiusDisplay">10km</span></div>
+      </div>
+      <div class="text-[11px] text-slate-500 leading-snug">
+        Drivers are paid weekly by EFT.
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Bot-style Checkout Modal -->
 <div id="botChat" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9500] overflow-y-auto">
-  <!-- ...unchanged botChat content... -->
+  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-md flex flex-col max-h-[80vh]">
+    <div class="flex items-center justify-between p-4 border-b">
+      <div class="font-semibold flex flex-col">
+        <span>Checkout</span>
+        <span class="text-xs text-slate-500">We’ll confirm in WhatsApp</span>
+      </div>
+      <button id="closeBot" class="text-slate-500 hover:text-slate-700">✕</button>
+    </div>
+
+    <div id="botFeed" class="flex-1 overflow-y-auto p-4 space-y-2 text-sm bg-slate-50"></div>
+
+    <div class="p-4 border-t space-y-3 text-sm">
+      <label class="block">
+        <div class="text-xs font-medium text-slate-600">Payment method</div>
+        <select id="botPayChoice" class="mt-1 w-full border rounded-lg p-2">
+          <option value="card">Card (Yoco link)</option>
+          <option value="eft">Instant EFT (Ozow)</option>
+          <option value="deposit_cod">50% deposit + COD</option>
+        </select>
+      </label>
+
+      <div class="flex gap-2">
+        <button id="botNext" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">Next</button>
+        <button id="botSendWA" class="flex-1 py-2 rounded-xl border border-slate-300 font-medium hover:bg-slate-100 hidden">Send to WhatsApp</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- FAKE Payment Modal -->
 <div id="payModal" class="fixed inset-0 hidden items-start justify-center pt-20 bg-black/60 p-4 z-[9600] overflow-y-auto">
-  <!-- ...unchanged payModal content... -->
+  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-sm flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b">
+      <div class="font-semibold flex flex-col">
+        <span>Secure Payment (Demo)</span>
+        <span class="text-xs text-slate-500">Not a real gateway yet</span>
+      </div>
+      <button id="closePayModal" class="text-slate-500 hover:text-slate-700">✕</button>
+    </div>
+
+    <div class="p-4 text-sm space-y-2">
+      <div><b>Order Ref:</b> <span id="payOrderRef">--</span></div>
+      <div><b>Amount:</b> R<span id="payAmount">0</span></div>
+      <div class="text-[11px] text-slate-500 leading-snug">We'll send an actual Yoco / Ozow link in WhatsApp once confirmed.</div>
+    </div>
+
+    <div class="p-4 border-t flex flex-col sm:flex-row gap-2 text-sm">
+      <button id="btnFakePayNow" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">Mark paid (demo)</button>
+      <button id="btnCancelPay" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <!-- Order Builder Modal -->
 <div id="orderBuilder" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[9000] overflow-y-auto">
-  <!-- ...unchanged orderBuilder content... -->
+  <div class="w-full max-w-xl rounded-2xl bg-white shadow-xl border flex flex-col max-h-[85vh]">
+    <div class="flex items-center justify-between p-4 border-b">
+      <div class="font-semibold flex flex-col">
+        <span>Your Order</span>
+        <span class="text-xs text-slate-500">We’ll confirm by WhatsApp</span>
+      </div>
+      <button id="closeOrderBuilder" class="text-slate-500 hover:text-slate-700">✕</button>
+    </div>
+
+    <div class="flex-1 overflow-y-auto p-4 space-y-5 text-sm">
+      <!-- Items list -->
+      <div>
+        <div class="flex items-center justify-between">
+          <div class="text-xs text-slate-600 font-medium">Items</div>
+          <button id="addCustomItem" class="text-[11px] text-emerald-700 underline">+ Add custom</button>
+        </div>
+        <div id="itemsList" class="mt-2 grid gap-2"></div>
+      </div>
+
+      <!-- Zone -->
+      <div>
+        <label class="block text-xs text-slate-600 font-medium">Delivery zone</label>
+        <select id="zoneSelect" class="mt-1 w-full border rounded-lg p-2">
+          <option value="A" data-fee="25" data-lat="-33.590" data-lng="26.890">Zone A — Port Alfred (R25)</option>
+          <option value="B" data-fee="35" data-lat="-33.498" data-lng="26.833">Zone B — Bathurst (R35)</option>
+          <option value="C" data-fee="45" data-lat="-33.686" data-lng="26.668">Zone C — Kenton / Bushmans (R45)</option>
+          <option value="D" data-fee="60" data-lat="-33.310" data-lng="26.520">Zone D — Makhanda / Grahamstown / Alice (R60)</option>
+          <option value="E" data-fee="70" data-lat="-33.653" data-lng="26.404">Zone E — Alexandria / Alicedale (R70)</option>
+        </select>
+        <div class="flex items-center gap-2 mt-2">
+          <input id="rushToggle" type="checkbox" class="h-4 w-4" />
+          <label for="rushToggle" class="text-xs text-slate-600">Rush (+R30 when available)<span id="rushNote" class="text-[10px] text-amber-700"></span></label>
+        </div>
+      </div>
+
+      <!-- Customer details -->
+      <div class="grid sm:grid-cols-2 gap-3">
+        <label class="block">
+          <div class="text-xs text-slate-600 font-medium">Your name</div>
+          <input id="custName" class="mt-1 w-full border rounded-lg p-2" placeholder="Full name" required />
+        </label>
+        <label class="block">
+          <div class="text-xs text-slate-600 font-medium">WhatsApp number</div>
+          <input id="custPhone" class="mt-1 w-full border rounded-lg p-2" placeholder="2782..." required />
+        </label>
+      </div>
+
+      <label class="block">
+        <div class="text-xs text-slate-600 font-medium">Delivery address</div>
+        <textarea id="custAddress" class="mt-1 w-full border rounded-lg p-2" rows="2" placeholder="House number, street, area" required></textarea>
+      </label>
+
+      <!-- Payment choice (same as botPayChoice options) -->
+      <div>
+        <div class="text-xs text-slate-600 font-medium mb-1">How will you pay?</div>
+        <div class="space-y-2">
+          <label class="flex items-start gap-2">
+            <input type="radio" name="pay" value="card" class="mt-1" checked>
+            <div>
+              <div class="text-sm font-medium">Card link (Yoco)</div>
+              <div class="text-[11px] text-slate-500">Tap and pay from your phone.</div>
+            </div>
+          </label>
+
+          <label class="flex items-start gap-2">
+            <input type="radio" name="pay" value="eft" class="mt-1">
+            <div>
+              <div class="text-sm font-medium">Instant EFT (Ozow)</div>
+              <div class="text-[11px] text-slate-500">Instant secure bank transfer.</div>
+            </div>
+          </label>
+
+          <label class="flex items-start gap-2">
+            <input type="radio" name="pay" value="deposit_cod" class="mt-1">
+            <div>
+              <div class="text-sm font-medium">50% deposit + COD</div>
+              <div class="text-[11px] text-slate-500">Returning customers only.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Deposit banner -->
+      <div id="depositBanner" class="hidden rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[11px] leading-snug p-2">
+        You’ll pay a deposit of R<span id="depositAmt">0</span> to lock your driver. Balance on delivery.
+      </div>
+
+      <!-- Total -->
+      <div class="rounded-xl bg-slate-50 border p-3 text-sm flex flex-col gap-2">
+        <div class="flex justify-between">
+          <div>Total to pay now</div>
+          <div class="font-semibold">R<span id="orderTotal">0</span></div>
+        </div>
+        <div class="text-[11px] text-slate-500 leading-snug">
+          We’ll confirm and send a payment link on WhatsApp. If we can’t deliver, you’re refunded.
+        </div>
+      </div>
+    </div>
+
+    <div class="p-4 border-t flex flex-col sm:flex-row gap-2 text-sm">
+      <button id="confirmOrderBtn" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">
+        Confirm & Continue
+      </button>
+      <button class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100" id="cancelOrderBuilder">
+        Cancel
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- Orders Panel (Admin) -->
 <div id="ordersPanel" class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[11000] overflow-y-auto">
-  <!-- ...unchanged ordersPanel content... -->
+  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-2xl flex flex-col max-h-[85vh]">
+    <div class="flex items-center justify-between p-4 border-b">
+      <div class="font-semibold flex flex-col">
+        <span>Orders Admin</span>
+        <span class="text-xs text-slate-500">Assign drivers • Mark delivered</span>
+      </div>
+      <button id="closeOrdersPanel" class="text-slate-500 hover:text-slate-700">✕</button>
+    </div>
+
+    <!-- tabs -->
+    <div class="p-4 border-b flex flex-wrap gap-2 text-xs">
+      <button class="yt-o-tab px-3 py-1 rounded-lg bg-emerald-600 text-white" data-o-tab="pending">Pending</button>
+      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="review_required">Review</button>
+      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="assigned">Assigned</button>
+      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="in_transit">In transit</button>
+      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="delivered">Delivered</button>
+    </div>
+
+    <div class="flex-1 overflow-y-auto p-4 space-y-4 text-sm" id="ordersList">
+      <!-- JS fills orders -->
+    </div>
+
+    <div class="p-4 border-t flex flex-col sm:flex-row gap-2 text-sm">
+      <button id="ordersRefresh" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">Refresh</button>
+      <button id="ordersAssign" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">Auto assign all</button>
+    </div>
+  </div>
 </div>
 
 <!-- Store Onboarding Modal -->
@@ -316,7 +568,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const BASE_API = "/api/app";
   const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
-  const DEMO_MODE       = false;
+  const DEMO_MODE       = true; // set true for front-end demo
 
   function waText(str) {
     return encodeURIComponent(str);
@@ -343,6 +595,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const modal               = document.getElementById('orderBuilder');
   const openOrderButtons    = ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'];
   const closeBtn            = document.getElementById('closeOrderBuilder');
+  const cancelOrderBuilder  = document.getElementById('cancelOrderBuilder');
   const itemsList           = document.getElementById('itemsList');
   const zoneSelect          = document.getElementById('zoneSelect');
   const rushToggle          = document.getElementById('rushToggle');
@@ -488,7 +741,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function nextETA(rush){
     const now     = new Date();
     const windows = [[8,10],[12,14],[16,18]];
-       const allowed = new Set([0,3,4,5,6]); // Sun,Wed,Thu,Fri,Sat
+    const allowed = new Set([0,3,4,5,6]); // Sun,Wed,Thu,Fri,Sat
     const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
     function fmt(date,[h1,h2]){
@@ -539,6 +792,7 @@ window.addEventListener('DOMContentLoaded', () => {
     botStage = 0;
     botNext.textContent = "Next";
     botSendWA.classList.add('hidden');
+    botFeed.innerHTML = "";
     botModal.classList.remove('hidden');
     botModal.classList.add('flex');
   }
@@ -615,9 +869,11 @@ window.addEventListener('DOMContentLoaded', () => {
     const s = computeTotal(); toggleDepositBanner(s.total);
   });
   document.addEventListener('change', e=>{
-    if(e.target.classList.contains('itemCheck') ||
-       e.target.classList.contains('itemQty')   ||
-       e.target.name === 'pay'){
+    if(
+      (e.target.classList && e.target.classList.contains('itemCheck')) ||
+      (e.target.classList && e.target.classList.contains('itemQty'))   ||
+      e.target.name === 'pay'
+    ){
       const s = computeTotal(); toggleDepositBanner(s.total);
     }
   });
@@ -637,6 +893,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // close modals (order/bot/pay)
   botClose?.addEventListener('click', closeBot);
   closeBtn?.addEventListener('click', closeOrder);
+  cancelOrderBuilder?.addEventListener('click', closeOrder);
 
   function openPayModal(orderRef, amount){
     if(!payModal) return;
@@ -781,7 +1038,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function posOnSeg(seg,t){
     const [A,B]=seg;
     return [lerp(A[0],B[0],t), lerp(A[1],B[1],t)];
-  }
+    }
 
   const cars   = [];
   const parcels= [];
@@ -906,10 +1163,10 @@ Vehicle: ${vehicle}`;
 
     // demo dashboard fill
     if(driverDashModal){
-      driverPayoutDueEl && (driverPayoutDueEl.textContent = '0');
-      driverNextWindowEl && (driverNextWindowEl.textContent = 'Fri 17:00');
-      driverZoneDisplayEl && (driverZoneDisplayEl.textContent = zone);
-      driverRadiusDisplayEl && (driverRadiusDisplayEl.textContent = radius+'km');
+      if(driverPayoutDueEl) driverPayoutDueEl.textContent = '0';
+      if(driverNextWindowEl) driverNextWindowEl.textContent = 'Fri 17:00';
+      if(driverZoneDisplayEl) driverZoneDisplayEl.textContent = zone;
+      if(driverRadiusDisplayEl) driverRadiusDisplayEl.textContent = radius+'km';
     }
   });
 
@@ -1000,7 +1257,7 @@ Vehicle: ${vehicle}`;
           `Yi Thume, my order is:\n` +
           `Ref: DEMO-${Date.now().toString().slice(-6)}\n` +
           `Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n` +
-          `Items: ${summary.items.map(i=>\`${i.name} x\${i.qty}\`).join(', ')}\n` +
+          `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
           `Total: R${summary.total}\n` +
           `Expected: ${eta}\n` +
           `Payment: ${paymentMethod}\n` +
@@ -1072,7 +1329,7 @@ Vehicle: ${vehicle}`;
       `<b>YiThume</b> 🤖<br/>
        Thanks for your order!<br/>
        <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
-       <b>Items:</b> ${latestOrderData.items.map(i=>\`${i.name} x\${i.qty}\`).join(', ')}<br/>
+       <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
        <b>Zone:</b> ${latestOrderData.zone}<br/>
        <b>Total:</b> R${latestOrderData.total}<br/>
        <b>Estimated window:</b> ${latestOrderData.eta}`
@@ -1152,7 +1409,7 @@ Vehicle: ${vehicle}`;
           "Yi Thume, my order is:",
           `Ref: ${latestOrderData.order_public_id}`,
           `Deliver to: Zone ${latestOrderData.zone}`,
-          `Items: ${latestOrderData.items.map(i=>\`${i.name} x\${i.qty}\`).join(', ')}`,
+          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
           `Total: R${latestOrderData.total}`,
           `Expected: ${latestOrderData.eta}`,
           `Payment: ${latestOrderData.payment_method}`,
@@ -1275,7 +1532,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     alert("Thanks! We'll review your store.");
     closeStoreModal();
 
-    // reset form for cleanliness
+    // reset form
     storeNameEl.value = '';
     storePhoneEl.value = '';
     storeZoneEl.value = 'A';
@@ -1504,7 +1761,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       const canDeliver  = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
 
       const row = document.createElement('div');
-      row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3';
+      row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
       row.setAttribute('data-order-id', internalId || '');
       row.setAttribute('data-order-status', o.status || '');
 
@@ -1554,7 +1811,5 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 });
 </script>
-
-
 </body>
 </html>
