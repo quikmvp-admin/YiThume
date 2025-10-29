@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YiThume Driver Portal</title>
+  <meta name="description" content="YiThume driver portal. Get verified, receive deliveries, upload proof, and track weekly payout." />
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    :root {
+      --emerald-600:#059669;
+      --emerald-700:#047857;
+      --slate-700:#334155;
+      --slate-500:#64748b;
+    }
+    body {
+      background: radial-gradient(circle at 20% 20%, rgba(16,185,129,0.07) 0%, rgba(255,255,255,0) 70%), #f8fafc;
+    }
+    .overflow-locked {
+      overflow: hidden;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body class="min-h-screen text-slate-900 flex flex-col">
+
+  <!-- HEADER -->
+  <header class="bg-white/80 backdrop-blur border-b border-slate-200 sticky top-0 z-40">
+    <div class="max-w-lg mx-auto w-full px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <svg width="32" height="32" viewBox="0 0 36 36" class="rounded-2xl" aria-label="YiThume logo">
+          <defs>
+            <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#059669"/>
+            </linearGradient>
+          </defs>
+          <rect rx="12" width="36" height="36" fill="url(#g)"/>
+          <path d="M10 12l5 8v4h-3v-3l-5-9h3zM26 12l-5 8v4h3v-3l5-9h-3z" fill="#fff"/>
+        </svg>
+        <div class="text-lg font-semibold tracking-tight">YiThume Driver</div>
+      </div>
+
+      <button id="logoutBtn"
+        class="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 hidden">
+        Log out
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT -->
+  <main class="flex-1 w-full max-w-lg mx-auto px-4 py-6 space-y-6 text-sm">
+
+    <!-- Onboarding card -->
+    <section id="onboardCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
+      <div class="flex flex-col">
+        <h1 class="text-xl font-semibold text-slate-900 leading-tight">
+          Become a driver & get paid weekly
+        </h1>
+        <p class="text-[13px] text-slate-600 leading-snug mt-1">
+          YiThume connects urgent deliveries (meds, essentials) to trusted locals with vehicles.
+          Payouts are done by EFT weekly. You keep your flexibility.
+        </p>
+      </div>
+
+      <div class="flex gap-2 text-[11px] leading-snug text-slate-600 bg-slate-50 border border-slate-200 rounded-xl p-3">
+        <div class="font-medium text-slate-800">What you need:</div>
+        <ul class="list-disc ml-4">
+          <li>Valid WhatsApp number</li>
+          <li>Car / bakkie / bike / scooter</li>
+          <li>Zone you can cover (Port Alfred / Bathurst / Kenton / etc.)</li>
+          <li>ID / licence on request</li>
+        </ul>
+      </div>
+
+      <!-- Tabs -->
+      <div class="grid grid-cols-2 gap-2 text-center">
+        <button id="tabSignupBtn"
+          class="py-2 rounded-xl bg-emerald-600 text-white font-medium text-sm active:scale-[.98] transition">
+          Sign up
+        </button>
+        <button id="tabLoginBtn"
+          class="py-2 rounded-xl border border-slate-300 text-slate-800 font-medium text-sm hover:bg-slate-50 active:scale-[.98] transition">
+          Log in
+        </button>
+      </div>
+
+      <!-- SIGNUP FORM -->
+      <form id="signupForm" class="space-y-3" autocomplete="off">
+        <div>
+          <label class="block text-xs font-medium text-slate-700">Full name</label>
+          <input id="signupName"
+            class="mt-1 w-full border rounded-lg p-2 text-sm"
+            placeholder="Your full name"
+            required>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-700">WhatsApp number</label>
+          <input id="signupPhone"
+            class="mt-1 w-full border rounded-lg p-2 text-sm"
+            placeholder="2782..."
+            required>
+          <p class="text-[11px] text-slate-500 mt-1 leading-snug">
+            Use full country code. Example: 2782xxxxxxx
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-700">Your zone (home base)</label>
+          <select id="signupZone"
+            class="mt-1 w-full border rounded-lg p-2 text-sm">
+            <option value="A">Zone A – Port Alfred / Nemato / East Beach</option>
+            <option value="B">Zone B – Bathurst / Eluce / Elitsi</option>
+            <option value="C">Zone C – Kenton / Bushmans / Boesmans</option>
+            <option value="D">Zone D – Makhanda / Grahamstown / Alice</option>
+            <option value="E">Zone E – Alexandria / Alicedale</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-700">Radius you’ll drive (km)</label>
+            <input id="signupRadius"
+              type="number"
+              min="1"
+              class="mt-1 w-full border rounded-lg p-2 text-sm"
+              value="10" required>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-700">Vehicle</label>
+            <input id="signupVehicle"
+              class="mt-1 w-full border rounded-lg p-2 text-sm"
+              placeholder="e.g. Polo Vivo / scooter">
+          </div>
+        </div>
+
+        <button type="submit"
+          class="w-full py-2 rounded-xl bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-700 active:scale-[.98] transition">
+          Submit application
+        </button>
+
+        <p class="text-[11px] text-slate-500 leading-snug">
+          After we review you, you’ll start receiving orders for your zone. We pay EFT weekly.
+        </p>
+      </form>
+
+      <!-- LOGIN FORM (2-step PIN auth) -->
+      <div id="loginFormWrapper" class="space-y-4 hidden">
+        <!-- STEP 1: request PIN -->
+        <form id="loginRequestForm" class="space-y-3" autocomplete="off">
+          <div>
+            <label class="block text-xs font-medium text-slate-700">WhatsApp number</label>
+            <input id="loginPhone"
+              class="mt-1 w-full border rounded-lg p-2 text-sm"
+              placeholder="2782..."
+              required>
+          </div>
+
+          <button type="submit"
+            class="w-full py-2 rounded-xl bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-700 active:scale-[.98] transition">
+            Send login code
+          </button>
+
+          <p class="text-[11px] text-slate-500 leading-snug">
+            We’ll WhatsApp you a 4-digit code. (In demo mode we show it here.)
+          </p>
+        </form>
+
+        <!-- STEP 2: verify PIN -->
+        <form id="loginVerifyForm" class="space-y-3 hidden" autocomplete="off">
+          <div>
+            <label class="block text-xs font-medium text-slate-700">4-digit code</label>
+            <input id="loginPin"
+              class="mt-1 w-full border rounded-lg p-2 text-sm"
+              placeholder="1234"
+              required>
+          </div>
+
+          <button type="submit"
+            class="w-full py-2 rounded-xl bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-700 active:scale-[.98] transition">
+            Log in
+          </button>
+
+          <p id="loginDebugPin"
+            class="text-[11px] text-amber-700 leading-snug hidden"></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- DASHBOARD (hidden until logged in) -->
+    <section id="dashSection" class="hidden space-y-4">
+
+      <!-- Driver summary -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="text-xs text-slate-500">Welcome</div>
+            <div class="text-base font-semibold text-slate-900" id="drvNameDisplay">--</div>
+          </div>
+          <div class="text-right text-xs leading-tight">
+            <div class="text-slate-500">Zone / Radius</div>
+            <div class="text-slate-900 font-medium">
+              <span id="drvZoneDisplay">-</span> / <span id="drvRadiusDisplay">-</span>km
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div class="text-[11px] text-slate-500 leading-snug">Payout due</div>
+            <div class="text-lg font-semibold text-slate-900">
+              R<span id="payoutDueDisplay">0</span>
+            </div>
+            <div class="text-[10px] text-slate-500 leading-snug">
+              Paid weekly by EFT
+            </div>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div class="text-[11px] text-slate-500 leading-snug">Next delivery window</div>
+            <div class="text-lg font-semibold text-slate-900" id="nextWindowDisplay">--</div>
+            <div class="text-[10px] text-slate-500 leading-snug">
+              Stay near your zone start point
+            </div>
+          </div>
+        </div>
+
+        <div class="text-[11px] text-slate-500 leading-snug">
+          Keep proof photo for every drop. Failed delivery or no-answer: message dispatch before leaving.
+        </div>
+      </div>
+
+      <!-- Active jobs -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <div class="text-xs text-slate-500">Your jobs</div>
+            <div class="text-base font-semibold text-slate-900">Active deliveries</div>
+          </div>
+          <button id="refreshOrdersBtn"
+            class="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 active:scale-[.98] transition">
+            Refresh
+          </button>
+        </div>
+
+        <div id="ordersList" class="space-y-4 text-sm">
+          <!-- JS will inject order cards -->
+        </div>
+
+        <div class="text-[11px] text-slate-500 leading-snug mt-4">
+          Orders disappear from Active once marked delivered.
+          You can still get paid for them at the end of the week.
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="text-[11px] text-slate-500 text-center py-6">
+    YiThume • Local health access network • <span id="year"></span>
+  </footer>
+
+<script>
+(function(){
+  // =========================
+  // CONFIG
+  // =========================
+  const API_BASE = "/api/app"; // adjust if backend is mounted elsewhere
+  const STORAGE_KEY = "yithume_driver_auth"; // localStorage token stash
+
+  // =========================
+  // ELEMENTS
+  // =========================
+  const onboardCard        = document.getElementById("onboardCard");
+  const dashSection        = document.getElementById("dashSection");
+
+  const tabSignupBtn       = document.getElementById("tabSignupBtn");
+  const tabLoginBtn        = document.getElementById("tabLoginBtn");
+
+  const signupForm         = document.getElementById("signupForm");
+  const signupName         = document.getElementById("signupName");
+  const signupPhone        = document.getElementById("signupPhone");
+  const signupZone         = document.getElementById("signupZone");
+  const signupRadius       = document.getElementById("signupRadius");
+  const signupVehicle      = document.getElementById("signupVehicle");
+
+  const loginFormWrapper   = document.getElementById("loginFormWrapper");
+  const loginRequestForm   = document.getElementById("loginRequestForm");
+  const loginPhone         = document.getElementById("loginPhone");
+  const loginVerifyForm    = document.getElementById("loginVerifyForm");
+  const loginPin           = document.getElementById("loginPin");
+  const loginDebugPin      = document.getElementById("loginDebugPin");
+
+  const logoutBtn          = document.getElementById("logoutBtn");
+
+  const drvNameDisplay     = document.getElementById("drvNameDisplay");
+  const drvZoneDisplay     = document.getElementById("drvZoneDisplay");
+  const drvRadiusDisplay   = document.getElementById("drvRadiusDisplay");
+  const payoutDueDisplay   = document.getElementById("payoutDueDisplay");
+  const nextWindowDisplay  = document.getElementById("nextWindowDisplay");
+
+  const refreshOrdersBtn   = document.getElementById("refreshOrdersBtn");
+  const ordersList         = document.getElementById("ordersList");
+
+  const yearEl             = document.getElementById("year");
+
+  // =========================
+  // UTIL
+  // =========================
+  function nowYear(){
+    if(yearEl) yearEl.textContent = new Date().getFullYear();
+  }
+
+  function saveAuth(auth){
+    // auth = { driver_id, token, expires_at }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(auth));
+  }
+
+  function loadAuth(){
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return null;
+      return JSON.parse(raw);
+    } catch(e){
+      return null;
+    }
+  }
+
+  function clearAuth(){
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
+  function formatEtaWindowForZone(zone){
+    // replicate logic: allowed windows 08–10, 12–14, 16–18
+    // allowed days: Sun(0) Wed(3) Thu(4) Fri(5) Sat(6)
+    const allowedDays = new Set([0,3,4,5,6]);
+    const blocks = [[8,10],[12,14],[16,18]];
+    const d = new Date();
+    const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+    function pad2(n){ return String(n).padStart(2,'0'); }
+    function fmt(date,[h1,h2]){
+      const sameDay = (date.toDateString()===new Date().toDateString());
+      if (sameDay){
+        return `${pad2(h1)}:00–${pad2(h2)}:00 today`;
+      }
+      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
+    }
+
+    if(allowedDays.has(d.getDay())){
+      for(const block of blocks){
+        if(d.getHours() < block[1]){
+          return fmt(d, block);
+        }
+      }
+    }
+
+    for(let i=1;i<=7;i++){
+      const future = new Date(d);
+      future.setDate(d.getDate()+i);
+      if(allowedDays.has(future.getDay())){
+        return fmt(future, blocks[0]);
+      }
+    }
+    return "TBC";
+  }
+
+  function money(v){
+    if(v==null) return "0";
+    return Number(v).toFixed(2);
+  }
+
+  function alertErr(prefix, res, data){
+    console.error(prefix, res && res.status, data);
+    alert(prefix + " (" + (res && res.status) + ")");
+  }
+
+  function shortRef(order){
+    return order.order_id || order._internal_id || "REF?";
+  }
+
+  function buildOrderCard(o){
+    // Card for each active order in dashboard.
+    // We allow proof upload and mark delivered.
+    const addr = (((o.customer||{}).address)||{}).line1 || "";
+    const itemsText = (o.items||[])
+      .map(i => `${i.name} x${i.qty}`)
+      .join(", ");
+
+    const delivered = (o.status === "delivered");
+    const proofUrl  = o.delivery_photo_url || null;
+
+    const card = document.createElement("div");
+    card.className = "rounded-xl border border-slate-200 bg-white shadow-sm p-3";
+
+    card.innerHTML = `
+      <div class="flex items-start justify-between">
+        <div class="min-w-0">
+          <div class="text-xs text-slate-500 leading-snug">Order Ref</div>
+          <div class="font-semibold text-slate-900 text-sm break-all">${shortRef(o)}</div>
+        </div>
+        <div class="text-right text-[11px] leading-snug">
+          <div class="text-slate-500">Status</div>
+          <div class="font-medium ${delivered ? 'text-emerald-700' : 'text-slate-900'}">
+            ${o.status || 'pending'}
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-2 text-[11px] leading-snug text-slate-600">
+        <div><span class="text-slate-500">Drop:</span> ${addr || '—'}</div>
+        <div><span class="text-slate-500">Items:</span> ${itemsText || '—'}</div>
+        <div><span class="text-slate-500">Total:</span> R${o.total || 0}</div>
+        <div><span class="text-slate-500">ETA:</span> ${(o.route && o.route.eta_text) || 'TBC'}</div>
+      </div>
+
+      <div class="mt-3 flex flex-col gap-2 text-xs">
+        <div class="flex flex-col gap-1">
+          <label class="text-slate-700 font-medium flex items-center gap-1">
+            Proof of delivery
+            ${proofUrl ? '<span class="text-[10px] text-emerald-700">(uploaded)</span>' : ''}
+          </label>
+          <div class="flex items-center gap-2">
+            <input type="file" accept="image/*"
+              class="text-[11px] flex-1 file:mr-2 file:px-2 file:py-1 file:rounded-lg file:border file:border-slate-300 file:text-xs file:bg-white file:hover:bg-slate-50 file:cursor-pointer"
+              data-proof-file />
+            <button
+              class="px-2 py-1 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 active:scale-[.98] transition"
+              data-upload-proof
+            >Upload</button>
+          </div>
+          ${proofUrl ? `
+          <div class="text-[11px] text-slate-500 leading-snug">
+            <a href="${proofUrl}" target="_blank" class="underline text-emerald-700">View uploaded photo</a>
+          </div>` : ''}
+        </div>
+
+        <button
+          class="w-full py-2 rounded-lg ${delivered ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[.98] transition'} text-center font-medium text-xs"
+          data-mark-delivered ${delivered ? 'disabled' : ''}>
+          ${delivered ? 'Already Delivered' : 'Mark Delivered'}
+        </button>
+      </div>
+    `;
+
+    // Wire up buttons
+    const uploadBtn = card.querySelector("[data-upload-proof]");
+    const fileInput = card.querySelector("[data-proof-file]");
+    const deliverBtn= card.querySelector("[data-mark-delivered]");
+
+    uploadBtn.addEventListener("click", async ()=>{
+      const f = fileInput.files && fileInput.files[0];
+      if(!f){
+        alert("Please choose a photo first.");
+        return;
+      }
+      await uploadProofForOrder(o, f);
+    });
+
+    deliverBtn.addEventListener("click", async ()=>{
+      if(delivered){
+        alert("Order already delivered.");
+        return;
+      }
+      const ok = confirm("Mark this order as delivered?");
+      if(!ok) return;
+      await markDelivered(o);
+    });
+
+    return card;
+  }
+
+  function renderOrders(list){
+    ordersList.innerHTML = "";
+    if(!list || list.length === 0){
+      ordersList.innerHTML = `
+        <div class="text-center text-[13px] text-slate-500 py-6">
+          No active deliveries right now.
+        </div>`;
+      return;
+    }
+    list.forEach(o=>{
+      // Only show if not delivered OR delivered in last ~24h for visibility.
+      const recentDelivered = (o.status === "delivered");
+      let keep = true;
+      if(recentDelivered && o.delivered_at){
+        try {
+          const deliveredTime = new Date(o.delivered_at).getTime();
+          if(Date.now() - deliveredTime > 24*60*60*1000){
+            keep = false;
+          }
+        }catch(e){}
+      }
+      if(!keep) return;
+
+      ordersList.appendChild(buildOrderCard(o));
+    });
+  }
+
+  function showDashboard(){
+    onboardCard.classList.add("hidden");
+    dashSection.classList.remove("hidden");
+    logoutBtn.classList.remove("hidden");
+  }
+
+  function showOnboarding(){
+    dashSection.classList.add("hidden");
+    onboardCard.classList.remove("hidden");
+    logoutBtn.classList.add("hidden");
+  }
+
+  function switchToSignup(){
+    signupForm.classList.remove("hidden");
+    loginFormWrapper.classList.add("hidden");
+
+    tabSignupBtn.classList.add("bg-emerald-600","text-white");
+    tabSignupBtn.classList.remove("border","border-slate-300","text-slate-800");
+
+    tabLoginBtn.classList.remove("bg-emerald-600","text-white");
+    tabLoginBtn.classList.add("border","border-slate-300","text-slate-800");
+  }
+
+  function switchToLogin(){
+    signupForm.classList.add("hidden");
+    loginFormWrapper.classList.remove("hidden");
+
+    tabLoginBtn.classList.add("bg-emerald-600","text-white");
+    tabLoginBtn.classList.remove("border","border-slate-300","text-slate-800");
+
+    tabSignupBtn.classList.remove("bg-emerald-600","text-white");
+    tabSignupBtn.classList.add("border","border-slate-300","text-slate-800");
+  }
+
+  // =========================
+  // API CALLS
+  // =========================
+
+  async function apiCreateDriver(){
+    // Build payload matching backend /api/app/drivers
+    const payload = {
+      driver_id: `DRV-${Date.now().toString().slice(-6)}`,
+      name: signupName.value.trim(),
+      phone: signupPhone.value.trim(),
+      vehicle: signupVehicle.value.trim() || "vehicle",
+      available: true,
+      current_location: {
+        lat: null,
+        lng: null
+      },
+      meta: {
+        zone: signupZone.value,
+        radius_km: signupRadius.value
+      }
+    };
+
+    let res, data;
+    try {
+      res = await fetch(`${API_BASE}/drivers`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify(payload)
+      });
+      data = await res.json().catch(()=>null);
+    } catch(e){
+      console.error("network create_driver", e);
+      alert("Network error creating driver profile");
+      return;
+    }
+
+    if(!res.ok || !data || !data.ok){
+      alertErr("Driver save failed", res, data);
+      return;
+    }
+
+    alert("Thanks. You're in. We'll start routing local deliveries to you after review. Please log in now using your WhatsApp number.");
+    // Switch to login tab so they can immediately request a PIN
+    switchToLogin();
+    loginPhone.value = signupPhone.value.trim();
+  }
+
+  async function apiRequestPin(){
+    const payload = { phone: loginPhone.value.trim() };
+    let res, data;
+    try {
+      res = await fetch(`${API_BASE}/drivers/request-pin`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify(payload)
+      });
+      data = await res.json().catch(()=>null);
+    } catch(e){
+      console.error("network request_pin", e);
+      alert("Network error requesting PIN");
+      return;
+    }
+
+    if(!res.ok || !data || !data.ok){
+      alertErr("PIN request failed", res, data);
+      return;
+    }
+
+    // Show verify form
+    loginRequestForm.classList.add("hidden");
+    loginVerifyForm.classList.remove("hidden");
+    // In demo, backend returns debug_pin. We'll display it if present.
+    if(data.debug_pin){
+      loginDebugPin.textContent = `Demo PIN: ${data.debug_pin}`;
+      loginDebugPin.classList.remove("hidden");
+    } else {
+      loginDebugPin.classList.add("hidden");
+    }
+
+    alert("Code sent. Check WhatsApp (or see demo PIN if shown).");
+  }
+
+  async function apiVerifyPin(){
+    const payload = {
+      phone: loginPhone.value.trim(),
+      pin: loginPin.value.trim()
+    };
+    let res, data;
+    try {
+      res = await fetch(`${API_BASE}/drivers/verify-pin`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify(payload)
+      });
+      data = await res.json().catch(()=>null);
+    } catch(e){
+      console.error("network verify_pin", e);
+      alert("Network error verifying PIN");
+      return;
+    }
+
+    if(!res.ok || !data || !data.ok){
+      alertErr("PIN verify failed", res, data);
+      return;
+    }
+
+    // data: {driver_id, token, expires_at}
+    saveAuth({
+      driver_id: data.driver_id,
+      token: data.token,
+      expires_at: data.expires_at
+    });
+
+    // reset login forms
+    loginRequestForm.classList.remove("hidden");
+    loginVerifyForm.classList.add("hidden");
+    loginPin.value = "";
+    loginDebugPin.classList.add("hidden");
+
+    await hydrateDashboard();
+    showDashboard();
+  }
+
+  async function apiGetDriverProfile(driver_id){
+    let res, data;
+    try {
+      res = await fetch(`${API_BASE}/drivers/${encodeURIComponent(driver_id)}`, {
+        method: "GET"
+      });
+      data = await res.json().catch(()=>null);
+    } catch(e){
+      console.error("network get_driver", e);
+      return null;
+    }
+    if(!res.ok || !data || !data.ok){
+      return null;
+    }
+    return data.driver || null;
+  }
+
+  async function apiGetDriverOrders(driver_id, token){
+    let res, data;
+    try {
+      res = await fetch(`${API_BASE}/driver-orders?driver_id=${encodeURIComponent(driver_id)}`, {
+        method: "GET",
+        headers: {
+          "X-Driver-Token": token
+        }
+      });
+      data = await res.json().catch(()=>null);
+    } catch(e){
+      console.error("network driver-orders", e);
+      return [];
+    }
+
+    if(!res.ok || !data || !data.ok){
+      return [];
+    }
+    return data.orders || [];
+  }
+
+  async function uploadProofForOrder(order, file){
+    const auth = loadAuth();
+    if(!auth){
+      alert("Please log in again.");
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append("photo", file);
+
+    let res, data;
+    try {
+      res = await fetch(`${API_BASE}/orders/${encodeURIComponent(order._internal_id)}/proof`, {
+        method: "POST",
+        headers: {
+          "X-Driver-Token": auth.token
+        },
+        body: fd
+      });
+      data = await res.json().catch(()=>null);
+    } catch(e){
+      console.error("network upload proof", e);
+      alert("Network error uploading proof.");
+      return;
+    }
+
+    if(!res.ok || !data || !data.ok){
+      alertErr("Proof upload failed", res, data);
+      return;
+    }
+
+    alert("Proof photo uploaded.");
+    await hydrateOrders(); // refresh list to show link
+  }
+
+  async function markDelivered(order){
+    // We'll just call /status with delivered.
+    let res, data;
+    try {
+      res = await fetch(`${API_BASE}/orders/${encodeURIComponent(order._internal_id)}/status`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({status:"delivered"})
+      });
+      data = await res.json().catch(()=>null);
+    } catch(e){
+      console.error("network delivered", e);
+      alert("Network error.");
+      return;
+    }
+
+    if(!res.ok || !data || !data.ok){
+      alertErr("Failed marking delivered", res, data);
+      return;
+    }
+
+    alert("Marked delivered. Good job!");
+    await hydrateDashboard();
+  }
+
+  // =========================
+  // HYDRATION / UI UPDATE
+  // =========================
+  async function hydrateDashboard(){
+    const auth = loadAuth();
+    if(!auth){
+      showOnboarding();
+      return;
+    }
+
+    const profile = await apiGetDriverProfile(auth.driver_id);
+    if(!profile){
+      // maybe they were deleted or token no longer valid
+      clearAuth();
+      showOnboarding();
+      return;
+    }
+
+    // Update summary display
+    drvNameDisplay.textContent   = profile.name || "Driver";
+    drvZoneDisplay.textContent   = (profile.meta && profile.meta.zone) || "-";
+    drvRadiusDisplay.textContent = (profile.meta && profile.meta.radius_km) || "-";
+    payoutDueDisplay.textContent = money(profile.weekly_payout_due);
+
+    nextWindowDisplay.textContent = formatEtaWindowForZone(
+      (profile.meta && profile.meta.zone) || "?"
+    );
+
+    // Orders
+    await hydrateOrders();
+
+    showDashboard();
+  }
+
+  async function hydrateOrders(){
+    const auth = loadAuth();
+    if(!auth){
+      return;
+    }
+    const orders = await apiGetDriverOrders(auth.driver_id, auth.token);
+    renderOrders(orders);
+  }
+
+  function doLogout(){
+    clearAuth();
+    showOnboarding();
+  }
+
+  // =========================
+  // EVENT LISTENERS
+  // =========================
+  tabSignupBtn.addEventListener("click", switchToSignup);
+  tabLoginBtn.addEventListener("click", switchToLogin);
+
+  signupForm.addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    if(!signupName.value.trim() || !signupPhone.value.trim()){
+      alert("Please enter your name and WhatsApp number.");
+      return;
+    }
+    await apiCreateDriver();
+  });
+
+  loginRequestForm.addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    if(!loginPhone.value.trim()){
+      alert("Enter WhatsApp number first.");
+      return;
+    }
+    await apiRequestPin();
+  });
+
+  loginVerifyForm.addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    if(!loginPin.value.trim()){
+      alert("Enter the 4-digit code.");
+      return;
+    }
+    await apiVerifyPin();
+  });
+
+  refreshOrdersBtn.addEventListener("click", async ()=>{
+    await hydrateOrders();
+    alert("Orders refreshed");
+  });
+
+  logoutBtn.addEventListener("click", ()=>{
+    const ok = confirm("Log out?");
+    if(ok) doLogout();
+  });
+
+  // =========================
+  // INIT
+  // =========================
+  nowYear();
+  hydrateDashboard(); // decides whether to show dashboard or onboarding
+})();
+</script>
+</body>
+</html>
