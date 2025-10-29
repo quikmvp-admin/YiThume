@@ -1,12 +1,17 @@
 import os
 import re
+import io
 import uuid
+import hashlib
 from datetime import datetime, timedelta
 from math import radians, cos, sin, asin, sqrt
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file, abort
 from flask_cors import CORS
 from pymongo import MongoClient, ASCENDING, DESCENDING, errors as mongo_errors
+from bson.objectid import ObjectId
+from gridfs import GridFS
+from werkzeug.utils import secure_filename
 
 # -------------------------------------------------
 # ENV + MONGO
@@ -15,12 +20,19 @@ MONGO_URI = os.environ.get(
     "MONGO_URI",
     "mongodb+srv://username:password@cluster0.mongodb.net/yithume?retryWrites=true&w=majority"
 )
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "changeme-admin")
+PIN_DEBUG_EXPOSE = os.environ.get("PIN_DEBUG_EXPOSE", "true").lower() == "true"
+
 mongo_client = MongoClient(MONGO_URI)
 DB_NAME = "yithume"
 
 def get_db():
     mongo_client.admin.command("ping")
     return mongo_client[DB_NAME]
+
+def get_fs(db=None) -> GridFS:
+    db = db or get_db()
+    return GridFS(db)
 
 # -------------------------------------------------
 # CONFIG / CONSTANTS
@@ -35,6 +47,8 @@ SERVICE_BBOX = {
     "min_lat": -34.2, "max_lat": -33.0,
     "min_lng":  25.5, "max_lng":  27.5
 }
+DRIVER_TOKEN_TTL_MIN = 7 * 24 * 60  # 7 days
+DRIVER_PIN_TTL_MIN = 10             # 10 minutes
 
 # -------------------------------------------------
 # FLASK
@@ -60,12 +74,22 @@ def safe_doc(doc):
         return None
     out = dict(doc)
     out.pop("_id", None)
-    for k in ("created_at", "assigned_at", "delivered_at"):
+    for k in ("created_at", "assigned_at", "delivered_at", "pin_expiry"):
         if isinstance(out.get(k), datetime):
             out[k] = out[k].isoformat() + "Z"
     loc = out.get("current_location")
-    if loc and isinstance(loc.get("updated_at"), datetime):
+    if isinstance(loc, dict) and isinstance(loc.get("updated_at"), datetime):
         loc["updated_at"] = loc["updated_at"].isoformat() + "Z"
+    # sanitize sessions
+    if "auth" in out and isinstance(out["auth"], dict):
+        out["auth"] = {k: v for k, v in out["auth"].items() if k != "pin_hash"}
+        # redact session tokens but keep expiry metadata for admin views
+        if isinstance(out["auth"].get("sessions"), list):
+            out["auth"]["sessions"] = [
+                {"expires_at": s.get("expires_at")} if isinstance(s.get("expires_at"), datetime)
+                else {"expires_at": s.get("expires_at")}
+                for s in out["auth"]["sessions"]
+            ]
     return out
 
 def phone_ok(p):
@@ -96,10 +120,13 @@ def ensure_indexes(db):
     db.orders.create_index([("status", ASCENDING), ("created_at", DESCENDING)])
     db.orders.create_index([("cluster_key", ASCENDING)])
     db.orders.create_index([("assigned_driver_id", ASCENDING), ("delivered_at", DESCENDING)])
+    db.orders.create_index([("order_id", ASCENDING)], unique=True)
 
     db.drivers.create_index([("_internal_id", ASCENDING)], unique=True)
     db.drivers.create_index([("active", ASCENDING), ("available", ASCENDING), ("meta.zone", ASCENDING)])
     db.drivers.create_index([("current_location.lat", ASCENDING), ("current_location.lng", ASCENDING)])
+    db.drivers.create_index([("phone", ASCENDING)], unique=False)
+    db.drivers.create_index([("auth.sessions.token", ASCENDING)], sparse=True)
 
     db.zone_demand.create_index([("zone", ASCENDING), ("ts", DESCENDING)])
 
@@ -107,6 +134,8 @@ def ensure_indexes(db):
 
     db.stores.create_index([("_internal_id", ASCENDING)], unique=True)
     db.store_items.create_index([("store_id", ASCENDING)])
+
+    db.whatsapp_log.create_index([("created_at", DESCENDING)])
 
 def wa_order_text(order):
     items_list = ", ".join(
@@ -119,14 +148,15 @@ def wa_order_text(order):
     pay_m = order.get("payment", {}).get("method", "card")
 
     lines = [
-        "Yi Thume, my order is:",
-        f"Ref: {order.get('order_id')}",
+        "YiThume Order Confirmation",
+        f"Order ID: {order.get('order_id')}",
         f"Items: {items_list}",
-        f"Deliver to: {addr.get('line1','')} (Zone {zone})",
         f"Total: R{total}",
-        f"Expected delivery: {eta}",
+        f"Zone: {zone}",
+        f"Address: {addr.get('line1','')}",
+        f"Status: Awaiting driver pickup.",
         f"Payment: {pay_m}",
-        "Please confirm + send payment link."
+        f"ETA: {eta}"
     ]
     return "\n".join(lines)
 
@@ -270,7 +300,29 @@ def recent_zone_demand_snapshot(db):
         out[z] = {"misses": row["count"]}
     return out
 
-# init indexes
+def hash_pin(pin: str) -> str:
+    return hashlib.sha256(str(pin).encode("utf-8")).hexdigest()
+
+def require_admin():
+    hdr = request.headers.get("X-Admin-Secret")
+    if not hdr or hdr != ADMIN_SECRET:
+        return False
+    return True
+
+def get_driver_from_token(db, token: str):
+    if not token:
+        return None
+    d = db.drivers.find_one({
+        "auth.sessions": {
+            "$elemMatch": {
+                "token": token,
+                "expires_at": {"$gte": _now_dt()}
+            }
+        }
+    })
+    return d
+
+# init indexes once per cold start
 try:
     ensure_indexes(get_db())
 except Exception:
@@ -328,10 +380,9 @@ def create_order():
         "delivery_fee": data.get("delivery_fee", 0),
         "total": total,
 
-        # NEW: add fake_checkout_url so front-end can "open" it
         "payment": {
             "method": data.get("payment", {}).get("method", "card"),
-            "status": "pending",  # 'pending' | 'paid'
+            "status": "pending",
             "provider_ref": None,
             "fake_checkout_url": f"https://fake-pay.yithume.local/checkout/{internal_id}"
         },
@@ -348,6 +399,9 @@ def create_order():
         "fraud_score": 0.0,
         "fraud_flags": {},
         "cluster_key": None,
+
+        "delivery_photo_file_id": None,
+        "delivery_photo_url": None,
 
         "settlement": {
             "driver": 0.0,
@@ -405,7 +459,7 @@ def create_order():
             "fraud_flags": ff,
             "wa_message": wa_msg,
             "zone_demand_snapshot": zd_snapshot,
-            "payment_portal_url": order_doc["payment"]["fake_checkout_url"]  # <-- front-end can show "Pay"
+            "payment_portal_url": order_doc["payment"]["fake_checkout_url"]
         }), 201
 
     except mongo_errors.PyMongoError as e:
@@ -414,7 +468,7 @@ def create_order():
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
 
-# ---------------- LIST ORDERS (ADMIN) -----------
+# ---------------- LIST ORDERS (ADMIN/OP) -------
 @app.route("/orders", methods=["GET"])
 @app.route("/api/app/orders", methods=["GET"])
 def list_orders():
@@ -423,7 +477,7 @@ def list_orders():
 
     try:
         db = get_db()
-        cur = db.orders.find(q).sort("created_at", DESCENDING).limit(50)
+        cur = db.orders.find(q).sort("created_at", DESCENDING).limit(100)
         orders_out = [safe_doc(o) for o in cur]
         zd_snapshot = recent_zone_demand_snapshot(db)
 
@@ -447,16 +501,13 @@ def list_orders():
 @app.route("/orders/<oid>/mark-paid", methods=["POST"])
 @app.route("/api/app/orders/<oid>/mark-paid", methods=["POST"])
 def mark_paid(oid):
-    """
-    Admin confirms money arrived.
-    Sets payment.status = 'paid'.
-    (Later we only dispatch paid orders except COD cases.)
-    """
+    if not require_admin():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
     try:
         db = get_db()
         o = db.orders.find_one({"_internal_id": oid})
         if not o:
-            return jsonify({"ok": False, "error": "order not found"}), 404
+            return jsonify({"ok": False, "error": "order_not_found"}), 404
 
         payment = o.get("payment", {})
         payment["status"] = "paid"
@@ -473,15 +524,69 @@ def mark_paid(oid):
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
 
+# ---------------- SIMULATE PAYMENT -------------
+@app.route("/simulate_payment", methods=["POST"])
+@app.route("/api/app/simulate_payment", methods=["POST"])
+def simulate_payment():
+    """
+    Body:
+      - order_db_id (preferred) OR order_public_id
+    Effects:
+      - marks payment.status='paid'
+      - logs WhatsApp confirmation to whatsapp_log
+    """
+    body = request.json or {}
+    order_db_id = body.get("order_db_id")
+    order_public_id = body.get("order_public_id")
+
+    if not order_db_id and not order_public_id:
+        return jsonify({"ok": False, "error": "order identifier required"}), 400
+
+    try:
+        db = get_db()
+        q = {"_internal_id": order_db_id} if order_db_id else {"order_id": order_public_id}
+        o = db.orders.find_one(q)
+        if not o:
+            return jsonify({"ok": False, "error": "order_not_found"}), 404
+
+        o["payment"] = o.get("payment", {})
+        o["payment"]["status"] = "paid"
+        db.orders.update_one(q, {"$set": {"payment": o["payment"]}})
+
+        # Simulate WhatsApp confirmation to central number
+        msg = wa_order_text(o)
+        db.whatsapp_log.insert_one({
+            "direction": "outbound",
+            "to": "CENTRAL_NUMBER",
+            "order_id": o.get("order_id"),
+            "body": msg,
+            "created_at": _now_dt()
+        })
+
+        return jsonify({
+            "ok": True,
+            "status": "paid",
+            "order_id": o.get("order_id"),
+            "message": "Payment received via EFT / cash on delivery"
+        }), 200
+
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+
 # ---------------- AUTO-ASSIGN DRIVER ----------
 @app.route("/orders/<oid>/auto-assign", methods=["POST"])
 @app.route("/api/app/orders/<oid>/auto-assign", methods=["POST"])
 def auto_assign(oid):
+    if not require_admin():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
     try:
         db = get_db()
         o = db.orders.find_one({"_internal_id": oid})
         if not o:
-            return jsonify({"ok": False, "error": "order not found"}), 404
+            return jsonify({"ok": False, "error": "order_not_found"}), 404
 
         zone = (o.get("meta") or {}).get("zone")
         coords = (((o.get("customer") or {}).get("address") or {}).get("coords") or {})
@@ -515,6 +620,9 @@ def auto_assign(oid):
 @app.route("/orders/<oid>/assign", methods=["POST"])
 @app.route("/api/app/orders/<oid>/assign", methods=["POST"])
 def assign_driver(oid):
+    if not require_admin():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
     body = request.json or {}
     driver_id = body.get("driver_id")
     if not driver_id:
@@ -524,10 +632,10 @@ def assign_driver(oid):
         db = get_db()
 
         if not db.orders.find_one({"_internal_id": oid}):
-            return jsonify({"ok": False, "error": "order not found"}), 404
+            return jsonify({"ok": False, "error": "order_not_found"}), 404
 
         if not db.drivers.find_one({"_internal_id": driver_id, "active": True}):
-            return jsonify({"ok": False, "error": "driver not found"}), 404
+            return jsonify({"ok": False, "error": "driver_not_found"}), 404
 
         db.orders.update_one(
             {"_internal_id": oid},
@@ -564,7 +672,7 @@ def update_status(oid):
         db = get_db()
         o = db.orders.find_one({"_internal_id": oid})
         if not o:
-            return jsonify({"ok": False, "error": "order not found"}), 404
+            return jsonify({"ok": False, "error": "order_not_found"}), 404
 
         update_set = {"status": new_status}
 
@@ -612,7 +720,7 @@ def update_status(oid):
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
 
-# ---------------- DRIVERS ---------------------
+# ---------------- DRIVER PORTAL ---------------
 @app.route("/drivers", methods=["POST"])
 @app.route("/api/app/drivers", methods=["POST"])
 def create_driver():
@@ -647,6 +755,12 @@ def create_driver():
             "id_doc_ref": None,
             "licence_ref": None,
             "vehicle_reg_ref": None
+        },
+
+        "auth": {
+            "pin_hash": None,
+            "pin_expiry": None,
+            "sessions": []
         },
 
         "meta": data.get("meta", {})  # zone, radius_km, etc.
@@ -687,7 +801,6 @@ def list_drivers():
         }), 500
 
 
-# NEW: driver profile detail (for driver dashboard modal)
 @app.route("/drivers/<driver_id>", methods=["GET"])
 @app.route("/api/app/drivers/<driver_id>", methods=["GET"])
 def get_driver(driver_id):
@@ -695,7 +808,7 @@ def get_driver(driver_id):
         db = get_db()
         d = db.drivers.find_one({"_internal_id": driver_id})
         if not d:
-            return jsonify({"ok": False, "error": "driver not found"}), 404
+            return jsonify({"ok": False, "error": "driver_not_found"}), 404
         return jsonify({
             "ok": True,
             "driver": safe_doc(d)
@@ -706,39 +819,247 @@ def get_driver(driver_id):
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
 
-# NEW: driver docs upload meta (for licence etc)
-@app.route("/drivers/<driver_id>/docs", methods=["POST"])
-@app.route("/api/app/drivers/<driver_id>/docs", methods=["POST"])
-def update_driver_docs(driver_id):
-    """
-    For now it's just text references/URLs.
-    Later you replace with S3 upload etc.
-    """
+# ----- Driver login: request PIN -----
+@app.route("/drivers/request-pin", methods=["POST"])
+@app.route("/api/app/drivers/request-pin", methods=["POST"])
+def driver_request_pin():
     body = request.json or {}
-    doc_updates = {
-        "docs.id_doc_ref": body.get("id_doc_ref"),
-        "docs.licence_ref": body.get("licence_ref"),
-        "docs.vehicle_reg_ref": body.get("vehicle_reg_ref")
-    }
+    phone = (body.get("phone") or "").strip()
+    if not phone_ok(phone):
+        return jsonify({"ok": False, "error": "bad_phone"}), 400
+
     try:
         db = get_db()
-        res = db.drivers.update_one(
-            {"_internal_id": driver_id},
-            {"$set": {k:v for k,v in doc_updates.items() if v is not None}}
+        d = db.drivers.find_one({"phone": phone, "active": True})
+        if not d:
+            return jsonify({"ok": False, "error": "driver_not_found"}), 404
+
+        pin = str(uuid.uuid4().int)[-4:]  # simple 4-digit
+        db.drivers.update_one(
+            {"_internal_id": d["_internal_id"]},
+            {"$set": {
+                "auth.pin_hash": hash_pin(pin),
+                "auth.pin_expiry": _now_dt() + timedelta(minutes=DRIVER_PIN_TTL_MIN)
+            }}
         )
-        if res.matched_count == 0:
-            return jsonify({"ok": False, "error": "driver not found"}), 404
-        return jsonify({"ok": True}), 200
+
+        # In production: send PIN via WhatsApp/SMS.
+        payload = {"ok": True, "sent": True}
+        if PIN_DEBUG_EXPOSE:
+            payload["debug_pin"] = pin
+        return jsonify(payload), 200
+
     except mongo_errors.PyMongoError as e:
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
 
+# ----- Driver login: verify PIN -----
+@app.route("/drivers/verify-pin", methods=["POST"])
+@app.route("/api/app/drivers/verify-pin", methods=["POST"])
+def driver_verify_pin():
+    body = request.json or {}
+    phone = (body.get("phone") or "").strip()
+    pin   = (body.get("pin") or "").strip()
+
+    if not phone_ok(phone) or not pin:
+        return jsonify({"ok": False, "error": "bad_input"}), 400
+
+    try:
+        db = get_db()
+        d = db.drivers.find_one({"phone": phone, "active": True})
+        if not d:
+            return jsonify({"ok": False, "error": "driver_not_found"}), 404
+
+        ah = (d.get("auth") or {})
+        if not ah or not ah.get("pin_hash") or not ah.get("pin_expiry"):
+            return jsonify({"ok": False, "error": "no_pin_requested"}), 400
+
+        if ah["pin_expiry"] < _now_dt():
+            return jsonify({"ok": False, "error": "pin_expired"}), 400
+
+        if ah["pin_hash"] != hash_pin(pin):
+            return jsonify({"ok": False, "error": "pin_invalid"}), 400
+
+        token = str(uuid.uuid4())
+        expiry = _now_dt() + timedelta(minutes=DRIVER_TOKEN_TTL_MIN)
+        db.drivers.update_one(
+            {"_internal_id": d["_internal_id"]},
+            {
+                "$set": {"auth.pin_hash": None, "auth.pin_expiry": None},
+                "$push": {"auth.sessions": {"token": token, "expires_at": expiry}}
+            }
+        )
+
+        return jsonify({
+            "ok": True,
+            "driver_id": d["_internal_id"],
+            "token": token,
+            "expires_at": expiry.isoformat() + "Z"
+        }), 200
+
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+
+# ----- Driver Orders (requires driver_id or token) -----
+@app.route("/driver-orders", methods=["GET"])
+@app.route("/api/app/driver-orders", methods=["GET"])
+def driver_orders():
+    driver_id = request.args.get("driver_id")
+    status    = request.args.get("status")  # optional filter
+    token     = request.headers.get("X-Driver-Token")
+
+    try:
+        db = get_db()
+        if not driver_id:
+            d = get_driver_from_token(db, token)
+            if not d:
+                return jsonify({"ok": False, "error": "auth_required"}), 401
+            driver_id = d["_internal_id"]
+        else:
+            if token:
+                d = get_driver_from_token(db, token)
+                if not d or d["_internal_id"] != driver_id:
+                    return jsonify({"ok": False, "error": "forbidden"}), 403
+
+        q = {"assigned_driver_id": driver_id}
+        if status:
+            q["status"] = status
+
+        cur = db.orders.find(q).sort("created_at", DESCENDING).limit(50)
+        return jsonify({
+            "ok": True,
+            "orders": [safe_doc(o) for o in cur]
+        }), 200
+
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_read_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+
+# ----- Proof of Delivery (driver) -----
+@app.route("/orders/<oid>/proof", methods=["POST"])
+@app.route("/api/app/orders/<oid>/proof", methods=["POST"])
+def upload_proof(oid):
+    token = request.headers.get("X-Driver-Token")
+    try:
+        db = get_db()
+        d = get_driver_from_token(db, token)
+        if not d:
+            return jsonify({"ok": False, "error": "auth_required"}), 401
+
+        order = db.orders.find_one({"_internal_id": oid})
+        if not order:
+            return jsonify({"ok": False, "error": "order_not_found"}), 404
+        if order.get("assigned_driver_id") != d["_internal_id"]:
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+
+        if "photo" not in request.files:
+            return jsonify({"ok": False, "error": "file_missing"}), 400
+        f = request.files["photo"]
+        filename = secure_filename(f.filename or "proof.jpg")
+        content = f.read()
+        if not content:
+            return jsonify({"ok": False, "error": "empty_file"}), 400
+
+        fs = get_fs(db)
+        file_id = fs.put(content, filename=filename, contentType=f.mimetype or "application/octet-stream")
+
+        file_url = f"/api/app/files/{file_id}"
+        db.orders.update_one(
+            {"_internal_id": oid},
+            {"$set": {
+                "delivery_photo_file_id": str(file_id),
+                "delivery_photo_url": file_url
+            }}
+        )
+        return jsonify({"ok": True, "file_id": str(file_id), "url": file_url}), 201
+
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+
+# ----- Driver docs upload (GridFS) -----
+@app.route("/drivers/<driver_id>/docs-upload", methods=["POST"])
+@app.route("/api/app/drivers/<driver_id>/docs-upload", methods=["POST"])
+def upload_driver_docs(driver_id):
+    """
+    Multipart form-data with any of: 'id_doc', 'licence', 'vehicle_reg'
+    Requires X-Driver-Token of the same driver (or admin header).
+    """
+    token = request.headers.get("X-Driver-Token")
+    try:
+        db = get_db()
+        is_admin = require_admin()
+        d = None
+        if token:
+            d = get_driver_from_token(db, token)
+
+        if not is_admin:
+            if not d:
+                return jsonify({"ok": False, "error": "auth_required"}), 401
+            if d["_internal_id"] != driver_id:
+                return jsonify({"ok": False, "error": "forbidden"}), 403
+
+        updates = {}
+        fs = get_fs(db)
+
+        def save_field(field, key):
+            if field in request.files:
+                f = request.files[field]
+                content = f.read()
+                if content:
+                    fname = secure_filename(f.filename or field)
+                    fid = fs.put(content, filename=fname, contentType=f.mimetype or "application/octet-stream")
+                    updates[f"docs.{key}"] = str(fid)
+
+        save_field("id_doc", "id_doc_ref")
+        save_field("licence", "licence_ref")
+        save_field("vehicle_reg", "vehicle_reg_ref")
+
+        if not updates:
+            return jsonify({"ok": False, "error": "no_files"}), 400
+
+        db.drivers.update_one({"_internal_id": driver_id}, {"$set": updates})
+        return jsonify({"ok": True, "updated": updates}), 200
+
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+
+# ----- Stream files (GridFS) -----
+@app.route("/files/<fid>", methods=["GET"])
+@app.route("/api/app/files/<fid>", methods=["GET"])
+def stream_file(fid):
+    try:
+        db = get_db()
+        fs = get_fs(db)
+        file = fs.get(ObjectId(fid))
+        return send_file(
+            io.BytesIO(file.read()),
+            mimetype=file.content_type or "application/octet-stream",
+            download_name=file.filename or "file.bin"
+        )
+    except Exception:
+        abort(404)
+
+
 # ---------------- WEEKLY CLOSE / PAYOUTS ------
 @app.route("/settlements/weekly-close", methods=["POST"])
 @app.route("/api/app/settlements/weekly-close", methods=["POST"])
 def weekly_close():
+    if not require_admin():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
     body = request.json or {}
     note = body.get("note", "weekly close")
 
@@ -835,7 +1156,7 @@ def add_store_item(store_id):
     try:
         db = get_db()
         if not db.stores.find_one({"_internal_id": store_id}):
-            return jsonify({"ok": False, "error": "store not found"}), 404
+            return jsonify({"ok": False, "error": "store_not_found"}), 404
 
         db.store_items.insert_one(item_doc)
         return jsonify({"ok": True, "item_id": item_id}), 201
@@ -844,4 +1165,43 @@ def add_store_item(store_id):
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
-# no app.run(); for serverless import
+
+# ---------------- WHATSAPP SIM (OUTBOUND) -----
+@app.route("/send_whatsapp_confirmation", methods=["POST"])
+@app.route("/api/app/send_whatsapp_confirmation", methods=["POST"])
+def send_whatsapp_confirmation():
+    """
+    Body: { order_db_id OR order_public_id }
+    Writes a simulated outbound message to whatsapp_log.
+    """
+    body = request.json or {}
+    order_db_id = body.get("order_db_id")
+    order_public_id = body.get("order_public_id")
+
+    if not order_db_id and not order_public_id:
+        return jsonify({"ok": False, "error": "order identifier required"}), 400
+
+    try:
+        db = get_db()
+        q = {"_internal_id": order_db_id} if order_db_id else {"order_id": order_public_id}
+        o = db.orders.find_one(q)
+        if not o:
+            return jsonify({"ok": False, "error": "order_not_found"}), 404
+
+        msg = wa_order_text(o)
+        db.whatsapp_log.insert_one({
+            "direction": "outbound",
+            "to": "CENTRAL_NUMBER",
+            "order_id": o.get("order_id"),
+            "body": msg,
+            "created_at": _now_dt()
+        })
+
+        return jsonify({"ok": True, "message": "logged"}), 200
+
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+# NOTE: no app.run(); suitable for serverless import (e.g., Vercel)
