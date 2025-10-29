@@ -21,7 +21,7 @@
     }
     @media (max-width:640px){ :root{ --hero-h: 280px; } }
 
-    /* Leaflet tweaks */
+    /* Leaflet layers above Tailwind sections */
     .leaflet-pane,
     .leaflet-top,
     .leaflet-bottom { z-index: 10 !important; }
@@ -34,7 +34,7 @@
     }
     .leaflet-control-container{display:none;}
 
-    /* Moving markers */
+    /* Animated map markers */
     .car-dot{transform:translate(-50%,-50%);}
     .car-dot svg{
       width:18px;
@@ -54,7 +54,7 @@
       filter:drop-shadow(0 1px 1px rgba(0,0,0,.15))
     }
 
-    /* Overlay tint + badge */
+    /* Overlay tint + region badge */
     .tint{
       position:absolute;
       inset:0;
@@ -74,7 +74,7 @@
       backdrop-filter: blur(2px);
     }
 
-    /* Body scroll lock class */
+    /* Body scroll lock class used while modals are open */
     .overflow-locked {
       overflow: hidden;
       touch-action: none;
@@ -479,13 +479,13 @@
     </div>
 
     <div class="p-4 text-sm">
-      <div class="flex gap-2 mb-4">
-        <button id="tabSignup" class="flex-1 py-2 text-center rounded-lg bg-emerald-600 text-white">Sign up</button>
-        <button id="tabLogin"  class="flex-1 py-2 text-center rounded-lg border border-slate-300">Log in</button>
+      <div class="flex gap-2 mb-4" role="tablist" aria-label="Driver auth tabs">
+        <button id="tabSignup" class="flex-1 py-2 text-center rounded-lg bg-emerald-600 text-white" role="tab" aria-selected="true">Sign up</button>
+        <button id="tabLogin"  class="flex-1 py-2 text-center rounded-lg border border-slate-300" role="tab" aria-selected="false">Log in</button>
       </div>
 
       <!-- Signup form -->
-      <form id="driverFormSignup" class="space-y-3">
+      <form id="driverFormSignup" class="space-y-3" aria-label="Driver signup form">
         <label class="block">
           <div class="text-xs font-medium text-slate-600">Full Name</div>
           <input id="drvName" class="mt-1 w-full border rounded-lg p-2" placeholder="Name" required />
@@ -523,7 +523,7 @@
       </form>
 
       <!-- Login form -->
-      <form id="driverFormLogin" class="space-y-3 hidden">
+      <form id="driverFormLogin" class="space-y-3 hidden" aria-label="Driver login form">
         <label class="block">
           <div class="text-xs font-medium text-slate-600">WhatsApp Number</div>
           <input id="drvLoginPhone" class="mt-1 w-full border rounded-lg p-2" placeholder="2782..." required />
@@ -600,7 +600,7 @@
     <div class="p-4 border-t space-y-3 text-sm">
       <label class="block">
         <div class="text-xs font-medium text-slate-600">Payment method</div>
-        <select id="botPayChoice" class="mt-1 w-full border rounded-lg p-2">
+        <select id="botPayChoice" class="mt-1 w-full border rounded-lg p-2" aria-label="Payment method">
           <option value="card">Card (Yoco link)</option>
           <option value="eft">Instant EFT (Ozow)</option>
           <option value="deposit_cod">50% deposit + COD</option>
@@ -620,7 +620,7 @@
       </div>
 
       <div class="text-[11px] text-slate-500 leading-snug" id="botDemoNote" hidden>
-        No money is taken — this is just a demo. We’ll WhatsApp a real secure link.
+        No money is taken — this is a demo. We’ll WhatsApp a real secure link.
       </div>
     </div>
   </div>
@@ -687,7 +687,7 @@
       <!-- Zone -->
       <div>
         <label class="block text-xs text-slate-600 font-medium">Delivery zone</label>
-        <select id="zoneSelect" class="mt-1 w-full border rounded-lg p-2">
+        <select id="zoneSelect" class="mt-1 w-full border rounded-lg p-2" aria-label="Delivery zone">
           <option value="A" data-fee="25" data-lat="-33.590" data-lng="26.890">Zone A — Port Alfred (R25)</option>
           <option value="B" data-fee="35" data-lat="-33.498" data-lng="26.833">Zone B — Bathurst (R35)</option>
           <option value="C" data-fee="45" data-lat="-33.686" data-lng="26.668">Zone C — Kenton / Bushmans (R45)</option>
@@ -887,29 +887,39 @@
 </div>
 
 <script>
+/**
+ * YiThume front-end (single-file demo)
+ * - Order builder with items, zones, rush, and payment choices
+ * - Bot-style checkout -> WhatsApp confirmation
+ * - Driver signup/login + demo dashboard
+ * - Admin orders panel (demo flow with auto-assign and mark delivered)
+ * - Live animated map using Leaflet (safe fallback if blocked)
+ */
 window.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & GLOBALS ===
-  const BASE_API = "/api/app";
-  const WHATSAPP_NUMBER = "270691456201";
-  const ADMIN_WHATSAPP  = "270691456201";
-  const DEMO_MODE       = true; // set to false when backend is ready
+  const BASE_API = "/api/app";                 // backend base (replace when deploying API)
+  const WHATSAPP_NUMBER = "270691456201";      // public WhatsApp for order confirmations
+  const ADMIN_WHATSAPP  = "270691456201";      // admin WhatsApp for internal alerts
+  const DEMO_MODE       = true;                // set to false when backend is ready
 
-  function waText(str) { return encodeURIComponent(str); }
-  function digits(val){ return (val||"").replace(/\D+/g,''); }
+  // Basic helpers
+  const waText = (str) => encodeURIComponent(str);
+  const digits = (val) => (val || "").replace(/\D+/g, "");
 
-  // === BODY SCROLL LOCK + FOCUS RESTORE ===
+  // === BODY SCROLL LOCK + FOCUS RESTORE (for a11y) ===
   const lastFocus = new Map();
-  function firstFocusable(el){
-    return el.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-  }
-  function lockScroll(){ document.body.classList.add('overflow-locked'); }
-  function unlockScroll(){ document.body.classList.remove('overflow-locked'); }
+  const firstFocusable = (el) =>
+    el.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  const lockScroll = () => document.body.classList.add('overflow-locked');
+  const unlockScroll = () => document.body.classList.remove('overflow-locked');
+
   function openFlex(el){
     if(!el) return;
     lastFocus.set(el, document.activeElement);
     el.classList.remove('hidden');
     el.classList.add('flex');
     lockScroll();
+    // focus first focusable for keyboard users
     setTimeout(()=>{ const ff = firstFocusable(el); if(ff) ff.focus(); }, 0);
   }
   function closeFlex(el){
@@ -939,18 +949,15 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // === RUNTIME / GLOBAL STATE ===
-  let latestOrderData = null;
-  let zoneDemandStats = {};
-  let botStage = 0;
-  const currentOrdersByTab = {};
+  let latestOrderData = null;  // current order context for bot/WA handoff
+  let zoneDemandStats = {};    // optional: {A:{misses:1}, ...} from backend
+  let botStage = 0;            // 0: pre-pay, 1: fake pay open, 2: paid (demo)
+  const currentOrdersByTab = {}; // cache per admin tab
 
   // lightweight in-memory driver balances for demo
-  let driverTotals = {
-    pending: 0,
-    approved: 0
-  };
+  const driverTotals = { pending: 0, approved: 0 };
 
-  // store onboarding state
+  // store onboarding state (Add Your Store modal)
   const storeItems = []; // {name, price}
 
   // === YEAR FOOTER ===
@@ -1044,7 +1051,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const storePhoneEl        = document.getElementById('storePhone');
   const storeZoneEl         = document.getElementById('storeZone');
 
-  // === CATALOG ===
+  // === CATALOG (starter items) ===
   const CATALOG = [
     {name:'Panado 500mg (24s)',price:35},
     {name:'Allergex 10mg (10s)',price:30},
@@ -1053,7 +1060,7 @@ window.addEventListener('DOMContentLoaded', () => {
     {name:'Bandages (set)',price:25}
   ];
 
-  // === HELPERS ===
+  // === RENDER ITEMS LIST ===
   function renderItems(){
     itemsList.innerHTML = '';
     CATALOG.forEach((item,idx)=>{
@@ -1061,7 +1068,7 @@ window.addEventListener('DOMContentLoaded', () => {
       row.className='flex items-center justify-between gap-3 border rounded-lg p-2';
       row.innerHTML = `
         <label class="flex items-center gap-2">
-          <input type="checkbox" data-idx="${idx}" class="itemCheck h-4 w-4"/>
+          <input type="checkbox" data-idx="${idx}" class="itemCheck h-4 w-4" aria-label="Select ${item.name}"/>
           <span>${item.name}</span>
         </label>
         <div class="flex items-center gap-2">
@@ -1079,11 +1086,12 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function selectedPay(){
+  const selectedPay = () => {
     const el = document.querySelector('input[name="pay"]:checked');
     return el ? el.value : 'card';
-  }
+  };
 
+  // === COMPUTE TOTAL + return structured summary (for order payload) ===
   function computeTotal(){
     const opt     = zoneSelect.options[zoneSelect.selectedIndex];
     const feeBase = Number(opt.dataset.fee || 0);
@@ -1094,7 +1102,7 @@ window.addEventListener('DOMContentLoaded', () => {
       .filter(c => c.checked)
       .map(c => {
         const i   = Number(c.dataset.idx);
-        const qty = Math.max(1, Number(document.querySelector(\`.itemQty[data-idx="\${i}"]\`).value || 1));
+        const qty = Math.max(1, Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value || 1));
         return {
           name:  CATALOG[i].name,
           price: Number(CATALOG[i].price),
@@ -1118,22 +1126,23 @@ window.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  function pad2(n){return String(n).padStart(2,'0');}
+  // helpers for ETA text
+  const pad2 = (n)=> String(n).padStart(2,'0');
 
   function nextETA(rush){
     const now     = new Date();
     const windows = [[8,10],[12,14],[16,18]];
-    // allow: Sun(0) Wed(3) Thu(4) Fri(5) Sat(6)
+    // delivery days: Sun(0) Wed(3) Thu(4) Fri(5) Sat(6)
     const allowed = new Set([0,3,4,5,6]);
     const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-    function fmt(date,[h1,h2]){
+    const fmt = (date,[h1,h2])=>{
       const sameDay = (date.toDateString()===new Date().toDateString());
       if (sameDay){
-        return \`\${pad2(h1)}:00–\${pad2(h2)}:00 \${rush?'today (rush)':'today'}\`;
+        return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
       }
-      return \`\${dayNames[date.getDay()]} \${pad2(h1)}:00–\${pad2(h2)}:00\`;
-    }
+      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
+    };
 
     if (allowed.has(now.getDay())){
       for(const w of windows){
@@ -1160,14 +1169,11 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // === MODAL OPEN/CLOSE HELPERS (wrappers) ===
-  function openOrder(){
-    openFlex(modal);
-    const s = computeTotal();
-    toggleDepositBanner(s.total);
-  }
-  function closeOrder(){ closeFlex(modal); }
-  function openBot(){
+  // === MODAL OPEN/CLOSE WRAPPERS ===
+  const openOrder  = ()=>{ openFlex(modal); const s = computeTotal(); toggleDepositBanner(s.total); };
+  const closeOrder = ()=> closeFlex(modal);
+
+  const openBot = ()=>{
     botStage = 0;
     botNext.disabled = false;
     botNext.textContent = "Pay";
@@ -1176,47 +1182,54 @@ window.addEventListener('DOMContentLoaded', () => {
     botDemoNote.hidden = true;
     botFeed.innerHTML = "";
     openFlex(botModal);
-  }
-  function closeBot(){ botFeed.innerHTML=''; closeFlex(botModal); }
-  function openPayModal(orderRef, amount){
+  };
+  const closeBot    = ()=>{ botFeed.innerHTML=''; closeFlex(botModal); };
+
+  const openPayModal  = (orderRef, amount)=>{
     if(!payModal) return;
     payOrderRef.textContent = orderRef || '--';
     payAmountEl.textContent = amount || '0';
     openFlex(payModal);
-  }
-  function closePayModal(){ closeFlex(payModal); }
-  function openDriverWindow(){ openFlex(driverModal); }
-  function closeDriverWindow(){ closeFlex(driverModal); }
-  function openStoreModal(){ openFlex(storeModal); }
-  function closeStoreModal(){ closeFlex(storeModal); }
-  function openOrders(){ openFlex(ordersPanel); renderOrders(); }
-  function closeOrders(){ closeFlex(ordersPanel); }
-  function openDriverDash(){ 
+  };
+  const closePayModal = ()=> closeFlex(payModal);
+
+  const openDriverWindow  = ()=> openFlex(driverModal);
+  const closeDriverWindow = ()=> closeFlex(driverModal);
+
+  const openStore = ()=> openFlex(storeModal);
+  const closeStore= ()=> closeFlex(storeModal);
+
+  const openOrders = ()=>{ openFlex(ordersPanel); renderOrders(); };
+  const closeOrders= ()=> closeFlex(ordersPanel);
+
+  const openDriverDash = ()=>{
     // refresh dashboard numbers before showing
     driverPayoutPendingEl.textContent = String(driverTotals.pending);
     driverPayoutApprovedEl.textContent = String(driverTotals.approved);
     openFlex(driverDashModal);
-  }
-  function closeDriverDashWindow(){ closeFlex(driverDashModal); }
+  };
+  const closeDriverDashWindow = ()=> closeFlex(driverDashModal);
 
+  // append a chat bubble in checkout modal
   function appendBot(msg,who='bot'){
     const wrap=document.createElement('div');
-    wrap.className = \`flex \${who==='bot'?'justify-start':'justify-end'}\`;
+    wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
     wrap.innerHTML = `
-      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm \${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
-        \${msg}
+      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
+        ${msg}
       </div>`;
     botFeed.appendChild(wrap);
     botFeed.scrollTop = botFeed.scrollHeight;
   }
 
-  function demandBadge(zone){
+  // build a small “no driver demand” badge for admin list
+  const demandBadge = (zone)=>{
     const missCount = zoneDemandStats[zone]?.misses || 0;
     if(missCount === 0) return "";
-    return \`<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-      demand \${missCount}x / no driver
-    </span>\`;
-  }
+    return `<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+      demand ${missCount}x / no driver
+    </span>`;
+  };
 
   // === MOBILE NAV TOGGLE ===
   function toggleMobileMenu() {
@@ -1302,7 +1315,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // === MODAL CLOSE BUTTONS ===
-  botClose?.addEventListener('click', closeBot);
+  document.getElementById('closeBot')?.addEventListener('click', closeBot);
   closeBtn?.addEventListener('click', closeOrder);
   cancelOrderBuilder?.addEventListener('click', closeOrder);
   closePayModalBtn?.addEventListener('click', closePayModal);
@@ -1342,12 +1355,16 @@ window.addEventListener('DOMContentLoaded', () => {
     tabLogin.classList.remove('bg-emerald-600','text-white');
     formSignup.classList.remove('hidden');
     formLogin.classList.add('hidden');
+    tabSignup.setAttribute('aria-selected','true');
+    tabLogin.setAttribute('aria-selected','false');
   });
   tabLogin?.addEventListener('click',()=>{
     tabLogin.classList.add('bg-emerald-600','text-white');
     tabSignup.classList.remove('bg-emerald-600','text-white');
     formSignup.classList.add('hidden');
     formLogin.classList.remove('hidden');
+    tabSignup.setAttribute('aria-selected','false');
+    tabLogin.setAttribute('aria-selected','true');
   });
 
   // === DRIVER DASH close ===
@@ -1364,7 +1381,7 @@ window.addEventListener('DOMContentLoaded', () => {
           <div class="font-medium">${it.name}</div>
           <div class="text-xs text-slate-500">R${it.price}</div>
         </div>
-        <button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline">remove</button>
+        <button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline" aria-label="Remove ${it.name}">remove</button>
       `;
       storeItemsList.appendChild(row);
     });
@@ -1379,9 +1396,9 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  openStoreFooter?.addEventListener('click', openStoreModal);
-  closeStoreModalBtn?.addEventListener('click', closeStoreModal);
-  cancelStoreBtn?.addEventListener('click', closeStoreModal);
+  openStoreFooter?.addEventListener('click', openStore);
+  closeStoreModalBtn?.addEventListener('click', closeStore);
+  cancelStoreBtn?.addEventListener('click', closeStore);
 
   addStoreItemBtn?.addEventListener('click', e=>{
     e.preventDefault();
@@ -1438,7 +1455,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(adminMsg)}`,'_blank');
 
     alert("Thanks! We'll review your store.");
-    closeStoreModal();
+    closeStore();
 
     // reset form
     storeNameEl.value = '';
@@ -1460,7 +1477,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   ordersRefresh?.addEventListener('click', renderOrders);
 
   function updateDriverTotalsFromOrders() {
-    // loop through all tabs we have locally, sum pay
+    // sum payouts from locally cached orders across tabs
     let pendingTotal = 0;
     let approvedTotal = 0;
     Object.values(currentOrdersByTab).forEach(list => {
@@ -1473,12 +1490,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         }
       });
     });
-    driverTotals.pending = pendingTotal;
+    driverTotals.pending  = pendingTotal;
     driverTotals.approved = approvedTotal;
 
-    // if dashboard visible, live update numbers
+    // Live update dashboard if open
     if(driverDashModal && !driverDashModal.classList.contains('hidden')){
-      driverPayoutPendingEl.textContent = String(driverTotals.pending);
+      driverPayoutPendingEl.textContent  = String(driverTotals.pending);
       driverPayoutApprovedEl.textContent = String(driverTotals.approved);
     }
   }
@@ -1644,6 +1661,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   });
 
+  // Fetch orders by status (backend or demo)
   async function fetchOrdersByStatus(status){
     if(DEMO_MODE){
       // Demo objects now include driver pay fields
@@ -1678,6 +1696,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   }
 
+  // Render orders into the admin panel list
   async function renderOrders(){
     const data = await fetchOrdersByStatus(ordersTab);
     currentOrdersByTab[ordersTab] = data;
@@ -1695,7 +1714,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         .join(', ');
 
       const internalId = o._internal_id || o.internal_id || null;
-      const refDisplay = o.order_public_id || o.order_id || internalId || "REF?";
+      const refDisplay  = o.order_public_id || o.order_id || internalId || "REF?";
       const zoneDisplay = (o.meta && o.meta.zone) ? o.meta.zone : "?";
       const fraudDisplay = (typeof o.fraud_score === "number")
         ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
@@ -1813,8 +1832,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ];
 
       function carIcon(zone){
-        const cls=\`car-dot car-\${zone}\`;
-        const svg=\`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
+        const cls=`car-dot car-${zone}`;
+        const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
           <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
           <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
           <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
@@ -1822,7 +1841,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
           <circle cx='18' cy='20' r='3' fill='#0f172a'/>
           <circle cx='46' cy='20' r='3' fill='#0f172a'/>
-        </g></svg>\`;
+        </g></svg>`;
         return L.divIcon({ className:cls, html:svg, iconSize:[24,12], iconAnchor:[12,6] });
       }
 
@@ -1832,11 +1851,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
       const pkgIcon=L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
 
-      function lerp(a,b,t){return a+(b-a)*t;}
-      function posOnSeg(seg,t){
+      const lerp=(a,b,t)=> a+(b-a)*t;
+      const posOnSeg=(seg,t)=>{
         const [A,B]=seg;
         return [lerp(A[0],B[0],t), lerp(A[1],B[1],t)];
-      }
+      };
 
       const cars   = [];
       const parcels= [];
@@ -1899,7 +1918,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       setTimeout(()=>heroMap.invalidateSize(),180);
       window.addEventListener('resize',()=>heroMap.invalidateSize());
 
-      // DRIVER SIGNUP hook needs HUBS + jitter if we want to drop marker for new driver
+      // DRIVER SIGNUP hook: if Leaflet loaded, drop a marker for new driver
       formSignup?.addEventListener('submit', async e=>{
         e.preventDefault();
         const name    = document.getElementById('drvName').value.trim();
@@ -2027,7 +2046,7 @@ Vehicle: ${vehicle}`;
     if(driverDashModal){ openDriverDash(); }
   });
 
-  // === SUBMIT ORDER ===
+  // === SUBMIT ORDER (Create order -> open checkout bot) ===
   confirmBtn2?.addEventListener('click', async ()=>{
     // Prevent double clicks
     confirmBtn2.disabled = true;
@@ -2084,7 +2103,7 @@ Vehicle: ${vehicle}`;
             `Yi Thume, my order is:\n` +
             `Ref: DEMO-${refStub}\n` +
             `Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n` +
-            `Items: ${summary.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}\n` +
+            `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
             `Total: R${summary.total}\n` +
             `Expected: ${eta}\n` +
             `Payment: ${paymentMethod}\n` +
@@ -2131,7 +2150,7 @@ Vehicle: ${vehicle}`;
         }
       }
 
-      // SUCCESS UI
+      // SUCCESS UI -> open bot-style checkout
       closeOrder();
       openBot();
 
@@ -2139,7 +2158,7 @@ Vehicle: ${vehicle}`;
         `<b>YiThume</b> 🤖<br/>
          Thanks for your order!<br/>
          <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
-         <b>Items:</b> ${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}<br/>
+         <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
          <b>Zone:</b> ${latestOrderData.zone}<br/>
          <b>Total:</b> R${latestOrderData.total}<br/>
          <b>Estimated window:</b> ${latestOrderData.eta}`
@@ -2159,7 +2178,7 @@ Vehicle: ${vehicle}`;
     }
   });
 
-  // BOT PAY BUTTON
+  // === BOT PAY BUTTON ===
   botNext?.addEventListener('click', ()=>{
     if(!latestOrderData) return;
 
@@ -2199,7 +2218,7 @@ Vehicle: ${vehicle}`;
     appendBot(`Click "Send to WhatsApp" so we can confirm the order and send the real secure payment link.`);
   });
 
-  // SEND TO WHATSAPP
+  // === SEND TO WHATSAPP ===
   botSendWA?.addEventListener('click', () => {
     if(!latestOrderData){ alert("No order data."); return; }
 
@@ -2209,12 +2228,12 @@ Vehicle: ${vehicle}`;
           "Yi Thume, my order is:",
           `Ref: ${latestOrderData.order_public_id}`,
           `Deliver to: Zone ${latestOrderData.zone}`,
-          `Items: ${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}`,
+          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
           `Total: R${latestOrderData.total}`,
           `Expected: ${latestOrderData.eta}`,
           `Payment: ${latestOrderData.payment_method}`,
           "Please confirm + send payment link."
-        ].join("\\n");
+        ].join("\n");
 
     const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}`;
     window.open(wa,'_blank');
@@ -2223,7 +2242,7 @@ Vehicle: ${vehicle}`;
     alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
   });
 
-  // NEW ORDER after fake pay
+  // === NEW ORDER after fake pay ===
   botNewOrder?.addEventListener('click', ()=>{
     closeBot();
     openOrder();
