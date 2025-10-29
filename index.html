@@ -280,6 +280,82 @@
   </div>
 </section>
 
+<!-- Services / Drivers pitch block -->
+<section id="drivers" class="py-12 sm:py-16 border-t border-slate-200 bg-white/50">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 grid md:grid-cols-2 gap-8">
+    <div class="rounded-2xl border bg-white shadow-sm p-6 flex flex-col">
+      <div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Drive with us</div>
+      <h2 class="text-2xl sm:text-3xl font-bold mt-2 leading-tight">
+        We deliver to remote locations using trusted local drivers.
+      </h2>
+      <p class="mt-3 text-sm text-slate-700 leading-relaxed">
+        Sign up to put your community on the map and get paid per successful delivery.
+        Flexible windows, weekly EFT payouts.
+      </p>
+      <ul class="mt-4 text-sm space-y-2">
+        <li class="flex items-start gap-2">
+          <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700 text-[11px] font-bold">1</span>
+          <div>
+            Take small health + essentials orders from local shops to local people.
+          </div>
+        </li>
+        <li class="flex items-start gap-2">
+          <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700 text-[11px] font-bold">2</span>
+          <div>
+            Get a payout per drop. You’ll always see the amount before you accept.
+          </div>
+        </li>
+        <li class="flex items-start gap-2">
+          <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700 text-[11px] font-bold">3</span>
+          <div>
+            We handle payment and customer support. You just deliver.
+          </div>
+        </li>
+      </ul>
+
+      <button id="openDriverModalSection"
+        class="mt-6 inline-flex justify-center px-4 py-3 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">
+        Become a driver
+      </button>
+
+      <div class="mt-3 text-[11px] text-slate-500 leading-snug">
+        We’re especially looking for reliable drivers in rural / township areas.
+      </div>
+    </div>
+
+    <div class="rounded-2xl border bg-white shadow-sm p-6 flex flex-col" id="services">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">What we deliver</div>
+      <h2 class="text-xl sm:text-2xl font-bold mt-2 leading-tight">OTC meds &amp; essentials</h2>
+      <p class="mt-3 text-sm text-slate-700 leading-relaxed">
+        Flu, pain, stomach, allergy, dressings, hydration, pads, nappies, hygiene basics —
+        all from local independent pharmacies and shops.
+      </p>
+      <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div class="rounded-xl border p-3 bg-slate-50/50">
+          <div class="font-medium text-slate-800">Headache &amp; fever</div>
+          <div class="text-[11px] text-slate-500">Panado, etc.</div>
+        </div>
+        <div class="rounded-xl border p-3 bg-slate-50/50">
+          <div class="font-medium text-slate-800">Cold &amp; flu</div>
+          <div class="text-[11px] text-slate-500">Cough syrups, throat</div>
+        </div>
+        <div class="rounded-xl border p-3 bg-slate-50/50">
+          <div class="font-medium text-slate-800">Tummy &amp; hydration</div>
+          <div class="text-[11px] text-slate-500">Electrolytes, nausea</div>
+        </div>
+        <div class="rounded-xl border p-3 bg-slate-50/50">
+          <div class="font-medium text-slate-800">First aid &amp; hygiene</div>
+          <div class="text-[11px] text-slate-500">Bandages, pads, etc.</div>
+        </div>
+      </div>
+
+      <div class="mt-auto pt-6 text-[11px] text-slate-500 leading-snug">
+        We are a delivery service only. We do not provide medical advice.
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- Pricing & Zones -->
 <section id="pricing" class="py-12 sm:py-16 border-t border-slate-200">
   <div class="max-w-6xl mx-auto px-4 sm:px-6">
@@ -476,8 +552,18 @@
 
     <div class="p-4 text-sm space-y-3">
       <div class="rounded-lg border p-3">
-        <div class="text-xs text-slate-500">Payout due</div>
-        <div class="text-lg font-semibold">R<span id="driverPayoutDue">0</span></div>
+        <div class="text-xs text-slate-500">Pending balance</div>
+        <div class="text-lg font-semibold">R<span id="driverPayoutPending">0</span></div>
+        <div class="text-[11px] text-slate-500 leading-snug">
+          You’ve accepted these drops. Waiting for admin approval.
+        </div>
+      </div>
+      <div class="rounded-lg border p-3">
+        <div class="text-xs text-slate-500">Approved payout</div>
+        <div class="text-lg font-semibold">R<span id="driverPayoutApproved">0</span></div>
+        <div class="text-[11px] text-slate-500 leading-snug">
+          Will be paid to you by EFT.
+        </div>
       </div>
       <div class="rounded-lg border p-3">
         <div class="text-xs text-slate-500">Next delivery window</div>
@@ -521,13 +607,20 @@
         </select>
       </label>
 
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
         <button id="botNext" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">
-          Next
+          Pay
         </button>
         <button id="botSendWA" class="flex-1 py-2 rounded-xl border border-slate-300 font-medium hover:bg-slate-100 hidden">
           Send to WhatsApp
         </button>
+        <button id="botNewOrder" class="flex-1 py-2 rounded-xl border border-slate-300 font-medium hover:bg-slate-100 hidden">
+          New order
+        </button>
+      </div>
+
+      <div class="text-[11px] text-slate-500 leading-snug" id="botDemoNote" hidden>
+        No money is taken — this is just a demo. We’ll WhatsApp a real secure link.
       </div>
     </div>
   </div>
@@ -541,7 +634,7 @@
     <div class="flex items-center justify-between p-4 border-b">
       <div class="font-semibold flex flex-col">
         <span id="payModalTitle">Secure Payment (Demo)</span>
-        <span class="text-xs text-slate-500">Not a real gateway yet</span>
+        <span class="text-xs text-slate-500">This is a preview — no real charge yet</span>
       </div>
       <button id="closePayModal" class="text-slate-500 hover:text-slate-700" aria-label="Close payment modal">✕</button>
     </div>
@@ -550,13 +643,16 @@
       <div><b>Order Ref:</b> <span id="payOrderRef">--</span></div>
       <div><b>Amount:</b> R<span id="payAmount">0</span></div>
       <div class="text-[11px] text-slate-500 leading-snug">
-        We'll send an actual Yoco / Ozow link in WhatsApp once confirmed.
+        We’ll send the real Yoco / Ozow payment link in WhatsApp once confirmed.
+      </div>
+      <div class="text-[11px] text-emerald-700 leading-snug font-medium">
+        No money is taken here. This is just a demo.
       </div>
     </div>
 
     <div class="p-4 border-t flex flex-col sm:flex-row gap-2 text-sm">
       <button id="btnFakePayNow" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">
-        Mark paid (demo)
+        Pay
       </button>
       <button id="btnCancelPay" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">
         Cancel
@@ -848,6 +944,12 @@ window.addEventListener('DOMContentLoaded', () => {
   let botStage = 0;
   const currentOrdersByTab = {};
 
+  // lightweight in-memory driver balances for demo
+  let driverTotals = {
+    pending: 0,
+    approved: 0
+  };
+
   // store onboarding state
   const storeItems = []; // {name, price}
 
@@ -887,7 +989,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const botFeed             = document.getElementById('botFeed');
   const botNext             = document.getElementById('botNext');
   const botSendWA           = document.getElementById('botSendWA');
+  const botNewOrder         = document.getElementById('botNewOrder');
   const botPayChoice        = document.getElementById('botPayChoice');
+  const botDemoNote         = document.getElementById('botDemoNote');
 
   // Payment modal refs
   const payModal            = document.getElementById('payModal');
@@ -908,10 +1012,14 @@ window.addEventListener('DOMContentLoaded', () => {
   // Driver dashboard modal refs (demo only)
   const driverDashModal     = document.getElementById('driverDashModal');
   const closeDriverDash     = document.getElementById('closeDriverDash');
-  const driverPayoutDueEl   = document.getElementById('driverPayoutDue');
+  const driverPayoutPendingEl   = document.getElementById('driverPayoutPending');
+  const driverPayoutApprovedEl  = document.getElementById('driverPayoutApproved');
   const driverNextWindowEl  = document.getElementById('driverNextWindow');
   const driverZoneDisplayEl = document.getElementById('driverZoneDisplay');
   const driverRadiusDisplayEl = document.getElementById('driverRadiusDisplay');
+
+  // For "Drive with us" CTA
+  const openDriverModalSection = document.getElementById('openDriverModalSection');
 
   // Admin panel refs
   const ordersPanel         = document.getElementById('ordersPanel');
@@ -986,7 +1094,7 @@ window.addEventListener('DOMContentLoaded', () => {
       .filter(c => c.checked)
       .map(c => {
         const i   = Number(c.dataset.idx);
-        const qty = Math.max(1, Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value || 1));
+        const qty = Math.max(1, Number(document.querySelector(\`.itemQty[data-idx="\${i}"]\`).value || 1));
         return {
           name:  CATALOG[i].name,
           price: Number(CATALOG[i].price),
@@ -1022,9 +1130,9 @@ window.addEventListener('DOMContentLoaded', () => {
     function fmt(date,[h1,h2]){
       const sameDay = (date.toDateString()===new Date().toDateString());
       if (sameDay){
-        return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
+        return \`\${pad2(h1)}:00–\${pad2(h2)}:00 \${rush?'today (rush)':'today'}\`;
       }
-      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
+      return \`\${dayNames[date.getDay()]} \${pad2(h1)}:00–\${pad2(h2)}:00\`;
     }
 
     if (allowed.has(now.getDay())){
@@ -1062,8 +1170,10 @@ window.addEventListener('DOMContentLoaded', () => {
   function openBot(){
     botStage = 0;
     botNext.disabled = false;
-    botNext.textContent = "Next";
+    botNext.textContent = "Pay";
     botSendWA.classList.add('hidden');
+    botNewOrder.classList.add('hidden');
+    botDemoNote.hidden = true;
     botFeed.innerHTML = "";
     openFlex(botModal);
   }
@@ -1081,15 +1191,20 @@ window.addEventListener('DOMContentLoaded', () => {
   function closeStoreModal(){ closeFlex(storeModal); }
   function openOrders(){ openFlex(ordersPanel); renderOrders(); }
   function closeOrders(){ closeFlex(ordersPanel); }
-  function openDriverDash(){ openFlex(driverDashModal); }
+  function openDriverDash(){ 
+    // refresh dashboard numbers before showing
+    driverPayoutPendingEl.textContent = String(driverTotals.pending);
+    driverPayoutApprovedEl.textContent = String(driverTotals.approved);
+    openFlex(driverDashModal);
+  }
   function closeDriverDashWindow(){ closeFlex(driverDashModal); }
 
   function appendBot(msg,who='bot'){
     const wrap=document.createElement('div');
-    wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
+    wrap.className = \`flex \${who==='bot'?'justify-start':'justify-end'}\`;
     wrap.innerHTML = `
-      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
-        ${msg}
+      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm \${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
+        \${msg}
       </div>`;
     botFeed.appendChild(wrap);
     botFeed.scrollTop = botFeed.scrollHeight;
@@ -1098,9 +1213,9 @@ window.addEventListener('DOMContentLoaded', () => {
   function demandBadge(zone){
     const missCount = zoneDemandStats[zone]?.misses || 0;
     if(missCount === 0) return "";
-    return `<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-      demand ${missCount}x / no driver
-    </span>`;
+    return \`<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+      demand \${missCount}x / no driver
+    </span>\`;
   }
 
   // === MOBILE NAV TOGGLE ===
@@ -1139,6 +1254,11 @@ window.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{
     document.getElementById('adminLoginBtn')?.click();
+  });
+
+  // "Drive with us" CTA
+  openDriverModalSection?.addEventListener('click', ()=>{
+    document.getElementById('openDriverModal')?.click();
   });
 
   // === INIT CART UI ===
@@ -1190,8 +1310,17 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // === Payment demo action ===
   btnFakePayNow?.addEventListener('click', ()=>{
-    alert('Demo payment captured. Admin will verify manually.');
+    // simulate "paid"
+    alert('No money taken. Demo only.');
     closePayModal();
+
+    // show WA + new order buttons, note that this is demo
+    botSendWA.classList.remove('hidden');
+    botNewOrder.classList.remove('hidden');
+    botDemoNote.hidden = false;
+
+    appendBot(`<b>Payment marked (demo)</b><br/>We'll WhatsApp you the real secure link next.`, 'bot');
+    botStage = 2;
   });
 
   // === OPEN ORDER MODAL BUTTONS ===
@@ -1330,9 +1459,51 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   ordersRefresh?.addEventListener('click', renderOrders);
 
+  function updateDriverTotalsFromOrders() {
+    // loop through all tabs we have locally, sum pay
+    let pendingTotal = 0;
+    let approvedTotal = 0;
+    Object.values(currentOrdersByTab).forEach(list => {
+      (list||[]).forEach(o => {
+        if(o.driver_pay_status === 'pending'){
+          pendingTotal += (o.driver_pay_pending || 0);
+        }
+        if(o.driver_pay_status === 'approved'){
+          approvedTotal += (o.driver_pay_approved || 0);
+        }
+      });
+    });
+    driverTotals.pending = pendingTotal;
+    driverTotals.approved = approvedTotal;
+
+    // if dashboard visible, live update numbers
+    if(driverDashModal && !driverDashModal.classList.contains('hidden')){
+      driverPayoutPendingEl.textContent = String(driverTotals.pending);
+      driverPayoutApprovedEl.textContent = String(driverTotals.approved);
+    }
+  }
+
   async function assignOneOrder(internalId){
     if(!internalId){ alert("Missing order id."); return; }
-    if(DEMO_MODE){ alert(`[DEMO] Would auto-assign ${internalId}`); return; }
+
+    if(DEMO_MODE){
+      // demo: mark pay pending for that order
+      for(const tabKey in currentOrdersByTab){
+        currentOrdersByTab[tabKey]?.forEach(o=>{
+          if((o._internal_id||o.internal_id)===internalId){
+            o.driver_pay_status = 'pending';
+            if(!o.driver_pay_pending){
+              // for demo let's say driver gets 30% of order total
+              o.driver_pay_pending = Math.round(o.total * 0.3);
+            }
+          }
+        });
+      }
+      updateDriverTotalsFromOrders();
+      alert(`[DEMO] Assigned ${internalId}, driver sees pending R${driverTotals.pending}`);
+      renderOrders();
+      return;
+    }
 
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
@@ -1357,7 +1528,31 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   async function markDelivered(internalId){
     if(!internalId){ alert("Missing order id."); return; }
-    if(DEMO_MODE){ alert(`[DEMO] Would mark delivered ${internalId}`); return; }
+
+    if(DEMO_MODE){
+      // demo: move pending -> approved for that order
+      for(const tabKey in currentOrdersByTab){
+        currentOrdersByTab[tabKey]?.forEach(o=>{
+          if((o._internal_id||o.internal_id)===internalId){
+            if(o.driver_pay_status === 'pending'){
+              o.driver_pay_status = 'approved';
+              o.driver_pay_approved = o.driver_pay_pending || o.driver_pay_approved || 0;
+              o.driver_pay_pending = 0;
+            } else {
+              o.driver_pay_status = 'approved';
+              if(!o.driver_pay_approved){
+                o.driver_pay_approved = Math.round(o.total * 0.3);
+              }
+            }
+            o.status = 'delivered';
+          }
+        });
+      }
+      updateDriverTotalsFromOrders();
+      alert(`[DEMO] Marked delivered ${internalId}, approved payout R${driverTotals.approved}`);
+      renderOrders();
+      return;
+    }
 
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
@@ -1389,7 +1584,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       if(!internalId){ results.push(`❓ Missing ID for an order, skipped.`); continue; }
 
       if (DEMO_MODE){
-        results.push(`✅ (demo) ${internalId} -> DRV-DEMO`);
+        o.driver_pay_status = 'pending';
+        if(!o.driver_pay_pending){
+          o.driver_pay_pending = Math.round(o.total * 0.3);
+        }
+        results.push(`✅ (demo) ${internalId} -> pending R${o.driver_pay_pending}`);
         continue;
       }
 
@@ -1413,6 +1612,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         results.push(`❌ ${internalId}: network error`);
       }
     }
+    updateDriverTotalsFromOrders();
     alert(results.join("\n"));
     renderOrders();
   }
@@ -1446,6 +1646,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   async function fetchOrdersByStatus(status){
     if(DEMO_MODE){
+      // Demo objects now include driver pay fields
       return [
         {
           _internal_id: "demo-abc123",
@@ -1457,7 +1658,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             {name:"Cough Syrup 100ml",qty:2}
           ],
           meta: { zone:"A" },
-          fraud_score: 0.07
+          fraud_score: 0.07,
+          driver_pay_status: "pending",
+          driver_pay_pending: 36,      // 30% of 120
+          driver_pay_approved: 0
         }
       ];
     }
@@ -1478,6 +1682,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const data = await fetchOrdersByStatus(ordersTab);
     currentOrdersByTab[ordersTab] = data;
 
+    // recalc driver totals whenever we fetch
+    updateDriverTotalsFromOrders();
+
     ordersList.innerHTML = data.length
       ? ''
       : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
@@ -1494,9 +1701,20 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
         : "";
 
+      // driver pay info bloc
+      let driverPayText = "Driver pay: R0";
+      let driverPayStatusText = "Status: –";
+      if(o.driver_pay_status === "pending"){
+        driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
+        driverPayStatusText = "Status: pending";
+      } else if(o.driver_pay_status === "approved"){
+        driverPayText = `Driver pay: R${o.driver_pay_approved || 0}`;
+        driverPayStatusText = "Status: approved";
+      }
+
       const isDelivered = o.status === "delivered";
       const canAssign   = (o.status === "pending" || o.status === "review_required") && !isDelivered;
-      const canDeliver  = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
+      const canDeliver  = (o.status === "assigned" || o.status === "in_transit" || o.status === "pending" || o.status === "review_required") && !isDelivered;
 
       const row = document.createElement('div');
       row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
@@ -1515,6 +1733,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           <div class="text-xs text-slate-500">
             Status: ${o.status}${fraudDisplay}
           </div>
+          <div class="text-[11px] leading-snug text-slate-500 mt-1">
+            ${driverPayText} • ${driverPayStatusText}
+          </div>
         </div>
         <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
           <button
@@ -1524,7 +1745,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             Assign
           </button>
           <button
-            class="btn-delivered px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="btn-delivered px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
             ${(!canDeliver || !internalId) ? 'disabled' : ''}
             data-id="${internalId || ''}">
             Delivered
@@ -1583,8 +1804,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   ];
 
   function carIcon(zone){
-    const cls=`car-dot car-${zone}`;
-    const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
+    const cls=\`car-dot car-\${zone}\`;
+    const svg=\`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
       <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
       <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
       <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
@@ -1592,7 +1813,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
       <circle cx='18' cy='20' r='3' fill='#0f172a'/>
       <circle cx='46' cy='20' r='3' fill='#0f172a'/>
-    </g></svg>`;
+    </g></svg>\`;
     return L.divIcon({ className:cls, html:svg, iconSize:[24,12], iconAnchor:[12,6] });
   }
 
@@ -1635,7 +1856,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const speed   = 0.12+Math.random()*0.06;
     const [lat,lng]=posOnSeg(seg,startT);
     const m      = L.marker([lat,lng],{icon:pkgIcon}).addTo(heroMap);
-    parcels.push({m,seg,t:startT,dir,speed});
+    parcels.push({m,seg,startT,t:startT,dir,speed});
   }
 
   for(let i=0;i<10;i++) makeCar(['A','B','C','D','E'][i%5]);
@@ -1719,10 +1940,11 @@ Vehicle: ${vehicle}`;
 
     // fill dashboard demo
     if(driverDashModal){
-      if(driverPayoutDueEl) driverPayoutDueEl.textContent = '0';
-      if(driverNextWindowEl) driverNextWindowEl.textContent = 'Fri 17:00';
-      if(driverZoneDisplayEl) driverZoneDisplayEl.textContent = zone;
-      if(driverRadiusDisplayEl) driverRadiusDisplayEl.textContent = radius+'km';
+      driverPayoutPendingEl.textContent = String(driverTotals.pending);
+      driverPayoutApprovedEl.textContent = String(driverTotals.approved);
+      driverNextWindowEl.textContent = 'Fri 17:00';
+      driverZoneDisplayEl.textContent = zone;
+      driverRadiusDisplayEl.textContent = radius+'km';
       openDriverDash();
     }
   });
@@ -1792,7 +2014,7 @@ Vehicle: ${vehicle}`;
             `Yi Thume, my order is:\n` +
             `Ref: DEMO-${refStub}\n` +
             `Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n` +
-            `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
+            `Items: ${summary.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}\n` +
             `Total: R${summary.total}\n` +
             `Expected: ${eta}\n` +
             `Payment: ${paymentMethod}\n` +
@@ -1847,7 +2069,7 @@ Vehicle: ${vehicle}`;
         `<b>YiThume</b> 🤖<br/>
          Thanks for your order!<br/>
          <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
-         <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
+         <b>Items:</b> ${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}<br/>
          <b>Zone:</b> ${latestOrderData.zone}<br/>
          <b>Total:</b> R${latestOrderData.total}<br/>
          <b>Estimated window:</b> ${latestOrderData.eta}`
@@ -1856,7 +2078,7 @@ Vehicle: ${vehicle}`;
       if(latestOrderData.status === "review_required"){
         appendBot(`<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`);
       } else {
-        appendBot(`Choose your payment method below and press <b>Next</b>.`);
+        appendBot(`Choose your payment method below and tap <b>Pay</b>.`);
       }
 
       botPayChoice.value = latestOrderData.payment_method;
@@ -1867,7 +2089,7 @@ Vehicle: ${vehicle}`;
     }
   });
 
-  // BOT NEXT / PAY NOW
+  // BOT PAY BUTTON
   botNext?.addEventListener('click', ()=>{
     if(!latestOrderData) return;
 
@@ -1878,7 +2100,7 @@ Vehicle: ${vehicle}`;
       if(pay === 'eft'){
         appendBot(
           `<b>Instant EFT (Ozow)</b><br/>
-           We'll WhatsApp you a secure Ozow link.<br/>
+           We’ll WhatsApp you a secure Ozow link.<br/>
            Use ref <code>${latestOrderData.order_public_id}</code>.`
         );
       } else if(pay === 'card'){
@@ -1896,17 +2118,15 @@ Vehicle: ${vehicle}`;
         );
       }
 
-      appendBot(`When you're ready, hit <b>Send to WhatsApp</b> and we'll finalise your order + payment link.`);
-      botSendWA.classList.remove('hidden');
-      botNext.textContent = "Pay now";
-
+      appendBot(`This next screen is a demo. No money is taken here.`);
       // Pop fake pay portal (demo)
       openPayModal(latestOrderData.order_public_id, latestOrderData.total);
       botStage = 1;
       return;
     }
 
-    appendBot(`Tap <b>Send to WhatsApp</b> so we can confirm, lock in your slot, and send the payment link.`);
+    // if they click Pay again after stage 1 we just remind them:
+    appendBot(`Click "Send to WhatsApp" so we can confirm the order and send the real secure payment link.`);
   });
 
   // SEND TO WHATSAPP
@@ -1919,18 +2139,24 @@ Vehicle: ${vehicle}`;
           "Yi Thume, my order is:",
           `Ref: ${latestOrderData.order_public_id}`,
           `Deliver to: Zone ${latestOrderData.zone}`,
-          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
+          `Items: ${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}`,
           `Total: R${latestOrderData.total}`,
           `Expected: ${latestOrderData.eta}`,
           `Payment: ${latestOrderData.payment_method}`,
           "Please confirm + send payment link."
-        ].join("\n");
+        ].join("\\n");
 
     const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}`;
     window.open(wa,'_blank');
 
     closeBot();
     alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
+  });
+
+  // NEW ORDER after fake pay
+  botNewOrder?.addEventListener('click', ()=>{
+    closeBot();
+    openOrder();
   });
 
   // === ADMIN OPEN VIA EVENT ===
@@ -1941,6 +2167,10 @@ Vehicle: ${vehicle}`;
 
   // === INITIALIZE STORE ITEMS VIEW ===
   renderStoreItems();
+
+  // initial dashboard numbers
+  driverPayoutPendingEl.textContent = String(driverTotals.pending);
+  driverPayoutApprovedEl.textContent = String(driverTotals.approved);
 });
 </script>
 </body>
