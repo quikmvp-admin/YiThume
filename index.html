@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop offset='0%25' stop-color='%2310b981'/%3E%3Cstop offset='100%25' stop-color='%23059669'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect rx='12' width='36' height='36' fill='url(%23g)'/%3E%3Cpath d='M10 12l5 8v4h-3v-3l-5-9h3zM26 12l-5 8v-3l5-9h-3z' fill='%23fff'/%3E%3C/svg%3E">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>YiThume — Health delivered. Fast.</title>
   <meta name="description" content="YiThume delivers OTC meds to remote areas. Order on website, confirm on WhatsApp. Port Alfred, Bathurst, Kenton-on-Sea, Makhanda, Alice, Alexandria, Alicedale." />
@@ -799,7 +799,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const DEMO_MODE       = true; // set to false when backend is ready
 
   function waText(str) { return encodeURIComponent(str); }
-  function digits(val){ return (val||"").replace(/\\D+/g,''); }
+  function digits(val){ return (val||"").replace(/\D+/g,''); }
 
   // === BODY SCROLL LOCK + FOCUS RESTORE ===
   const lastFocus = new Map();
@@ -986,7 +986,7 @@ window.addEventListener('DOMContentLoaded', () => {
       .filter(c => c.checked)
       .map(c => {
         const i   = Number(c.dataset.idx);
-        const qty = Math.max(1, Number(document.querySelector(\`.itemQty[data-idx="\${i}"]\`).value || 1));
+        const qty = Math.max(1, Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value || 1));
         return {
           name:  CATALOG[i].name,
           price: Number(CATALOG[i].price),
@@ -1022,9 +1022,9 @@ window.addEventListener('DOMContentLoaded', () => {
     function fmt(date,[h1,h2]){
       const sameDay = (date.toDateString()===new Date().toDateString());
       if (sameDay){
-        return \`\${pad2(h1)}:00–\${pad2(h2)}:00 \${rush?'today (rush)':'today'}\`;
+        return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
       }
-      return \`\${dayNames[date.getDay()]} \${pad2(h1)}:00–\${pad2(h2)}:00\`;
+      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
     }
 
     if (allowed.has(now.getDay())){
@@ -1086,11 +1086,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function appendBot(msg,who='bot'){
     const wrap=document.createElement('div');
-    wrap.className = \`flex \${who==='bot'?'justify-start':'justify-end'}\`;
-    wrap.innerHTML = \`
-      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm \${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
-        \${msg}
-      </div>\`;
+    wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
+    wrap.innerHTML = `
+      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
+        ${msg}
+      </div>`;
     botFeed.appendChild(wrap);
     botFeed.scrollTop = botFeed.scrollHeight;
   }
@@ -1098,9 +1098,9 @@ window.addEventListener('DOMContentLoaded', () => {
   function demandBadge(zone){
     const missCount = zoneDemandStats[zone]?.misses || 0;
     if(missCount === 0) return "";
-    return \`<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-      demand \${missCount}x / no driver
-    </span>\`;
+    return `<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+      demand ${missCount}x / no driver
+    </span>`;
   }
 
   // === MOBILE NAV TOGGLE ===
@@ -1286,7 +1286,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if(!DEMO_MODE){
       try{
-        const r = await fetch(\`\${BASE_API}/stores\`, {
+        const r = await fetch(`${BASE_API}/stores`, {
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify(payload)
@@ -1299,14 +1299,14 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     const adminMsg =
-\`New store signup:
-Name: \${storeName}
-Phone: \${storePhone}
-Zone: \${zone}
+`New store signup:
+Name: ${storeName}
+Phone: ${storePhone}
+Zone: ${zone}
 Items:
-\${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\\n")}\`;
+${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
-    window.open(\`https://wa.me/\${ADMIN_WHATSAPP}?text=\${waText(adminMsg)}\`,'_blank');
+    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(adminMsg)}`,'_blank');
 
     alert("Thanks! We'll review your store.");
     closeStoreModal();
@@ -1332,48 +1332,48 @@ Items:
 
   async function assignOneOrder(internalId){
     if(!internalId){ alert("Missing order id."); return; }
-    if(DEMO_MODE){ alert(\`[DEMO] Would auto-assign \${internalId}\`); return; }
+    if(DEMO_MODE){ alert(`[DEMO] Would auto-assign ${internalId}`); return; }
 
     try{
-      const res = await fetch(\`\${BASE_API}/orders/\${encodeURIComponent(internalId)}/auto-assign\`, {
+      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
         method: "POST",
         headers: {"Content-Type":"application/json"}
       });
       const data = await res.json().catch(()=>({}));
 
       if(res.ok && data && data.ok){
-        alert(\`Assigned: \${internalId} -> \${data.driver_id || 'driver?'}\`);
+        alert(`Assigned: ${internalId} -> ${data.driver_id || 'driver?'}`);
       } else if (res.status === 409 && data && data.error === "no_driver_available") {
-        alert(\`No driver available for \${internalId}\`);
+        alert(`No driver available for ${internalId}`);
       } else {
-        alert(\`Failed to assign \${internalId} (\${res.status})\`);
+        alert(`Failed to assign ${internalId} (${res.status})`);
       }
     }catch(err){
       console.error("assignOneOrder err",err);
-      alert(\`Network error assigning \${internalId}\`);
+      alert(`Network error assigning ${internalId}`);
     }
     renderOrders();
   }
 
   async function markDelivered(internalId){
     if(!internalId){ alert("Missing order id."); return; }
-    if(DEMO_MODE){ alert(\`[DEMO] Would mark delivered \${internalId}\`); return; }
+    if(DEMO_MODE){ alert(`[DEMO] Would mark delivered ${internalId}`); return; }
 
     try{
-      const res = await fetch(\`\${BASE_API}/orders/\${encodeURIComponent(internalId)}/status\`, {
+      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
         method: "POST",
         headers: {"Content-Type":"application/json"},
         body: JSON.stringify({status:"delivered"})
       });
       const data = await res.json().catch(()=>({}));
       if(res.ok && data && data.ok){
-        alert(\`Marked delivered: \${internalId}\`);
+        alert(`Marked delivered: ${internalId}`);
       } else {
-        alert(\`Failed to mark delivered (\${res.status})\`);
+        alert(`Failed to mark delivered (${res.status})`);
       }
     }catch(err){
       console.error("markDelivered err",err);
-      alert(\`Network error marking delivered \${internalId}\`);
+      alert(`Network error marking delivered ${internalId}`);
     }
     renderOrders();
   }
@@ -1386,15 +1386,15 @@ Items:
     const results = [];
     for (const o of targets){
       const internalId = o._internal_id || o.internal_id || null;
-      if(!internalId){ results.push(\`❓ Missing ID for an order, skipped.\`); continue; }
+      if(!internalId){ results.push(`❓ Missing ID for an order, skipped.`); continue; }
 
       if (DEMO_MODE){
-        results.push(\`✅ (demo) \${internalId} -> DRV-DEMO\`);
+        results.push(`✅ (demo) ${internalId} -> DRV-DEMO`);
         continue;
       }
 
       try {
-        const res = await fetch(\`\${BASE_API}/orders/\${encodeURIComponent(internalId)}/auto-assign\`, {
+        const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
           method: "POST",
           headers: {"Content-Type":"application/json"}
         });
@@ -1402,18 +1402,18 @@ Items:
 
         if(res.ok && data && data.ok){
           const driverId = data.driver_id || "driver?";
-          results.push(\`✅ \${internalId} → \${driverId}\`);
+          results.push(`✅ ${internalId} → ${driverId}`);
         } else if (res.status === 409 && data && data.error === "no_driver_available") {
-          results.push(\`⚠️ \${internalId}: no driver\`);
+          results.push(`⚠️ ${internalId}: no driver`);
         } else {
-          results.push(\`❌ \${internalId}: failed (\${res.status})\`);
+          results.push(`❌ ${internalId}: failed (${res.status})`);
         }
       } catch (err){
         console.error("autoAssignForAll error", err);
-        results.push(\`❌ \${internalId}: network error\`);
+        results.push(`❌ ${internalId}: network error`);
       }
     }
-    alert(results.join("\\n"));
+    alert(results.join("\n"));
     renderOrders();
   }
   ordersAssign?.addEventListener('click', autoAssignForAll);
@@ -1463,7 +1463,7 @@ Items:
     }
 
     try {
-      const res = await fetch(\`\${BASE_API}/orders?status=\${encodeURIComponent(status)}\`);
+      const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
       const data = await res.json().catch(()=>({}));
       if(!res.ok || !data.ok){ return []; }
       if (data.zone_demand_snapshot){ zoneDemandStats = data.zone_demand_snapshot; }
@@ -1480,18 +1480,18 @@ Items:
 
     ordersList.innerHTML = data.length
       ? ''
-      : \`<div class="text-sm text-slate-500 p-4">No \${ordersTab} orders.</div>\`;
+      : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
 
     for(const o of data){
       const itemsText = (o.items || [])
-        .map(i=>\`\${i.name} x\${i.qty}\`)
+        .map(i=>`${i.name} x${i.qty}`)
         .join(', ');
 
       const internalId = o._internal_id || o.internal_id || null;
       const refDisplay = o.order_public_id || o.order_id || internalId || "REF?";
       const zoneDisplay = (o.meta && o.meta.zone) ? o.meta.zone : "?";
       const fraudDisplay = (typeof o.fraud_score === "number")
-        ? \` • Fraud: \${o.fraud_score.toFixed(2)}\`
+        ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
         : "";
 
       const isDelivered = o.status === "delivered";
@@ -1583,8 +1583,8 @@ Items:
   ];
 
   function carIcon(zone){
-    const cls=\`car-dot car-\${zone}\`;
-    const svg=\`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
+    const cls=`car-dot car-${zone}`;
+    const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
       <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
       <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
       <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
@@ -1592,7 +1592,7 @@ Items:
       <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
       <circle cx='18' cy='20' r='3' fill='#0f172a'/>
       <circle cx='46' cy='20' r='3' fill='#0f172a'/>
-    </g></svg>\`;
+    </g></svg>`;
     return L.divIcon({ className:cls, html:svg, iconSize:[24,12], iconAnchor:[12,6] });
   }
 
@@ -1697,7 +1697,7 @@ Items:
 
     if(!DEMO_MODE){
       try{
-        const r = await fetch(\`\${BASE_API}/drivers\`,{
+        const r = await fetch(`${BASE_API}/drivers`,{
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify(driverPayload)
@@ -1707,13 +1707,13 @@ Items:
       }catch(err){ console.error("driver create failed",err); }
     } else { console.info("[DEMO] Would POST driver", driverPayload); }
 
-    const text = \`New driver sign-up
-Name: \${name}
-Phone: \${phone}
-Zone: \${zone}
-Radius: \${radius}km
-Vehicle: \${vehicle}\`;
-    window.open(\`https://wa.me/\${ADMIN_WHATSAPP}?text=\${waText(text)}\`,'_blank');
+    const text = `New driver sign-up
+Name: ${name}
+Phone: ${phone}
+Zone: ${zone}
+Radius: ${radius}km
+Vehicle: ${vehicle}`;
+    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
 
     closeDriverWindow();
 
@@ -1778,8 +1778,9 @@ Vehicle: \${vehicle}\`;
 
       if(DEMO_MODE){
         console.info("[DEMO] Would POST", orderPayload);
+        const refStub = Date.now().toString().slice(-6);
         latestOrderData = {
-          order_public_id: "DEMO-" + Date.now().toString().slice(-6),
+          order_public_id: "DEMO-" + refStub,
           status: "pending",
           fraud_score: 0.0,
           total: summary.total,
@@ -1789,9 +1790,9 @@ Vehicle: \${vehicle}\`;
           payment_method: paymentMethod,
           wa_message:
             `Yi Thume, my order is:\n` +
-            `Ref: DEMO-${Date.now().toString().slice(-6)}\n` +
+            `Ref: DEMO-${refStub}\n` +
             `Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n` +
-            `Items: ${summary.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}\n` +
+            `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
             `Total: R${summary.total}\n` +
             `Expected: ${eta}\n` +
             `Payment: ${paymentMethod}\n` +
@@ -1800,7 +1801,7 @@ Vehicle: \${vehicle}\`;
       } else {
         let data = null;
         try {
-          const res = await fetch(\`\${BASE_API}/orders\`, {
+          const res = await fetch(`${BASE_API}/orders`, {
             method:"POST",
             headers:{ "Content-Type":"application/json" },
             body: JSON.stringify(orderPayload)
@@ -1809,7 +1810,7 @@ Vehicle: \${vehicle}\`;
           try { data = await res.json(); } catch(_) { data = null; }
 
           if (res.status === 409 && data && data.error === "no_driver_available") {
-            alert(data.message || \`Sorry, no driver currently available in Zone \${orderPayload.meta.zone}.\`);
+            alert(data.message || `Sorry, no driver currently available in Zone ${orderPayload.meta.zone}.`);
             return;
           }
           if(!res.ok || !data || !data.ok){
@@ -1846,7 +1847,7 @@ Vehicle: \${vehicle}\`;
         `<b>YiThume</b> 🤖<br/>
          Thanks for your order!<br/>
          <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
-         <b>Items:</b> ${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}<br/>
+         <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
          <b>Zone:</b> ${latestOrderData.zone}<br/>
          <b>Total:</b> R${latestOrderData.total}<br/>
          <b>Estimated window:</b> ${latestOrderData.eta}`
@@ -1916,20 +1917,20 @@ Vehicle: \${vehicle}\`;
       ? latestOrderData.wa_message
       : [
           "Yi Thume, my order is:",
-          \`Ref: \${latestOrderData.order_public_id}\`,
-          \`Deliver to: Zone \${latestOrderData.zone}\`,
-          \`Items: \${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}\`,
-          \`Total: R\${latestOrderData.total}\`,
-          \`Expected: \${latestOrderData.eta}\`,
-          \`Payment: \${latestOrderData.payment_method}\`,
+          `Ref: ${latestOrderData.order_public_id}`,
+          `Deliver to: Zone ${latestOrderData.zone}`,
+          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
+          `Total: R${latestOrderData.total}`,
+          `Expected: ${latestOrderData.eta}`,
+          `Payment: ${latestOrderData.payment_method}`,
           "Please confirm + send payment link."
-        ].join("\\n");
+        ].join("\n");
 
-    const wa = \`https://wa.me/\${WHATSAPP_NUMBER}?text=\${waText(msg)}\`;
+    const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}`;
     window.open(wa,'_blank');
 
     closeBot();
-    alert(\`Order sent to WhatsApp. Ref: \${latestOrderData.order_public_id}\`);
+    alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
   });
 
   // === ADMIN OPEN VIA EVENT ===
