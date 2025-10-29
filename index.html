@@ -1059,7 +1059,7 @@ window.addEventListener('DOMContentLoaded', () => {
     CATALOG.forEach((item,idx)=>{
       const row=document.createElement('div');
       row.className='flex items-center justify-between gap-3 border rounded-lg p-2';
-      row.innerHTML = `
+      row.innerHTML = '
         <label class="flex items-center gap-2">
           <input type="checkbox" data-idx="${idx}" class="itemCheck h-4 w-4"/>
           <span>${item.name}</span>
@@ -1074,7 +1074,7 @@ window.addEventListener('DOMContentLoaded', () => {
             data-idx="${idx}"
             class="itemQty w-14 border rounded-lg p-1"
           />
-        </div>`;
+        </div>';
       itemsList.appendChild(row);
     });
   }
@@ -1094,7 +1094,7 @@ window.addEventListener('DOMContentLoaded', () => {
       .filter(c => c.checked)
       .map(c => {
         const i   = Number(c.dataset.idx);
-        const qty = Math.max(1, Number(document.querySelector(\`.itemQty[data-idx="\${i}"]\`).value || 1));
+        const qty = Math.max(1, Number(document.querySelector(\'.itemQty[data-idx="\${i}"]\').value || 1));
         return {
           name:  CATALOG[i].name,
           price: Number(CATALOG[i].price),
@@ -1130,9 +1130,9 @@ window.addEventListener('DOMContentLoaded', () => {
     function fmt(date,[h1,h2]){
       const sameDay = (date.toDateString()===new Date().toDateString());
       if (sameDay){
-        return \`\${pad2(h1)}:00–\${pad2(h2)}:00 \${rush?'today (rush)':'today'}\`;
+        return \'\${pad2(h1)}:00–\${pad2(h2)}:00 \${rush?'today (rush)':'today'}\';
       }
-      return \`\${dayNames[date.getDay()]} \${pad2(h1)}:00–\${pad2(h2)}:00\`;
+      return \'\${dayNames[date.getDay()]} \${pad2(h1)}:00–\${pad2(h2)}:00\';
     }
 
     if (allowed.has(now.getDay())){
@@ -1201,11 +1201,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function appendBot(msg,who='bot'){
     const wrap=document.createElement('div');
-    wrap.className = \`flex \${who==='bot'?'justify-start':'justify-end'}\`;
-    wrap.innerHTML = `
+    wrap.className = \'flex \${who==='bot'?'justify-start':'justify-end'}\';
+    wrap.innerHTML = '
       <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm \${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
         \${msg}
-      </div>`;
+      </div>';
     botFeed.appendChild(wrap);
     botFeed.scrollTop = botFeed.scrollHeight;
   }
@@ -1213,9 +1213,9 @@ window.addEventListener('DOMContentLoaded', () => {
   function demandBadge(zone){
     const missCount = zoneDemandStats[zone]?.misses || 0;
     if(missCount === 0) return "";
-    return \`<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+    return \'<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
       demand \${missCount}x / no driver
-    </span>\`;
+    </span>\';
   }
 
   // === MOBILE NAV TOGGLE ===
@@ -1319,7 +1319,7 @@ window.addEventListener('DOMContentLoaded', () => {
     botNewOrder.classList.remove('hidden');
     botDemoNote.hidden = false;
 
-    appendBot(`<b>Payment marked (demo)</b><br/>We'll WhatsApp you the real secure link next.`, 'bot');
+    appendBot('<b>Payment marked (demo)</b><br/>We'll WhatsApp you the real secure link next.', 'bot');
     botStage = 2;
   });
 
@@ -1359,13 +1359,13 @@ window.addEventListener('DOMContentLoaded', () => {
     storeItems.forEach((it,idx)=>{
       const row = document.createElement('div');
       row.className = "flex items-center justify-between border rounded-lg p-2";
-      row.innerHTML = `
+      row.innerHTML = '
         <div class="text-sm">
           <div class="font-medium">${it.name}</div>
           <div class="text-xs text-slate-500">R${it.price}</div>
         </div>
         <button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline">remove</button>
-      `;
+      ';
       storeItemsList.appendChild(row);
     });
 
@@ -1406,7 +1406,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     const payload = {
-      store_id: `STORE-${Date.now().toString().slice(-6)}`,
+      store_id: 'STORE-${Date.now().toString().slice(-6)}',
       name: storeName,
       phone: storePhone,
       zone: zone,
@@ -1415,7 +1415,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if(!DEMO_MODE){
       try{
-        const r = await fetch(`${BASE_API}/stores`, {
+        const r = await fetch('${BASE_API}/stores', {
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify(payload)
@@ -1428,14 +1428,14 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     const adminMsg =
-`New store signup:
+'New store signup:
 Name: ${storeName}
 Phone: ${storePhone}
 Zone: ${zone}
 Items:
-${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
+${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}';
 
-    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(adminMsg)}`,'_blank');
+    window.open('https://wa.me/${ADMIN_WHATSAPP}?text=${waText(adminMsg)}','_blank');
 
     alert("Thanks! We'll review your store.");
     closeStoreModal();
@@ -1500,28 +1500,28 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         });
       }
       updateDriverTotalsFromOrders();
-      alert(`[DEMO] Assigned ${internalId}, driver sees pending R${driverTotals.pending}`);
+      alert('[DEMO] Assigned ${internalId}, driver sees pending R${driverTotals.pending}');
       renderOrders();
       return;
     }
 
     try{
-      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
+      const res = await fetch('${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign', {
         method: "POST",
         headers: {"Content-Type":"application/json"}
       });
       const data = await res.json().catch(()=>({}));
 
       if(res.ok && data && data.ok){
-        alert(`Assigned: ${internalId} -> ${data.driver_id || 'driver?'}`);
+        alert('Assigned: ${internalId} -> ${data.driver_id || 'driver?'}');
       } else if (res.status === 409 && data && data.error === "no_driver_available") {
-        alert(`No driver available for ${internalId}`);
+        alert('No driver available for ${internalId}');
       } else {
-        alert(`Failed to assign ${internalId} (${res.status})`);
+        alert('Failed to assign ${internalId} (${res.status})');
       }
     }catch(err){
       console.error("assignOneOrder err",err);
-      alert(`Network error assigning ${internalId}`);
+      alert('Network error assigning ${internalId}');
     }
     renderOrders();
   }
@@ -1549,26 +1549,26 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         });
       }
       updateDriverTotalsFromOrders();
-      alert(`[DEMO] Marked delivered ${internalId}, approved payout R${driverTotals.approved}`);
+      alert('[DEMO] Marked delivered ${internalId}, approved payout R${driverTotals.approved}');
       renderOrders();
       return;
     }
 
     try{
-      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
+      const res = await fetch('${BASE_API}/orders/${encodeURIComponent(internalId)}/status', {
         method: "POST",
         headers: {"Content-Type":"application/json"},
         body: JSON.stringify({status:"delivered"})
       });
       const data = await res.json().catch(()=>({}));
       if(res.ok && data && data.ok){
-        alert(`Marked delivered: ${internalId}`);
+        alert('Marked delivered: ${internalId}');
       } else {
-        alert(`Failed to mark delivered (${res.status})`);
+        alert('Failed to mark delivered (${res.status})');
       }
     }catch(err){
       console.error("markDelivered err",err);
-      alert(`Network error marking delivered ${internalId}`);
+      alert('Network error marking delivered ${internalId}');
     }
     renderOrders();
   }
@@ -1581,19 +1581,19 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const results = [];
     for (const o of targets){
       const internalId = o._internal_id || o.internal_id || null;
-      if(!internalId){ results.push(`❓ Missing ID for an order, skipped.`); continue; }
+      if(!internalId){ results.push('❓ Missing ID for an order, skipped.'); continue; }
 
       if (DEMO_MODE){
         o.driver_pay_status = 'pending';
         if(!o.driver_pay_pending){
           o.driver_pay_pending = Math.round(o.total * 0.3);
         }
-        results.push(`✅ (demo) ${internalId} -> pending R${o.driver_pay_pending}`);
+        results.push('✅ (demo) ${internalId} -> pending R${o.driver_pay_pending}');
         continue;
       }
 
       try {
-        const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
+        const res = await fetch('${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign', {
           method: "POST",
           headers: {"Content-Type":"application/json"}
         });
@@ -1601,15 +1601,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
         if(res.ok && data && data.ok){
           const driverId = data.driver_id || "driver?";
-          results.push(`✅ ${internalId} → ${driverId}`);
+          results.push('✅ ${internalId} → ${driverId}');
         } else if (res.status === 409 && data && data.error === "no_driver_available") {
-          results.push(`⚠️ ${internalId}: no driver`);
+          results.push('⚠️ ${internalId}: no driver');
         } else {
-          results.push(`❌ ${internalId}: failed (${res.status})`);
+          results.push('❌ ${internalId}: failed (${res.status})');
         }
       } catch (err){
         console.error("autoAssignForAll error", err);
-        results.push(`❌ ${internalId}: network error`);
+        results.push('❌ ${internalId}: network error');
       }
     }
     updateDriverTotalsFromOrders();
@@ -1667,7 +1667,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
 
     try {
-      const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
+      const res = await fetch('${BASE_API}/orders?status=${encodeURIComponent(status)}');
       const data = await res.json().catch(()=>({}));
       if(!res.ok || !data.ok){ return []; }
       if (data.zone_demand_snapshot){ zoneDemandStats = data.zone_demand_snapshot; }
@@ -1687,28 +1687,28 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     ordersList.innerHTML = data.length
       ? ''
-      : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
+      : '<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>';
 
     for(const o of data){
       const itemsText = (o.items || [])
-        .map(i=>`${i.name} x${i.qty}`)
+        .map(i=>'${i.name} x${i.qty}')
         .join(', ');
 
       const internalId = o._internal_id || o.internal_id || null;
       const refDisplay = o.order_public_id || o.order_id || internalId || "REF?";
       const zoneDisplay = (o.meta && o.meta.zone) ? o.meta.zone : "?";
       const fraudDisplay = (typeof o.fraud_score === "number")
-        ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
+        ? ' • Fraud: ${o.fraud_score.toFixed(2)}'
         : "";
 
       // driver pay info bloc
       let driverPayText = "Driver pay: R0";
       let driverPayStatusText = "Status: –";
       if(o.driver_pay_status === "pending"){
-        driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
+        driverPayText = 'Driver pay: R${o.driver_pay_pending || 0}';
         driverPayStatusText = "Status: pending";
       } else if(o.driver_pay_status === "approved"){
-        driverPayText = `Driver pay: R${o.driver_pay_approved || 0}`;
+        driverPayText = 'Driver pay: R${o.driver_pay_approved || 0}';
         driverPayStatusText = "Status: approved";
       }
 
@@ -1721,7 +1721,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       row.setAttribute('data-order-id', internalId || '');
       row.setAttribute('data-order-status', o.status || '');
 
-      row.innerHTML = `
+      row.innerHTML = '
         <div class="flex-1 min-w-0">
           <div class="font-medium flex flex-wrap items-center gap-1">
             <span>Ref ${refDisplay}</span>
@@ -1751,7 +1751,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             Delivered
           </button>
         </div>
-      `;
+      ';
       ordersList.appendChild(row);
     }
 
@@ -1804,8 +1804,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   ];
 
   function carIcon(zone){
-    const cls=\`car-dot car-\${zone}\`;
-    const svg=\`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
+    const cls=\'car-dot car-\${zone}\';
+    const svg=\'<svg viewBox='0 0 64 28' aria-hidden='true'><g>
       <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
       <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
       <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
@@ -1813,13 +1813,13 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
       <circle cx='18' cy='20' r='3' fill='#0f172a'/>
       <circle cx='46' cy='20' r='3' fill='#0f172a'/>
-    </g></svg>\`;
+    </g></svg>\';
     return L.divIcon({ className:cls, html:svg, iconSize:[24,12], iconAnchor:[12,6] });
   }
 
-  const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
+  const pkgSvg='<svg viewBox='0 0 24 24' aria-hidden='true'>
     <path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
-  </svg>`;
+  </svg>';
 
   const pkgIcon=L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
 
@@ -1907,7 +1907,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     L.marker([start.lat,start.lng],{icon:carIcon(zone)}).addTo(heroMap);
 
     const driverPayload = {
-      driver_id: `DRV-${Date.now().toString().slice(-6)}`,
+      driver_id: 'DRV-${Date.now().toString().slice(-6)}',
       name,
       phone,
       vehicle,
@@ -1918,7 +1918,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     if(!DEMO_MODE){
       try{
-        const r = await fetch(`${BASE_API}/drivers`,{
+        const r = await fetch('${BASE_API}/drivers',{
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify(driverPayload)
@@ -1928,13 +1928,13 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }catch(err){ console.error("driver create failed",err); }
     } else { console.info("[DEMO] Would POST driver", driverPayload); }
 
-    const text = `New driver sign-up
+    const text = 'New driver sign-up
 Name: ${name}
 Phone: ${phone}
 Zone: ${zone}
 Radius: ${radius}km
-Vehicle: ${vehicle}`;
-    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
+Vehicle: ${vehicle}';
+    window.open('https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}','_blank');
 
     closeDriverWindow();
 
@@ -1982,7 +1982,7 @@ Vehicle: ${vehicle}`;
           phone: custPhone,
           address: {
             line1: custAddr,
-            suburb: `Zone ${summary.zoneVal}`,
+            suburb: 'Zone ${summary.zoneVal}',
             coords: { lat: summary.hubLat, lng: summary.hubLng }
           }
         },
@@ -2011,19 +2011,19 @@ Vehicle: ${vehicle}`;
           eta,
           payment_method: paymentMethod,
           wa_message:
-            `Yi Thume, my order is:\n` +
-            `Ref: DEMO-${refStub}\n` +
-            `Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n` +
-            `Items: ${summary.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}\n` +
-            `Total: R${summary.total}\n` +
-            `Expected: ${eta}\n` +
-            `Payment: ${paymentMethod}\n` +
-            `Please confirm + send payment link.`
+            'Yi Thume, my order is:\n' +
+            'Ref: DEMO-${refStub}\n' +
+            'Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n' +
+            'Items: ${summary.items.map(i=>\'\${i.name} x\${i.qty}\').join(', ')}\n' +
+            'Total: R${summary.total}\n' +
+            'Expected: ${eta}\n' +
+            'Payment: ${paymentMethod}\n' +
+            'Please confirm + send payment link.'
         };
       } else {
         let data = null;
         try {
-          const res = await fetch(`${BASE_API}/orders`, {
+          const res = await fetch('${BASE_API}/orders', {
             method:"POST",
             headers:{ "Content-Type":"application/json" },
             body: JSON.stringify(orderPayload)
@@ -2032,7 +2032,7 @@ Vehicle: ${vehicle}`;
           try { data = await res.json(); } catch(_) { data = null; }
 
           if (res.status === 409 && data && data.error === "no_driver_available") {
-            alert(data.message || `Sorry, no driver currently available in Zone ${orderPayload.meta.zone}.`);
+            alert(data.message || 'Sorry, no driver currently available in Zone ${orderPayload.meta.zone}.');
             return;
           }
           if(!res.ok || !data || !data.ok){
@@ -2066,19 +2066,19 @@ Vehicle: ${vehicle}`;
       openBot();
 
       appendBot(
-        `<b>YiThume</b> 🤖<br/>
+        '<b>YiThume</b> 🤖<br/>
          Thanks for your order!<br/>
          <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
-         <b>Items:</b> ${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}<br/>
+         <b>Items:</b> ${latestOrderData.items.map(i=>\'\${i.name} x\${i.qty}\').join(', ')}<br/>
          <b>Zone:</b> ${latestOrderData.zone}<br/>
          <b>Total:</b> R${latestOrderData.total}<br/>
-         <b>Estimated window:</b> ${latestOrderData.eta}`
+         <b>Estimated window:</b> ${latestOrderData.eta}'
       );
 
       if(latestOrderData.status === "review_required"){
-        appendBot(`<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`);
+        appendBot('<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.');
       } else {
-        appendBot(`Choose your payment method below and tap <b>Pay</b>.`);
+        appendBot('Choose your payment method below and tap <b>Pay</b>.');
       }
 
       botPayChoice.value = latestOrderData.payment_method;
@@ -2099,26 +2099,26 @@ Vehicle: ${vehicle}`;
     if(botStage === 0){
       if(pay === 'eft'){
         appendBot(
-          `<b>Instant EFT (Ozow)</b><br/>
+          '<b>Instant EFT (Ozow)</b><br/>
            We’ll WhatsApp you a secure Ozow link.<br/>
-           Use ref <code>${latestOrderData.order_public_id}</code>.`
+           Use ref <code>${latestOrderData.order_public_id}</code>.'
         );
       } else if(pay === 'card'){
         appendBot(
-          `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
-           Use ref <code>${latestOrderData.order_public_id}</code>.`
+          'We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
+           Use ref <code>${latestOrderData.order_public_id}</code>.'
         );
       } else {
         const deposit = Math.ceil(latestOrderData.total*0.5);
         appendBot(
-          `<b>50% deposit + COD</b><br/>
+          '<b>50% deposit + COD</b><br/>
            Pay deposit now: <b>R${deposit}</b>.<br/>
            Balance due at delivery.<br/>
-           Ref <code>${latestOrderData.order_public_id}</code>.`
+           Ref <code>${latestOrderData.order_public_id}</code>.'
         );
       }
 
-      appendBot(`This next screen is a demo. No money is taken here.`);
+      appendBot('This next screen is a demo. No money is taken here.');
       // Pop fake pay portal (demo)
       openPayModal(latestOrderData.order_public_id, latestOrderData.total);
       botStage = 1;
@@ -2126,7 +2126,7 @@ Vehicle: ${vehicle}`;
     }
 
     // if they click Pay again after stage 1 we just remind them:
-    appendBot(`Click "Send to WhatsApp" so we can confirm the order and send the real secure payment link.`);
+    appendBot('Click "Send to WhatsApp" so we can confirm the order and send the real secure payment link.');
   });
 
   // SEND TO WHATSAPP
@@ -2137,20 +2137,20 @@ Vehicle: ${vehicle}`;
       ? latestOrderData.wa_message
       : [
           "Yi Thume, my order is:",
-          `Ref: ${latestOrderData.order_public_id}`,
-          `Deliver to: Zone ${latestOrderData.zone}`,
-          `Items: ${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}`,
-          `Total: R${latestOrderData.total}`,
-          `Expected: ${latestOrderData.eta}`,
-          `Payment: ${latestOrderData.payment_method}`,
+          'Ref: ${latestOrderData.order_public_id}',
+          'Deliver to: Zone ${latestOrderData.zone}',
+          'Items: ${latestOrderData.items.map(i=>\'\${i.name} x\${i.qty}\').join(', ')}',
+          'Total: R${latestOrderData.total}',
+          'Expected: ${latestOrderData.eta}',
+          'Payment: ${latestOrderData.payment_method}',
           "Please confirm + send payment link."
         ].join("\\n");
 
-    const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}`;
+    const wa = 'https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}';
     window.open(wa,'_blank');
 
     closeBot();
-    alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
+    alert('Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}');
   });
 
   // NEW ORDER after fake pay
