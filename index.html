@@ -94,7 +94,7 @@
           </linearGradient>
         </defs>
         <rect rx="12" width="36" height="36" fill="url(#g)"/>
-        <path d="M10 12l5 8v4h-3v-3l-5-9h3zM26 12l-5 8v4h3v-3l5-9h-3z" fill="#fff"/>
+        <path d="M10 12l5 8v4h-3v-3l-5-9h3zM26 12l-5 8v-3l5-9h-3z" fill="#fff"/>
       </svg>
       <div class="text-xl font-semibold tracking-tight">YiThume</div>
     </div>
@@ -796,19 +796,51 @@ window.addEventListener('DOMContentLoaded', () => {
   const BASE_API = "/api/app";
   const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
-  const DEMO_MODE       = true; // toggle false when backend is real
+  const DEMO_MODE       = true; // set to false when backend is ready
 
-  function waText(str) {
-    return encodeURIComponent(str);
+  function waText(str) { return encodeURIComponent(str); }
+  function digits(val){ return (val||"").replace(/\\D+/g,''); }
+
+  // === BODY SCROLL LOCK + FOCUS RESTORE ===
+  const lastFocus = new Map();
+  function firstFocusable(el){
+    return el.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  }
+  function lockScroll(){ document.body.classList.add('overflow-locked'); }
+  function unlockScroll(){ document.body.classList.remove('overflow-locked'); }
+  function openFlex(el){
+    if(!el) return;
+    lastFocus.set(el, document.activeElement);
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+    lockScroll();
+    setTimeout(()=>{ const ff = firstFocusable(el); if(ff) ff.focus(); }, 0);
+  }
+  function closeFlex(el){
+    if(!el) return;
+    el.classList.add('hidden');
+    el.classList.remove('flex');
+    unlockScroll();
+    const prev = lastFocus.get(el);
+    if(prev && typeof prev.focus === 'function') prev.focus();
   }
 
-  // === BODY SCROLL LOCK HELPERS ===
-  function lockScroll(){
-    document.body.classList.add('overflow-locked');
-  }
-  function unlockScroll(){
-    document.body.classList.remove('overflow-locked');
-  }
+  // ESC closes the topmost visible modal
+  document.addEventListener('keydown', (e)=>{
+    if(e.key !== 'Escape') return;
+    const modals = [
+      document.getElementById('ordersPanel'),
+      document.getElementById('storeModal'),
+      document.getElementById('driverDashModal'),
+      document.getElementById('driverModal'),
+      document.getElementById('payModal'),
+      document.getElementById('botChat'),
+      document.getElementById('orderBuilder')
+    ];
+    for(const m of modals){
+      if(m && !m.classList.contains('hidden')) { closeFlex(m); break; }
+    }
+  });
 
   // === RUNTIME / GLOBAL STATE ===
   let latestOrderData = null;
@@ -954,7 +986,7 @@ window.addEventListener('DOMContentLoaded', () => {
       .filter(c => c.checked)
       .map(c => {
         const i   = Number(c.dataset.idx);
-        const qty = Number(document.querySelector(`.itemQty[data-idx="${i}"]`).value || 1);
+        const qty = Math.max(1, Number(document.querySelector(\`.itemQty[data-idx="\${i}"]\`).value || 1));
         return {
           name:  CATALOG[i].name,
           price: Number(CATALOG[i].price),
@@ -966,7 +998,6 @@ window.addEventListener('DOMContentLoaded', () => {
     const total      = itemsTotal + feeBase + rushFee;
 
     totalEl.textContent = String(total);
-
     return {
       items,
       itemsTotal,
@@ -991,9 +1022,9 @@ window.addEventListener('DOMContentLoaded', () => {
     function fmt(date,[h1,h2]){
       const sameDay = (date.toDateString()===new Date().toDateString());
       if (sameDay){
-        return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
+        return \`\${pad2(h1)}:00–\${pad2(h2)}:00 \${rush?'today (rush)':'today'}\`;
       }
-      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
+      return \`\${dayNames[date.getDay()]} \${pad2(h1)}:00–\${pad2(h2)}:00\`;
     }
 
     if (allowed.has(now.getDay())){
@@ -1021,87 +1052,45 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // === MODAL OPEN/CLOSE HELPERS ===
-  function openFlex(el){
-    if(!el) return;
-    el.classList.remove('hidden');
-    el.classList.add('flex');
-    lockScroll();
-  }
-  function closeFlex(el){
-    if(!el) return;
-    el.classList.add('hidden');
-    el.classList.remove('flex');
-    unlockScroll();
-  }
-
+  // === MODAL OPEN/CLOSE HELPERS (wrappers) ===
   function openOrder(){
     openFlex(modal);
     const s = computeTotal();
     toggleDepositBanner(s.total);
   }
-  function closeOrder(){
-    closeFlex(modal);
-  }
-
+  function closeOrder(){ closeFlex(modal); }
   function openBot(){
     botStage = 0;
+    botNext.disabled = false;
     botNext.textContent = "Next";
     botSendWA.classList.add('hidden');
     botFeed.innerHTML = "";
     openFlex(botModal);
   }
-  function closeBot(){
-    botFeed.innerHTML='';
-    closeFlex(botModal);
-  }
-
+  function closeBot(){ botFeed.innerHTML=''; closeFlex(botModal); }
   function openPayModal(orderRef, amount){
     if(!payModal) return;
     payOrderRef.textContent = orderRef || '--';
     payAmountEl.textContent = amount || '0';
     openFlex(payModal);
   }
-  function closePayModal(){
-    closeFlex(payModal);
-  }
-
-  function openDriverWindow(){
-    openFlex(driverModal);
-  }
-  function closeDriverWindow(){
-    closeFlex(driverModal);
-  }
-
-  function openStoreModal(){
-    openFlex(storeModal);
-  }
-  function closeStoreModal(){
-    closeFlex(storeModal);
-  }
-
-  function openOrders(){
-    openFlex(ordersPanel);
-    renderOrders();
-  }
-  function closeOrders(){
-    closeFlex(ordersPanel);
-  }
-
-  function openDriverDash(){
-    openFlex(driverDashModal);
-  }
-  function closeDriverDashWindow(){
-    closeFlex(driverDashModal);
-  }
+  function closePayModal(){ closeFlex(payModal); }
+  function openDriverWindow(){ openFlex(driverModal); }
+  function closeDriverWindow(){ closeFlex(driverModal); }
+  function openStoreModal(){ openFlex(storeModal); }
+  function closeStoreModal(){ closeFlex(storeModal); }
+  function openOrders(){ openFlex(ordersPanel); renderOrders(); }
+  function closeOrders(){ closeFlex(ordersPanel); }
+  function openDriverDash(){ openFlex(driverDashModal); }
+  function closeDriverDashWindow(){ closeFlex(driverDashModal); }
 
   function appendBot(msg,who='bot'){
     const wrap=document.createElement('div');
-    wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
-    wrap.innerHTML = `
-      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
-        ${msg}
-      </div>`;
+    wrap.className = \`flex \${who==='bot'?'justify-start':'justify-end'}\`;
+    wrap.innerHTML = \`
+      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm \${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
+        \${msg}
+      </div>\`;
     botFeed.appendChild(wrap);
     botFeed.scrollTop = botFeed.scrollHeight;
   }
@@ -1109,9 +1098,9 @@ window.addEventListener('DOMContentLoaded', () => {
   function demandBadge(zone){
     const missCount = zoneDemandStats[zone]?.misses || 0;
     if(missCount === 0) return "";
-    return `<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-      demand ${missCount}x / no driver
-    </span>`;
+    return \`<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+      demand \${missCount}x / no driver
+    </span>\`;
   }
 
   // === MOBILE NAV TOGGLE ===
@@ -1172,13 +1161,21 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Persist & prefill customer details for convenience
+  [custNameEl, custPhoneEl, custAddrEl].forEach((el)=>{
+    const key = 'yt_'+el.id;
+    const saved = localStorage.getItem(key);
+    if(saved) el.value = saved;
+    el.addEventListener('input', ()=> localStorage.setItem(key, el.value));
+  });
+
   // Add custom item to basket
   document.getElementById('addCustomItem')?.addEventListener('click', e=>{
     e.preventDefault();
     const name = prompt('Item name');
     const priceVal = prompt('Price (R)');
     const price = Number(priceVal);
-    if(!name || !price || Number.isNaN(price)){ return; }
+    if(!name || !Number.isFinite(price) || price<=0){ return; }
     CATALOG.push({name,price});
     renderItems();
     const s=computeTotal(); toggleDepositBanner(s.total);
@@ -1188,7 +1185,6 @@ window.addEventListener('DOMContentLoaded', () => {
   botClose?.addEventListener('click', closeBot);
   closeBtn?.addEventListener('click', closeOrder);
   cancelOrderBuilder?.addEventListener('click', closeOrder);
-
   closePayModalBtn?.addEventListener('click', closePayModal);
   btnCancelPay?.addEventListener('click', closePayModal);
 
@@ -1207,9 +1203,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // === DRIVER MODAL open/close ===
   ;['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
     const el=document.getElementById(id);
-    if(el){
-      el.addEventListener('click',openDriverWindow);
-    }
+    if(el){ el.addEventListener('click',openDriverWindow); }
   });
   closeDriver?.addEventListener('click',closeDriverWindow);
 
@@ -1265,24 +1259,21 @@ window.addEventListener('DOMContentLoaded', () => {
     const name = prompt('Item name?');
     const priceVal = prompt('Price (R)?');
     const price = Number(priceVal);
-    if(!name || !price || Number.isNaN(price)){ return; }
+    if(!name || !Number.isFinite(price) || price<=0){ return; }
     storeItems.push({name, price});
     renderStoreItems();
   });
 
   submitStoreBtn?.addEventListener('click', async ()=>{
     const storeName  = storeNameEl.value.trim();
-    const storePhone = storePhoneEl.value.trim();
+    const storePhone = digits(storePhoneEl.value.trim());
     const zone       = storeZoneEl.value;
-
     if(!storeName || !storePhone){
       alert("Please add store name & WhatsApp.");
       return;
     }
     if(storeItems.length === 0){
-      if(!confirm("No items added yet. Submit anyway?")){
-        return;
-      }
+      if(!confirm("No items added yet. Submit anyway?")) return;
     }
 
     const payload = {
@@ -1290,41 +1281,32 @@ window.addEventListener('DOMContentLoaded', () => {
       name: storeName,
       phone: storePhone,
       zone: zone,
-      items: storeItems.map(it=>({
-        name: it.name,
-        price: it.price
-      }))
+      items: storeItems.map(it=>({ name: it.name, price: it.price }))
     };
 
     if(!DEMO_MODE){
       try{
-        const r = await fetch(`${BASE_API}/stores`, {
+        const r = await fetch(\`\${BASE_API}/stores\`, {
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify(payload)
         });
         const j = await r.json().catch(()=>({}));
-        if(!r.ok || !j.ok){
-          alert("Store save failed on server.");
-        } else {
-          console.log("store create resp", j);
-        }
-      }catch(err){
-        console.error("store create failed",err);
-      }
+        if(!r.ok || !j.ok){ alert("Store save failed on server."); }
+      }catch(err){ console.error("store create failed",err); }
     } else {
       console.info("[DEMO] Would POST store", payload);
     }
 
     const adminMsg =
-`New store signup:
-Name: ${storeName}
-Phone: ${storePhone}
-Zone: ${zone}
+\`New store signup:
+Name: \${storeName}
+Phone: \${storePhone}
+Zone: \${zone}
 Items:
-${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
+\${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\\n")}\`;
 
-    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(adminMsg)}`,'_blank');
+    window.open(\`https://wa.me/\${ADMIN_WHATSAPP}?text=\${waText(adminMsg)}\`,'_blank');
 
     alert("Thanks! We'll review your store.");
     closeStoreModal();
@@ -1339,11 +1321,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   // === ADMIN PANEL ===
   ordersClose?.addEventListener('click', closeOrders);
-
-  // Also allow admin via mobile Admin button
-  adminBtnMobile?.addEventListener('click', () => {
-    adminBtn?.click();
-  });
+  adminBtnMobile?.addEventListener('click', () => { adminBtn?.click(); });
 
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
@@ -1353,93 +1331,70 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   ordersRefresh?.addEventListener('click', renderOrders);
 
   async function assignOneOrder(internalId){
-    if(!internalId){
-      alert("Missing order id.");
-      return;
-    }
-
-    if(DEMO_MODE){
-      alert(`[DEMO] Would auto-assign ${internalId}`);
-      return;
-    }
+    if(!internalId){ alert("Missing order id."); return; }
+    if(DEMO_MODE){ alert(\`[DEMO] Would auto-assign \${internalId}\`); return; }
 
     try{
-      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
+      const res = await fetch(\`\${BASE_API}/orders/\${encodeURIComponent(internalId)}/auto-assign\`, {
         method: "POST",
         headers: {"Content-Type":"application/json"}
       });
       const data = await res.json().catch(()=>({}));
 
       if(res.ok && data && data.ok){
-        alert(`Assigned: ${internalId} -> ${data.driver_id || 'driver?'}`);
+        alert(\`Assigned: \${internalId} -> \${data.driver_id || 'driver?'}\`);
       } else if (res.status === 409 && data && data.error === "no_driver_available") {
-        alert(`No driver available for ${internalId}`);
+        alert(\`No driver available for \${internalId}\`);
       } else {
-        alert(`Failed to assign ${internalId} (${res.status})`);
+        alert(\`Failed to assign \${internalId} (\${res.status})\`);
       }
     }catch(err){
       console.error("assignOneOrder err",err);
-      alert(`Network error assigning ${internalId}`);
+      alert(\`Network error assigning \${internalId}\`);
     }
-
     renderOrders();
   }
 
   async function markDelivered(internalId){
-    if(!internalId){
-      alert("Missing order id.");
-      return;
-    }
-
-    if(DEMO_MODE){
-      alert(`[DEMO] Would mark delivered ${internalId}`);
-      return;
-    }
+    if(!internalId){ alert("Missing order id."); return; }
+    if(DEMO_MODE){ alert(\`[DEMO] Would mark delivered \${internalId}\`); return; }
 
     try{
-      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
+      const res = await fetch(\`\${BASE_API}/orders/\${encodeURIComponent(internalId)}/status\`, {
         method: "POST",
         headers: {"Content-Type":"application/json"},
         body: JSON.stringify({status:"delivered"})
       });
       const data = await res.json().catch(()=>({}));
       if(res.ok && data && data.ok){
-        alert(`Marked delivered: ${internalId}`);
+        alert(\`Marked delivered: \${internalId}\`);
       } else {
-        alert(`Failed to mark delivered (${res.status})`);
+        alert(\`Failed to mark delivered (\${res.status})\`);
       }
     }catch(err){
       console.error("markDelivered err",err);
-      alert(`Network error marking delivered ${internalId}`);
+      alert(\`Network error marking delivered \${internalId}\`);
     }
-
     renderOrders();
   }
 
   async function autoAssignForAll(){
     const ordersInTab = currentOrdersByTab[ordersTab] || [];
     const targets = ordersInTab.filter(o => o.status === 'pending');
-
-    if (targets.length === 0){
-      alert("No pending orders in this view to assign.");
-      return;
-    }
+    if (targets.length === 0){ alert("No pending orders in this view to assign."); return; }
 
     const results = [];
     for (const o of targets){
       const internalId = o._internal_id || o.internal_id || null;
-      if(!internalId){
-        results.push(`❓ Missing ID for an order, skipped.`);
-        continue;
-      }
+      if(!internalId){ results.push(\`❓ Missing ID for an order, skipped.\`); continue; }
 
       if (DEMO_MODE){
-        results.push(`✅ (demo) ${internalId} -> DRV-DEMO`);
+        results.push(\`✅ (demo) \${internalId} -> DRV-DEMO\`);
         continue;
       }
 
       try {
-        const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
+        const res = await fetch(\`\${BASE_API}/orders/\${encodeURIComponent(internalId)}/auto-assign\`, {
           method: "POST",
           headers: {"Content-Type":"application/json"}
         });
@@ -1447,19 +1402,18 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
         if(res.ok && data && data.ok){
           const driverId = data.driver_id || "driver?";
-          results.push(`✅ ${internalId} → ${driverId}`);
+          results.push(\`✅ \${internalId} → \${driverId}\`);
         } else if (res.status === 409 && data && data.error === "no_driver_available") {
-          results.push(`⚠️ ${internalId}: no driver`);
+          results.push(\`⚠️ \${internalId}: no driver\`);
         } else {
-          results.push(`❌ ${internalId}: failed (${res.status})`);
+          results.push(\`❌ \${internalId}: failed (\${res.status})\`);
         }
       } catch (err){
         console.error("autoAssignForAll error", err);
-        results.push(`❌ ${internalId}: network error`);
+        results.push(\`❌ \${internalId}: network error\`);
       }
     }
-
-    alert(results.join("\n"));
+    alert(results.join("\\n"));
     renderOrders();
   }
   ordersAssign?.addEventListener('click', autoAssignForAll);
@@ -1479,7 +1433,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   });
 
-  // Admin PIN gate
+  // Admin PIN gate (front-end demo; use ADMIN_SECRET on backend for real)
   adminBtn?.addEventListener('click', ()=>{
     const pin = prompt('Enter admin PIN:');
     if(pin && pin.trim() !== ""){
@@ -1509,14 +1463,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
 
     try {
-      const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
+      const res = await fetch(\`\${BASE_API}/orders?status=\${encodeURIComponent(status)}\`);
       const data = await res.json().catch(()=>({}));
-      if(!res.ok || !data.ok){
-        return [];
-      }
-      if (data.zone_demand_snapshot){
-        zoneDemandStats = data.zone_demand_snapshot;
-      }
+      if(!res.ok || !data.ok){ return []; }
+      if (data.zone_demand_snapshot){ zoneDemandStats = data.zone_demand_snapshot; }
       return Array.isArray(data.orders) ? data.orders : [];
     } catch(err){
       console.error("fetchOrdersByStatus error",err);
@@ -1530,29 +1480,18 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     ordersList.innerHTML = data.length
       ? ''
-      : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
+      : \`<div class="text-sm text-slate-500 p-4">No \${ordersTab} orders.</div>\`;
 
     for(const o of data){
       const itemsText = (o.items || [])
-        .map(i=>`${i.name} x${i.qty}`)
+        .map(i=>\`\${i.name} x\${i.qty}\`)
         .join(', ');
 
-      const internalId =
-        o._internal_id ||
-        o.internal_id ||
-        null;
-
-      const refDisplay =
-        o.order_public_id ||
-        o.order_id ||
-        internalId ||
-        "REF?";
-
-      const zoneDisplay =
-        (o.meta && o.meta.zone) ? o.meta.zone : "?";
-
+      const internalId = o._internal_id || o.internal_id || null;
+      const refDisplay = o.order_public_id || o.order_id || internalId || "REF?";
+      const zoneDisplay = (o.meta && o.meta.zone) ? o.meta.zone : "?";
       const fraudDisplay = (typeof o.fraud_score === "number")
-        ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
+        ? \` • Fraud: \${o.fraud_score.toFixed(2)}\`
         : "";
 
       const isDelivered = o.status === "delivered";
@@ -1596,16 +1535,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
 
     ordersList.querySelectorAll('.btn-assign').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const id = btn.getAttribute('data-id');
-        assignOneOrder(id);
-      });
+      btn.addEventListener('click', ()=> assignOneOrder(btn.getAttribute('data-id')));
     });
     ordersList.querySelectorAll('.btn-delivered').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const id = btn.getAttribute('data-id');
-        markDelivered(id);
-      });
+      btn.addEventListener('click', ()=> markDelivered(btn.getAttribute('data-id')));
     });
   }
 
@@ -1622,17 +1555,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   L.tileLayer(
     'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    {
-      attribution:'',
-      opacity:0.96,
-      noWrap:true,
-      detectRetina:true
-    }
+    { attribution:'', opacity:0.96, noWrap:true, detectRetina:true }
   ).addTo(heroMap);
 
-  const southAfricaBounds = L.latLngBounds(
-    [[-35.5, 16.0], [-22.0, 33.5]]
-  );
+  const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
   heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
 
   const HUBS=[
@@ -1657,8 +1583,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   ];
 
   function carIcon(zone){
-    const cls=`car-dot car-${zone}`;
-    const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
+    const cls=\`car-dot car-\${zone}\`;
+    const svg=\`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
       <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
       <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
       <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
@@ -1666,25 +1592,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
       <circle cx='18' cy='20' r='3' fill='#0f172a'/>
       <circle cx='46' cy='20' r='3' fill='#0f172a'/>
-    </g></svg>`;
-    return L.divIcon({
-      className:cls,
-      html:svg,
-      iconSize:[24,12],
-      iconAnchor:[12,6]
-    });
+    </g></svg>\`;
+    return L.divIcon({ className:cls, html:svg, iconSize:[24,12], iconAnchor:[12,6] });
   }
 
   const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
     <path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
   </svg>`;
 
-  const pkgIcon=L.divIcon({
-    className:'pkg-dot',
-    html:pkgSvg,
-    iconSize:[20,20],
-    iconAnchor:[10,10]
-  });
+  const pkgIcon=L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
 
   function lerp(a,b,t){return a+(b-a)*t;}
   function posOnSeg(seg,t){
@@ -1699,10 +1615,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const d=(meters||800)/111111;
     const r=Math.random()*d;
     const a=Math.random()*Math.PI*2;
-    return {
-      lat: pt.lat + r*Math.cos(a),
-      lng: pt.lng + r*Math.sin(a)
-    };
+    return { lat: pt.lat + r*Math.cos(a), lng: pt.lng + r*Math.sin(a) };
   }
 
   function makeCar(zone){
@@ -1759,23 +1672,14 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   formSignup?.addEventListener('submit', async e=>{
     e.preventDefault();
     const name    = document.getElementById('drvName').value.trim();
-    const phone   = document.getElementById('drvPhone').value.trim();
+    const phone   = digits(document.getElementById('drvPhone').value.trim());
     const zone    = document.getElementById('drvZone').value;
-    const radius  = document.getElementById('drvRadius').value;
+    const radius  = Math.max(1, Number(document.getElementById('drvRadius').value || 10));
     const vehicle = document.getElementById('drvVehicle').value.trim();
 
-    if(!name || !phone){
-      alert("Please enter name and phone.");
-      return;
-    }
+    if(!name || !phone){ alert("Please enter name and phone."); return; }
 
-    const hubMap = {
-      A:HUBS[0],
-      B:HUBS[1],
-      C:HUBS[2],
-      D:HUBS[3],
-      E:HUBS[5]
-    };
+    const hubMap = { A:HUBS[0], B:HUBS[1], C:HUBS[2], D:HUBS[3], E:HUBS[5] };
     const hub   = hubMap[zone] || HUBS[0];
     const start = jitterAround({lat:hub.lat,lng:hub.lng},1500);
 
@@ -1793,32 +1697,23 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     if(!DEMO_MODE){
       try{
-        const r = await fetch(`${BASE_API}/drivers`,{
+        const r = await fetch(\`\${BASE_API}/drivers\`,{
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify(driverPayload)
         });
-
         const j = await r.json().catch(()=>({}));
-        if (!r.ok || !j.ok){
-          alert("Driver save failed on server.");
-        } else {
-          console.log("driver create resp", j);
-        }
-      }catch(err){
-        console.error("driver create failed",err);
-      }
-    } else {
-      console.info("[DEMO] Would POST driver", driverPayload);
-    }
+        if (!r.ok || !j.ok){ alert("Driver save failed on server."); }
+      }catch(err){ console.error("driver create failed",err); }
+    } else { console.info("[DEMO] Would POST driver", driverPayload); }
 
-    const text = `New driver sign-up
-Name: ${name}
-Phone: ${phone}
-Zone: ${zone}
-Radius: ${radius}km
-Vehicle: ${vehicle}`;
-    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
+    const text = \`New driver sign-up
+Name: \${name}
+Phone: \${phone}
+Zone: \${zone}
+Radius: \${radius}km
+Vehicle: \${vehicle}\`;
+    window.open(\`https://wa.me/\${ADMIN_WHATSAPP}?text=\${waText(text)}\`,'_blank');
 
     closeDriverWindow();
 
@@ -1832,175 +1727,143 @@ Vehicle: ${vehicle}`;
     }
   });
 
-  // fake driver login
+  // fake driver login (front-end demo; real flow uses /driver_login)
   formLogin?.addEventListener('submit',e=>{
     e.preventDefault();
     alert('Logged in (demo). Opening dashboard.');
     closeDriverWindow();
-    if(driverDashModal){
-      openDriverDash();
-    }
+    if(driverDashModal){ openDriverDash(); }
   });
 
   // === SUBMIT ORDER ===
   confirmBtn2?.addEventListener('click', async ()=>{
-    const summary = computeTotal();
-    if (!summary.items.length){
-      alert('Please select at least one item.');
-      return;
-    }
+    // Prevent double clicks
+    confirmBtn2.disabled = true;
+    try{
+      const summary = computeTotal();
+      if (!summary.items.length){ alert('Please select at least one item.'); return; }
 
-    const custName  = custNameEl.value.trim();
-    const custPhone = custPhoneEl.value.trim();
-    const custAddr  = custAddrEl.value.trim();
-    if(!custName || !custPhone || !custAddr){
-      alert('Please fill name, WhatsApp and address.');
-      return;
-    }
-
-    const paymentMethod = selectedPay();
-    const eta           = nextETA(Boolean(summary.rush));
-
-    const orderPayload = {
-      customer: {
-        name: custName,
-        phone: custPhone,
-        address: {
-          line1: custAddr,
-          suburb: `Zone ${summary.zoneVal}`,
-          coords: { lat: summary.hubLat, lng: summary.hubLng }
-        }
-      },
-      items: summary.items.map(it => ({
-        sku: null,
-        name: it.name,
-        qty: it.qty,
-        price: it.price
-      })),
-      subtotal: summary.itemsTotal,
-      delivery_fee: summary.fee + summary.rush,
-      total: summary.total,
-      payment: {
-        method: paymentMethod,
-        status: "pending",
-        provider_ref: null
-      },
-      created_by: "web",
-      route: {
-        eta_minutes: null,
-        distance_km: null,
-        eta_text: eta
-      },
-      meta: {
-        rush: !!summary.rush,
-        zone: summary.zoneVal
-      }
-    };
-
-    if(DEMO_MODE){
-      console.info("[DEMO] Would POST", orderPayload);
-      latestOrderData = {
-        order_public_id: "DEMO-" + Date.now().toString().slice(-6),
-        status: "pending",
-        fraud_score: 0.0,
-        total: summary.total,
-        zone: summary.zoneVal,
-        items: summary.items,
-        eta,
-        payment_method: paymentMethod,
-        wa_message:
-          `Yi Thume, my order is:\n` +
-          `Ref: DEMO-${Date.now().toString().slice(-6)}\n` +
-          `Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n` +
-          `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
-          `Total: R${summary.total}\n` +
-          `Expected: ${eta}\n` +
-          `Payment: ${paymentMethod}\n` +
-          `Please confirm + send payment link.`
-      };
-    } else {
-      let data;
-      try {
-        const res = await fetch(`${BASE_API}/orders`, {
-          method:"POST",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify(orderPayload)
-        });
-
-        try {
-          data = await res.json();
-        } catch(e) {
-          data = null;
-        }
-
-        if (res.status === 409 && data && data.error === "no_driver_available") {
-          alert(
-            data.message ||
-            `Sorry, no driver is currently available in your area (Zone ${orderPayload.meta.zone}). Please try later.`
-          );
-          return;
-        }
-
-        if(!res.ok){
-          console.error("Bad status", res.status, data);
-          alert("Order failed on server ("+res.status+").");
-          return;
-        }
-
-        if(!data || !data.ok){
-          console.error("Server said not ok", data);
-          alert("Order not accepted.");
-          return;
-        }
-
-        latestOrderData = {
-          order_public_id: data.order_public_id || data.order_id || ("YI-" + Date.now().toString().slice(-6)),
-          status:         data.status || "pending",
-          fraud_score:    data.fraud_score ?? null,
-          total:          summary.total,
-          zone:           summary.zoneVal,
-          items:          summary.items,
-          eta,
-          payment_method: paymentMethod,
-          wa_message:     data.wa_message || null
-        };
-
-        if (data.zone_demand_snapshot) {
-          zoneDemandStats = data.zone_demand_snapshot;
-        }
-
-      } catch(err){
-        console.error("Network/Fetch error", err);
-        alert("Network error creating order.");
+      const custName  = (custNameEl.value||'').trim();
+      const custPhone = digits((custPhoneEl.value||'').trim());
+      const custAddr  = (custAddrEl.value||'').trim();
+      if(!custName || !custPhone || !custAddr){
+        alert('Please fill name, WhatsApp and address.');
         return;
       }
-    }
 
-    // SUCCESS UI
-    closeOrder();
-    openBot();
+      const paymentMethod = selectedPay();
+      const eta           = nextETA(Boolean(summary.rush));
 
-    appendBot(
-      `<b>YiThume</b> 🤖<br/>
-       Thanks for your order!<br/>
-       <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
-       <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
-       <b>Zone:</b> ${latestOrderData.zone}<br/>
-       <b>Total:</b> R${latestOrderData.total}<br/>
-       <b>Estimated window:</b> ${latestOrderData.eta}`
-    );
+      const orderPayload = {
+        customer: {
+          name: custName,
+          phone: custPhone,
+          address: {
+            line1: custAddr,
+            suburb: `Zone ${summary.zoneVal}`,
+            coords: { lat: summary.hubLat, lng: summary.hubLng }
+          }
+        },
+        items: summary.items.map(it => ({
+          sku: null, name: it.name, qty: it.qty, price: it.price
+        })),
+        subtotal: summary.itemsTotal,
+        delivery_fee: summary.fee + summary.rush,
+        total: summary.total,
+        payment: { method: paymentMethod, status: "pending", provider_ref: null },
+        created_by: "web",
+        route: { eta_minutes: null, distance_km: null, eta_text: eta },
+        meta: { rush: !!summary.rush, zone: summary.zoneVal }
+      };
 
-    if(latestOrderData.status === "review_required"){
+      if(DEMO_MODE){
+        console.info("[DEMO] Would POST", orderPayload);
+        latestOrderData = {
+          order_public_id: "DEMO-" + Date.now().toString().slice(-6),
+          status: "pending",
+          fraud_score: 0.0,
+          total: summary.total,
+          zone: summary.zoneVal,
+          items: summary.items,
+          eta,
+          payment_method: paymentMethod,
+          wa_message:
+            `Yi Thume, my order is:\n` +
+            `Ref: DEMO-${Date.now().toString().slice(-6)}\n` +
+            `Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n` +
+            `Items: ${summary.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}\n` +
+            `Total: R${summary.total}\n` +
+            `Expected: ${eta}\n` +
+            `Payment: ${paymentMethod}\n` +
+            `Please confirm + send payment link.`
+        };
+      } else {
+        let data = null;
+        try {
+          const res = await fetch(\`\${BASE_API}/orders\`, {
+            method:"POST",
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify(orderPayload)
+          });
+
+          try { data = await res.json(); } catch(_) { data = null; }
+
+          if (res.status === 409 && data && data.error === "no_driver_available") {
+            alert(data.message || \`Sorry, no driver currently available in Zone \${orderPayload.meta.zone}.\`);
+            return;
+          }
+          if(!res.ok || !data || !data.ok){
+            console.error("Order failed", res.status, data);
+            alert("Order failed on server.");
+            return;
+          }
+
+          latestOrderData = {
+            order_public_id: data.order_public_id || data.order_id || ("YI-" + Date.now().toString().slice(-6)),
+            status:         data.status || "pending",
+            fraud_score:    data.fraud_score ?? null,
+            total:          summary.total,
+            zone:           summary.zoneVal,
+            items:          summary.items,
+            eta,
+            payment_method: paymentMethod,
+            wa_message:     data.wa_message || null
+          };
+
+          if (data.zone_demand_snapshot) { zoneDemandStats = data.zone_demand_snapshot; }
+        } catch(err){
+          console.error("Network/Fetch error", err);
+          alert("Network error creating order.");
+          return;
+        }
+      }
+
+      // SUCCESS UI
+      closeOrder();
+      openBot();
+
       appendBot(
-        `<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`
+        `<b>YiThume</b> 🤖<br/>
+         Thanks for your order!<br/>
+         <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
+         <b>Items:</b> ${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}<br/>
+         <b>Zone:</b> ${latestOrderData.zone}<br/>
+         <b>Total:</b> R${latestOrderData.total}<br/>
+         <b>Estimated window:</b> ${latestOrderData.eta}`
       );
-    } else {
-      appendBot(
-        `Choose your payment method below and press <b>Next</b>.`
-      );
-    }
 
-    botPayChoice.value = latestOrderData.payment_method;
+      if(latestOrderData.status === "review_required"){
+        appendBot(`<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`);
+      } else {
+        appendBot(`Choose your payment method below and press <b>Next</b>.`);
+      }
+
+      botPayChoice.value = latestOrderData.payment_method;
+
+    } finally {
+      // Re-enable button regardless of outcome
+      confirmBtn2.disabled = false;
+    }
   });
 
   // BOT NEXT / PAY NOW
@@ -2032,58 +1895,51 @@ Vehicle: ${vehicle}`;
         );
       }
 
-      appendBot(
-        `When you're ready, hit <b>Send to WhatsApp</b> and we'll finalise your order + payment link.`
-      );
-
+      appendBot(`When you're ready, hit <b>Send to WhatsApp</b> and we'll finalise your order + payment link.`);
       botSendWA.classList.remove('hidden');
       botNext.textContent = "Pay now";
 
       // Pop fake pay portal (demo)
       openPayModal(latestOrderData.order_public_id, latestOrderData.total);
-
       botStage = 1;
       return;
     }
 
-    appendBot(
-      `Tap <b>Send to WhatsApp</b> so we can confirm, lock in your slot, and send the payment link.`
-    );
+    appendBot(`Tap <b>Send to WhatsApp</b> so we can confirm, lock in your slot, and send the payment link.`);
   });
 
   // SEND TO WHATSAPP
   botSendWA?.addEventListener('click', () => {
-    if(!latestOrderData){
-      alert("No order data.");
-      return;
-    }
+    if(!latestOrderData){ alert("No order data."); return; }
 
     const msg = latestOrderData.wa_message
       ? latestOrderData.wa_message
       : [
           "Yi Thume, my order is:",
-          `Ref: ${latestOrderData.order_public_id}`,
-          `Deliver to: Zone ${latestOrderData.zone}`,
-          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
-          `Total: R${latestOrderData.total}`,
-          `Expected: ${latestOrderData.eta}`,
-          `Payment: ${latestOrderData.payment_method}`,
+          \`Ref: \${latestOrderData.order_public_id}\`,
+          \`Deliver to: Zone \${latestOrderData.zone}\`,
+          \`Items: \${latestOrderData.items.map(i=>\`\${i.name} x\${i.qty}\`).join(', ')}\`,
+          \`Total: R\${latestOrderData.total}\`,
+          \`Expected: \${latestOrderData.eta}\`,
+          \`Payment: \${latestOrderData.payment_method}\`,
           "Please confirm + send payment link."
-        ].join("\n");
+        ].join("\\n");
 
-    const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}`;
+    const wa = \`https://wa.me/\${WHATSAPP_NUMBER}?text=\${waText(msg)}\`;
     window.open(wa,'_blank');
 
     closeBot();
-    alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
+    alert(\`Order sent to WhatsApp. Ref: \${latestOrderData.order_public_id}\`);
   });
 
-  // === OPEN ORDERS PANEL VIA EVENT ===
+  // === ADMIN OPEN VIA EVENT ===
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
     if(!ordersPanel.classList.contains('hidden')) renderOrders();
   });
 
+  // === INITIALIZE STORE ITEMS VIEW ===
+  renderStoreItems();
 });
 </script>
 </body>
