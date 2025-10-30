@@ -887,34 +887,19 @@
 </div>
 
 <script>
-/**
- * YiThume front-end (single-file demo) — Distance-based + road-snapped cars
- * UPDATE (green map + drivers admin + real refresh + persistence):
- * - Map routes/accents switched to emerald green, and all moving dots are CARS (no blue).
- * - Admin panel now has a Drivers section (if your HTML has #driversList, #driversRefresh).
- *   Shows driver #, name, stats, and an "Approve Pay" action per driver.
- * - Refresh button now truly reloads current state from persistent storage and re-renders.
- * - All order status changes (assign → in_transit → delivered) and driver payouts persist
- *   across page refreshes using localStorage (acts like a mini “log book”).
- *
- * NOTE: This script enhances existing UI if the relevant elements exist:
- *   Orders: #ordersPanel, #ordersList, #ordersRefresh, .yt-o-tab, #ordersAssign
- *   Drivers: #driversList, #driversRefresh (optional, for the Drivers section)
- *   Other IDs are unchanged from prior versions.
- */
 window.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & GLOBALS ===
-  const BASE_API        = "/api/app";                 // backend base (replace when deploying API)
-  const WHATSAPP_NUMBER = "270691456201";             // public WhatsApp for order confirmations
-  const ADMIN_WHATSAPP  = "270691456201";             // admin WhatsApp for internal alerts
-  const DEMO_MODE       = true;                       // set to false when backend is ready
+  const BASE_API        = "/api/app";
+  const WHATSAPP_NUMBER = "270691456201";
+  const ADMIN_WHATSAPP  = "270691456201";
+  const DEMO_MODE       = true;
 
-  // Delivery math (private in UI)
-  const BASE_DELIVERY_FEE = 15;      // R
-  const PER_KM_PRICE      = 8;       // R / km
-  const RUSH_FEE          = 30;      // R
+  // Delivery math
+  const BASE_DELIVERY_FEE = 15;
+  const PER_KM_PRICE      = 8;
+  const RUSH_FEE          = 30;
 
-  // Storage keys (persistence)
+  // Storage keys
   const LS_ORDERS  = "YT_DEMO_ORDERS_V1";
   const LS_DRIVERS = "YT_DEMO_DRIVERS_V1";
 
@@ -924,7 +909,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const clamp  = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
   const kmBetween = (a,b)=>{
     if(!a||!b) return 0;
-    const R = 6371; // km
+    const R = 6371;
     const dLat = (b.lat-a.lat)*Math.PI/180;
     const dLng = (b.lng-a.lng)*Math.PI/180;
     const s1 = Math.sin(dLat/2)**2 + Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2;
@@ -932,7 +917,7 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
 
-  // === BODY SCROLL LOCK + FOCUS RESTORE (for a11y) ===
+  // === BODY SCROLL LOCK + FOCUS RESTORE ===
   const lastFocus = new Map();
   const firstFocusable = (el) =>
     el?.querySelector?.('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
@@ -974,26 +959,25 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // === RUNTIME / GLOBAL STATE ===
-  let latestOrderData = null;  // current order context for bot/WA handoff
-  let botStage = 0;            // 0: pre-pay, 1: fake pay open, 2: paid (demo)
-  const currentOrdersByTab = {}; // cache per admin tab
+  let latestOrderData = null;
+  let botStage = 0;
+  const currentOrdersByTab = {};
 
   // Customer and collection coords
-  let DELIVERY_COORDS   = null; // {lat,lng} (from geolocation)
-  let COLLECTION_COORDS = {lat:-33.590, lng:26.890}; // default depot
+  let DELIVERY_COORDS   = null;
+  let COLLECTION_COORDS = {lat:-33.590, lng:26.890};
 
-  // DEMO: in-memory DB, hydrated from localStorage and persisted back after any mutation
+  // DEMO: in-memory DB
   let DEMO_ORDERS_DB = {};
   let DEMO_DRIVERS_DB = {};
 
-  // payout = delivery fee only (clamped 25–45)
   function calcDriverPayout(order){
     const fee = Number(order?.delivery_fee ?? 0);
     return clamp(fee, 25, 45);
   }
 
   const driverTotals = { pending: 0, approved: 0 };
-  const storeItems = []; // {name, price}
+  const storeItems = [];
 
   // === YEAR FOOTER ===
   const yearEl = document.getElementById('year');
@@ -1005,15 +989,12 @@ window.addEventListener('DOMContentLoaded', () => {
   const mobileIconOpen  = document.getElementById('mobileMenuIconOpen');
   const mobileIconClose = document.getElementById('mobileMenuIconClose');
 
-  // order builder / checkout modal
   const modal               = document.getElementById('orderBuilder');
-  const openOrderButtons    = ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'];
   const closeBtn            = document.getElementById('closeOrderBuilder');
   const cancelOrderBuilder  = document.getElementById('cancelOrderBuilder');
   const itemsList           = document.getElementById('itemsList');
 
-  // REPURPOSED: zoneSelect -> collection (hub) select
-  const zoneSelect          = document.getElementById('zoneSelect'); // keep id for compatibility
+  const zoneSelect          = document.getElementById('zoneSelect');
   const rushToggle          = document.getElementById('rushToggle');
   const totalEl             = document.getElementById('orderTotal');
   const rushNote            = document.getElementById('rushNote');
@@ -1025,7 +1006,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const adminBtn            = document.getElementById('adminLoginBtn');
 
-  // Bot modal refs
   const confirmBtn2         = document.getElementById('confirmOrderBtn');
   const botModal            = document.getElementById('botChat');
   const botFeed             = document.getElementById('botFeed');
@@ -1035,7 +1015,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const botPayChoice        = document.getElementById('botPayChoice');
   const botDemoNote         = document.getElementById('botDemoNote');
 
-  // Payment modal refs
   const payModal            = document.getElementById('payModal');
   const payOrderRef         = document.getElementById('payOrderRef');
   const payAmountEl         = document.getElementById('payAmount');
@@ -1043,7 +1022,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const btnFakePayNow       = document.getElementById('btnFakePayNow');
   const btnCancelPay        = document.getElementById('btnCancelPay');
 
-  // Driver modal refs
   const driverModal         = document.getElementById('driverModal');
   const closeDriver         = document.getElementById('closeDriverModal');
   const tabSignup           = document.getElementById('tabSignup');
@@ -1051,7 +1029,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const formSignup          = document.getElementById('driverFormSignup');
   const formLogin           = document.getElementById('driverFormLogin');
 
-  // Driver dashboard modal refs (demo only)
   const driverDashModal     = document.getElementById('driverDashModal');
   const closeDriverDash     = document.getElementById('closeDriverDash');
   const driverPayoutPendingEl   = document.getElementById('driverPayoutPending');
@@ -1060,7 +1037,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const driverZoneDisplayEl = document.getElementById('driverZoneDisplay');
   const driverRadiusDisplayEl = document.getElementById('driverRadiusDisplay');
 
-  // Admin panel refs
   const ordersPanel         = document.getElementById('ordersPanel');
   const ordersList          = document.getElementById('ordersList');
   const ordersClose         = document.getElementById('closeOrdersPanel');
@@ -1068,16 +1044,13 @@ window.addEventListener('DOMContentLoaded', () => {
   const ordersRefresh       = document.getElementById('ordersRefresh');
   let   ordersTab           = 'pending';
 
-  // Drivers section (optional if present in HTML)
   const driversList         = document.getElementById('driversList');
   const driversRefresh      = document.getElementById('driversRefresh');
 
-  // Optional Admin "Pay Drivers" summary widgets
   const adminDriversCountEl   = document.getElementById('adminDriversCount');
   const adminPayPendingEl     = document.getElementById('adminPayPending');
   const adminPayApprovedEl    = document.getElementById('adminPayApproved');
 
-  // === Store modal refs (these were missing and caused ReferenceErrors) ===
   const storeModal          = document.getElementById('storeModal');
   const openStoreFooter     = document.getElementById('openStoreModalFooter');
   const closeStoreModalBtn  = document.getElementById('closeStoreModal');
@@ -1089,12 +1062,13 @@ window.addEventListener('DOMContentLoaded', () => {
   const storePhoneEl        = document.getElementById('storePhone');
   const storeZoneEl         = document.getElementById('storeZone');
 
-  // === “Collection points” (replace zones) ===
+  // === COLLECTION POINTS ===
   const COLLECTIONS = [
     { id:'DEPOT-PA',   name:'Default Depot — Port Alfred', lat:-33.590, lng:26.890 },
     { id:'DEPOT-KENT', name:'Kenton-on-Sea Depot',         lat:-33.686, lng:26.668 },
     { id:'DEPOT-GHT',  name:'Makhanda / Grahamstown',      lat:-33.310, lng:26.520 }
   ];
+
   function ensureCollectionSelectPopulated(){
     if(!zoneSelect) return;
     if(zoneSelect.dataset.enhanced === '1') return;
@@ -1111,7 +1085,7 @@ window.addEventListener('DOMContentLoaded', () => {
     zoneSelect.dataset.enhanced = '1';
   }
 
-  // === CATALOG (starter items) ===
+  // === CATALOG ===
   const CATALOG = [
     {name:'Panado 500mg (24s)',price:35},
     {name:'Allergex 10mg (10s)',price:30},
@@ -1120,7 +1094,7 @@ window.addEventListener('DOMContentLoaded', () => {
     {name:'Bandages (set)',price:25}
   ];
 
-  // === PERSISTENCE LAYER (localStorage) ===
+  // === PERSISTENCE LAYER ===
   function saveOrdersToLS(){
     try{ localStorage.setItem(LS_ORDERS, JSON.stringify(DEMO_ORDERS_DB)); }catch(_){}
   }
@@ -1135,11 +1109,10 @@ window.addEventListener('DOMContentLoaded', () => {
   function loadDriversFromLS(){
     let parsed=null;
     try{ parsed = JSON.parse(localStorage.getItem(LS_DRIVERS)||'null'); }catch(_){}
-    return (parsed && typeof parsed==='object']) ? parsed : null;
+    return (parsed && typeof parsed==='object') ? parsed : null;
   }
 
   function seedIfEmpty(){
-    // Seed drivers
     if(!DEMO_DRIVERS_DB || Object.keys(DEMO_DRIVERS_DB).length===0){
       DEMO_DRIVERS_DB = {
         "DRV-100001": { driver_id:"DRV-100001", name:"Sipho N", phone:"27810000001", vehicle:"Bike",
@@ -1150,7 +1123,6 @@ window.addEventListener('DOMContentLoaded', () => {
                         stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
       };
     }
-    // Seed orders
     if(!DEMO_ORDERS_DB || Object.keys(DEMO_ORDERS_DB).length===0){
       const o = (id, total, delivery_fee, status, driver_id=null) => ({
         _internal_id: id,
@@ -1176,15 +1148,13 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // (Re)hydrate from localStorage, seed defaults if empty, then recompute driver stats.
   function hydrateState(){
     const o = loadOrdersFromLS();
     const d = loadDriversFromLS();
     DEMO_ORDERS_DB  = o || {};
     DEMO_DRIVERS_DB = d || {};
-    seedIfEmpty(); // fills any missing baseline
+    seedIfEmpty();
 
-    // Recompute driver stats & payouts from the order ledger (single source of truth)
     Object.values(DEMO_DRIVERS_DB).forEach(dr=>{
       dr.stats = {assigned:0,in_transit:0,delivered:0};
       dr.payout_pending = 0;
@@ -1238,7 +1208,6 @@ window.addEventListener('DOMContentLoaded', () => {
     return el ? el.value : 'card';
   };
 
-  // Try get customer coords
   function tryGetCustomerCoords(){
     return new Promise((resolve)=>{
       if(!navigator.geolocation){ return resolve(null); }
@@ -1250,7 +1219,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // OSRM distance (driving). Fallback to haversine.
   async function osrmDistanceMeters(a,b){
     try{
       const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`;
@@ -1262,7 +1230,6 @@ window.addEventListener('DOMContentLoaded', () => {
     return kmBetween(a,b)*1000;
   }
 
-  // === COMPUTE TOTAL + structured summary ===
   async function computeTotal(){
     ensureCollectionSelectPopulated();
 
@@ -1281,25 +1248,22 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const itemsTotal = items.reduce((sum,it)=> sum + (it.price * it.qty), 0);
 
-    // Resolve collection (hub)
     const opt = zoneSelect?.options?.[zoneSelect.selectedIndex] || {};
     const hubLat = Number(opt?.dataset?.lat ?? COLLECTION_COORDS.lat);
     const hubLng = Number(opt?.dataset?.lng ?? COLLECTION_COORDS.lng);
     const collectionName = opt?.textContent || 'Default Depot';
     COLLECTION_COORDS = {lat:hubLat, lng:hubLng};
 
-    // Resolve customer coords (cached)
     if(!DELIVERY_COORDS){
       DELIVERY_COORDS = await tryGetCustomerCoords();
     }
 
-    // Distance km (driving if OSRM works)
     let distanceKm = 0;
     if(DELIVERY_COORDS){
       const meters = await osrmDistanceMeters(COLLECTION_COORDS, DELIVERY_COORDS);
       distanceKm = Math.max(0, meters/1000);
     } else {
-      distanceKm = 3; // fallback heuristic
+      distanceKm = 3;
     }
 
     const rushFee = rushToggle?.checked ? RUSH_FEE : 0;
@@ -1321,12 +1285,11 @@ window.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // helpers for ETA text
   const pad2 = (n)=> String(n).padStart(2,'0');
   function nextETA(rush){
     const now     = new Date();
     const windows = [[8,10],[12,14],[16,18]];
-    const allowed = new Set([0,3,4,5,6]); // Sun, Wed, Thu, Fri, Sat
+    const allowed = new Set([0,3,4,5,6]);
     const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
     const fmt = (date,[h1,h2])=>{
@@ -1363,7 +1326,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // === MODAL OPEN/CLOSE WRAPPERS ===
+  // === MODAL WRAPPERS ===
   const openOrder  = async ()=>{ openFlex(modal); const s = await computeTotal(); toggleDepositBanner(s.total); };
   const closeOrder = ()=> closeFlex(modal);
 
@@ -1404,7 +1367,6 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   const closeDriverDashWindow = ()=> closeFlex(driverDashModal);
 
-  // append a chat bubble in checkout modal
   function appendBot(msg,who='bot'){
     if(!botFeed) return;
     const wrap=document.createElement('div');
@@ -1417,7 +1379,7 @@ window.addEventListener('DOMContentLoaded', () => {
     botFeed.scrollTop = botFeed.scrollHeight;
   }
 
-  // === MOBILE NAV TOGGLE ===
+  // === MOBILE NAV ===
   function toggleMobileMenu() {
     if(!mobileDropdown || !mobileBtn || !mobileIconOpen || !mobileIconClose) return;
     const isHidden = mobileDropdown.classList.contains('hidden');
@@ -1435,7 +1397,6 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   mobileBtn?.addEventListener('click', toggleMobileMenu);
 
-  // Close mobile menu when navigating
   document.querySelectorAll('#mobileNavDropdown .mobile-nav-link').forEach(el => {
     el.addEventListener('click', () => {
       if(!mobileDropdown || !mobileBtn || !mobileIconOpen || !mobileIconClose) return;
@@ -1446,7 +1407,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Bridge mobile menu CTA buttons to desktop handlers
   document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{
     document.getElementById('openOrderBuilder')?.click();
   });
@@ -1457,12 +1417,11 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('adminLoginBtn')?.click();
   });
 
-  // “Drive with us” CTA
   document.getElementById('openDriverModalSection')?.addEventListener('click', ()=>{
     document.getElementById('openDriverModal')?.click();
   });
 
-  // === INIT CART UI ===
+  // === INIT ===
   renderItems();
   ensureCollectionSelectPopulated();
   computeTotal();
@@ -1484,7 +1443,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Persist & prefill customer details
   [custNameEl, custPhoneEl, custAddrEl].forEach((el)=>{
     if(!el) return;
     const key = 'yt_'+el.id;
@@ -1493,7 +1451,6 @@ window.addEventListener('DOMContentLoaded', () => {
     el.addEventListener('input', ()=> localStorage.setItem(key, el.value));
   });
 
-  // Add custom item to basket
   addStoreItemBtn?.addEventListener('click', e=>{
     e.preventDefault();
     const name = prompt('Item name');
@@ -1505,14 +1462,13 @@ window.addEventListener('DOMContentLoaded', () => {
     computeTotal().then(s=>toggleDepositBanner(s.total));
   });
 
-  // === MODAL CLOSE BUTTONS ===
+  // === MODAL CLOSES ===
   document.getElementById('closeBot')?.addEventListener('click', closeBot);
   closeBtn?.addEventListener('click', closeOrder);
   cancelOrderBuilder?.addEventListener('click', closeOrder);
   closePayModalBtn?.addEventListener('click', closePayModal);
   btnCancelPay?.addEventListener('click', closePayModal);
 
-  // === Payment demo action ===
   btnFakePayNow?.addEventListener('click', ()=>{
     alert('No money taken. Demo only.');
     closePayModal();
@@ -1525,20 +1481,17 @@ window.addEventListener('DOMContentLoaded', () => {
     botStage = 2;
   });
 
-  // === OPEN ORDER MODAL BUTTONS ===
   ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.addEventListener('click', openOrder);
   });
 
-  // === DRIVER MODAL open/close ===
-  ;['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
+  ['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){ el.addEventListener('click',openDriverWindow); }
   });
   closeDriver?.addEventListener('click',closeDriverWindow);
 
-  // Driver tabs
   tabSignup?.addEventListener('click',()=>{
     tabSignup.classList.add('bg-emerald-600','text-white');
     tabLogin.classList.remove('bg-emerald-600','text-white');
@@ -1556,7 +1509,6 @@ window.addEventListener('DOMContentLoaded', () => {
     tabLogin.setAttribute('aria-selected','true');
   });
 
-  // === DRIVER DASH close ===
   closeDriverDash?.addEventListener('click', closeDriverDashWindow);
 
   // === STORE MODAL ===
@@ -1576,7 +1528,6 @@ window.addEventListener('DOMContentLoaded', () => {
       storeItemsList.appendChild(row);
     });
 
-    // hook remove buttons
     storeItemsList.querySelectorAll('.removeStoreItem').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const i = Number(btn.getAttribute('data-idx'));
@@ -1590,20 +1541,10 @@ window.addEventListener('DOMContentLoaded', () => {
   closeStoreModalBtn?.addEventListener('click', closeStore);
   cancelStoreBtn?.addEventListener('click', closeStore);
 
-  addStoreItemBtn?.addEventListener('click', e=>{
-    e.preventDefault();
-    const name = prompt('Item name?');
-    const priceVal = prompt('Price (R)?');
-    const price = Number(priceVal);
-    if(!name || !Number.isFinite(price) || price<=0){ return; }
-    storeItems.push({name, price});
-    renderStoreItems();
-  });
-
   submitStoreBtn?.addEventListener('click', async ()=>{
     const storeName  = storeNameEl?.value.trim();
     const storePhone = digits(storePhoneEl?.value.trim());
-    const zone       = storeZoneEl?.value || 'A'; // legacy
+    const zone       = storeZoneEl?.value || 'A';
     if(!storeName || !storePhone){
       alert("Please add store name & WhatsApp.");
       return;
@@ -1616,7 +1557,7 @@ window.addEventListener('DOMContentLoaded', () => {
       store_id: `STORE-${Date.now().toString().slice(-6)}`,
       name: storeName,
       phone: storePhone,
-      zone, // legacy field
+      zone,
       items: storeItems.map(it=>({ name: it.name, price: it.price }))
     };
 
@@ -1646,7 +1587,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     alert("Thanks! We'll review your store.");
     closeStore();
 
-    // reset form
     if(storeNameEl) storeNameEl.value = '';
     if(storePhoneEl) storePhoneEl.value = '';
     if(storeZoneEl)  storeZoneEl.value = 'A';
@@ -1663,7 +1603,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     if(ordersPanel && !ordersPanel.classList.contains('hidden')) { renderOrders(); renderDrivers(); }
   });
 
-  // REAL refresh: reload from LS, recompute, re-render
   function hardRefresh(){
     hydrateState();
     computeDriverTotalsFromDB();
@@ -1700,7 +1639,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     recalcAdminPayoutWidgets();
   }
 
-  // Simple round-robin driver selector
   let rrIdx = 0;
   function pickDriverId(){
     const ids = Object.keys(DEMO_DRIVERS_DB);
@@ -1715,7 +1653,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     if(!o) return null;
     mut(o);
     saveOrdersToLS();
-    // recompute driver stats from ledger
     hydrateState();
     window.dispatchEvent(new Event('yt-orders-updated'));
     return o;
@@ -1739,7 +1676,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
-    // Backend path (unchanged)
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
         method: "POST",
@@ -1764,7 +1700,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   async function markDelivered(internalId){
     if(!internalId){ alert("Missing order id."); return; }
 
-  if(DEMO_MODE){
+    if(DEMO_MODE){
       mutateOrder(internalId, (o)=>{
         const pay = calcDriverPayout(o);
         o.status = 'delivered';
@@ -1778,7 +1714,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
-    // Backend path (unchanged)
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
         method: "POST",
@@ -1845,7 +1780,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
-  // update tab UI
   document.querySelectorAll('.yt-o-tab').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       document.querySelectorAll('.yt-o-tab')
@@ -1860,7 +1794,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   });
 
-  // Admin PIN gate (front-end demo; use ADMIN_SECRET on backend)
   adminBtn?.addEventListener('click', ()=>{
     const pin = prompt('Enter admin PIN:');
     if(pin && pin.trim() !== ""){
@@ -1871,7 +1804,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   });
 
-  // Fetch orders by status (demo uses local DB)
   async function fetchOrdersByStatus(status){
     if(DEMO_MODE){
       return Object.values(DEMO_ORDERS_DB).filter(o => o.status === status);
@@ -1888,7 +1820,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   }
 
-  // Render orders
   async function renderOrders(){
     if(!ordersList) return;
     const data = await fetchOrdersByStatus(ordersTab);
@@ -1913,7 +1844,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         : "";
       const driverName = (o.driver_id && DEMO_DRIVERS_DB[o.driver_id]) ? DEMO_DRIVERS_DB[o.driver_id].name : '—';
 
-      // driver pay
       let driverPayText = "Driver pay: R0";
       let driverPayStatusText = "Status: –";
       if(o.driver_pay_status === "pending"){
@@ -1972,7 +1902,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ordersList.appendChild(row);
     }
 
-    // wire buttons
     ordersList.querySelectorAll('.btn-assign').forEach(btn=>{
       btn.addEventListener('click', ()=> assignOneOrder(btn.getAttribute('data-id')));
     });
@@ -1992,9 +1921,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   }
 
-  // === DRIVERS SECTION RENDER ===
   function renderDrivers(){
-    if(!driversList) return; // optional
+    if(!driversList) return;
     const drivers = Object.values(DEMO_DRIVERS_DB);
     driversList.innerHTML = '';
     if(drivers.length===0){
@@ -2028,7 +1956,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       driversList.appendChild(row);
     }
 
-    // Approve pay per driver: flip all that driver's pending order payouts to approved
     driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const did = btn.getAttribute('data-id');
@@ -2052,7 +1979,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   }
 
-  // === MAP SETUP with road-snapped animation (GREEN + car icons) ===
+  // === MAP SETUP ===
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
     if(!heroEl){ return; }
@@ -2092,7 +2019,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     function spawnLocalTraffic(center, count){
       for(let i=0;i<count;i++){
-        const r    = 0.01 + Math.random()*0.02; // ~1–3km radius wiggle
+        const r    = 0.01 + Math.random()*0.02;
         const ang0 = Math.random()*Math.PI*2;
         const spd  = 0.4 + Math.random()*0.6;
         const m    = L.marker(
@@ -2155,7 +2082,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           throw new Error("Leaflet not loaded");
         }
 
-        const heroMap = L.map(heroEl,{
+        heroMap = L.map(heroEl,{
           zoomControl:false,
           dragging:false,
           scrollWheelZoom:false,
@@ -2164,7 +2091,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           touchZoom:false
         }).setView([-33.20, 26.55], 8);
 
-        // Keep basemap neutral, we use GREEN overlays
         L.tileLayer(
           'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
           { attribution:'', opacity:0.98, noWrap:true, detectRetina:true }
@@ -2172,7 +2098,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
         heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
 
-        // Build a few routes between depots
         const pairs = [
           [COLLECTIONS[0], COLLECTIONS[1]],
           [COLLECTIONS[1], COLLECTIONS[2]],
@@ -2185,21 +2110,18 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           routes.push(rr || buildStraight({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng}));
         }
 
-        // Draw GREEN polylines & spawn movers (cars + parcels)
         const movers = [];
         routes.forEach((latlngs)=>{
           L.polyline(latlngs,{weight:3, opacity:.55, color:emerald[500]}).addTo(heroMap);
           const {lensKm,totalKm} = cumulativeLengths(latlngs);
 
-          // cars
           for(let i=0;i<3;i++){
             const m = L.marker(latlngs[0],{icon:carIcon()}).addTo(heroMap);
-            const speed = 0.15 + Math.random()*0.1; // fraction / s
+            const speed = 0.15 + Math.random()*0.1;
             const dir   = Math.random()<.5 ? 1 : -1;
             const start = Math.random();
             movers.push({m, latlngs, lensKm, totalKm, t:start, speed, dir});
           }
-          // parcels (emerald)
           for(let i=0;i<2;i++){
             const m = L.marker(latlngs[0],{icon:pkgIcon}).addTo(heroMap);
             const speed = 0.18 + Math.random()*0.1;
@@ -2229,7 +2151,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         setTimeout(()=>{ try{ heroMap.invalidateSize(); }catch(_){}; centerMapHeuristic(); },180);
         window.addEventListener('resize',()=>{ try{ heroMap.invalidateSize(); }catch(_){}});
 
-        // DRIVER SIGNUP hook (zone-less)
         formSignup?.addEventListener('submit', async e=>{
           e.preventDefault();
           const name    = document.getElementById('drvName')?.value.trim();
@@ -2238,7 +2159,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           const vehicle = document.getElementById('drvVehicle')?.value.trim();
           if(!name || !phone){ alert("Please enter name and phone."); return; }
 
-          // Place them near current collection for demo
           const jitter = ()=>{
             const d=(1500)/111111, a=Math.random()*Math.PI*2, r=Math.random()*d;
             return { lat: COLLECTION_COORDS.lat + r*Math.cos(a), lng: COLLECTION_COORDS.lng + r*Math.sin(a) };
@@ -2273,7 +2193,6 @@ Vehicle: ${vehicle}`;
     })();
   })();
 
-  // === fake driver login (front-end demo; real flow uses /driver_login)
   formLogin?.addEventListener('submit',e=>{
     e.preventDefault();
     alert('Logged in (demo). Opening dashboard.');
@@ -2281,7 +2200,7 @@ Vehicle: ${vehicle}`;
     if(driverDashModal){ openDriverDash(); }
   });
 
-  // === SUBMIT ORDER (Create order -> open checkout bot) ===
+  // === SUBMIT ORDER ===
   confirmBtn2?.addEventListener('click', async ()=>{
     confirmBtn2.disabled = true;
     try{
@@ -2325,7 +2244,6 @@ Vehicle: ${vehicle}`;
         const refStub = Date.now().toString().slice(-6);
         const internalId = "demo-" + refStub.toLowerCase();
         const driverPay  = clamp(orderPayload.delivery_fee,25,45);
-        // auto-assign a driver immediately for demo UX (can be reassigned later)
         const did = pickDriverId();
         DEMO_ORDERS_DB[internalId] = {
           _internal_id: internalId,
@@ -2402,7 +2320,6 @@ Vehicle: ${vehicle}`;
         }
       }
 
-      // SUCCESS UI -> open bot-style checkout
       closeOrder();
       openBot();
 
@@ -2439,7 +2356,7 @@ Vehicle: ${vehicle}`;
       if(pay === 'eft'){
         appendBot(
           `<b>Instant EFT (Ozow)</b><br/>
-           We’ll WhatsApp you a secure Ozow link.<br/>
+           We'll WhatsApp you a secure Ozow link.<br/>
            Use ref <code>${latestOrderData.order_public_id}</code>.`
         );
       } else if(pay === 'card'){
@@ -2489,22 +2406,22 @@ Vehicle: ${vehicle}`;
     alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
   });
 
-  // === NEW ORDER after fake pay ===
+  // === NEW ORDER ===
   botNewOrder?.addEventListener('click', ()=>{
     closeBot();
     openOrder();
   });
 
-  // === INITIALIZE STORE ITEMS VIEW & DASH NUMBERS ===
+  // === INITIALIZE ===
   renderStoreItems();
   computeDriverTotalsFromDB();
   if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
   if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
   recalcAdminPayoutWidgets();
 
-  // Initial render for admin panels if open later
   renderDrivers();
 });
+
 </script>
 
 
