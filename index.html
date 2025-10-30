@@ -888,28 +888,43 @@
 
 <script>
 /**
- * YiThume front-end (single-file demo)
- * - Order builder with items, zones, rush, and payment choices
- * - Bot-style checkout -> WhatsApp confirmation
- * - Driver signup/login + demo dashboard
- * - Admin orders panel with stable in-memory demo DB (no blinking)
- * - Stages: pending -> assigned -> in_transit -> delivered
- * - Driver payout = delivery fee, clamped to R25–R45 (not % of basket)
- * - Live animated map using Leaflet + extra "local traffic" around user
- * - Map focus: user location > where most cars are > fallback view
- * - Admin pay drivers roll-up (pending vs approved) widgets
+ * YiThume front-end (single-file demo) — Distance based + road-snapped cars
+ * Changes in this version:
+ * 1) Removed zones. Delivery fee = BASE + (per-km × route distance). Rush optional.
+ * 2) “Store / Collection point” picker (repurposes #zoneSelect if present).
+ * 3) Uses browser geolocation for the customer location (fallback to manual text).
+ * 4) Orders created in DEMO mode are now inserted into the in-memory DB so the admin sees ALL orders.
+ * 5) Car + parcel animation follows real roads using OSRM (fallback to straight segments if OSRM blocked).
+ * 6) Minor a11y fixes and defensive guards.
+ *
+ * NOTE: These hooks expect existing HTML ids:
+ * - #zoneSelect (now acts as “collection point” select), #rushToggle, #orderTotal, #custName, #custPhone, #custAddress
+ * - Modals / admin ids unchanged.
  */
 window.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & GLOBALS ===
-  const BASE_API = "/api/app";                 // backend base (replace when deploying API)
-  const WHATSAPP_NUMBER = "270691456201";      // public WhatsApp for order confirmations
-  const ADMIN_WHATSAPP  = "270691456201";      // admin WhatsApp for internal alerts
-  const DEMO_MODE       = true;                // set to false when backend is ready
+  const BASE_API        = "/api/app";                 // backend base (replace when deploying API)
+  const WHATSAPP_NUMBER = "270691456201";             // public WhatsApp for order confirmations
+  const ADMIN_WHATSAPP  = "270691456201";             // admin WhatsApp for internal alerts
+  const DEMO_MODE       = true;                       // set to false when backend is ready
 
-  // Basic helpers
+  // Delivery math (private in UI)
+  const BASE_DELIVERY_FEE = 15;      // R
+  const PER_KM_PRICE      = 8;       // R / km
+  const RUSH_FEE          = 30;      // R
+
+  // Helpers
   const waText = (str) => encodeURIComponent(str);
   const digits = (val) => (val || "").replace(/\D+/g, "");
   const clamp  = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
+  const kmBetween = (a,b)=>{
+    if(!a||!b) return 0;
+    const R = 6371; // km
+    const dLat = (b.lat-a.lat)*Math.PI/180;
+    const dLng = (b.lng-a.lng)*Math.PI/180;
+    const s1 = Math.sin(dLat/2)**2 + Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2;
+    return 2*R*Math.asin(Math.sqrt(s1));
+  };
 
   // === BODY SCROLL LOCK + FOCUS RESTORE (for a11y) ===
   const lastFocus = new Map();
@@ -935,7 +950,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if(prev && typeof prev.focus === 'function') prev.focus();
   }
 
-  // ESC closes the topmost visible modal
+  // ESC closes topmost modal
   document.addEventListener('keydown', (e)=>{
     if(e.key !== 'Escape') return;
     const modals = [
@@ -954,49 +969,47 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // === RUNTIME / GLOBAL STATE ===
   let latestOrderData = null;  // current order context for bot/WA handoff
-  let zoneDemandStats = {};    // optional: {A:{misses:1}, ...} from backend
   let botStage = 0;            // 0: pre-pay, 1: fake pay open, 2: paid (demo)
-  const currentOrdersByTab = {}; // cache (rendered view) per admin tab
+  const currentOrdersByTab = {}; // cache per admin tab
 
-  // DEMO: stable in-memory "database" so orders don't blink away between renders
+  // Customer and collection coords
+  let DELIVERY_COORDS   = null; // {lat,lng} (from geolocation)
+  let COLLECTION_COORDS = {lat:-33.590, lng:26.890}; // default depot
+
+  // DEMO: stable in-memory "database"
   const DEMO_ORDERS_DB = (() => {
-    const nowRef = () => "DEMO-" + Date.now().toString().slice(-6);
-    const o = (id, zone, total, delivery_fee, status) => ({
+    const o = (id, total, delivery_fee, status) => ({
       _internal_id: id,
       order_id: id.replace("demo-","YI-").toUpperCase(),
       order_public_id: id.toUpperCase(),
       status,
       total,
-      delivery_fee,         // base + rush from creation
+      delivery_fee,
       items: [{name:"Panado 500mg (24s)",qty:1},{name:"Cough Syrup 100ml",qty:1}],
-      meta: { zone },
+      meta: { collection_name: 'Default Depot', distance_km: 3.2 },
       fraud_score: 0.04,
       driver_pay_status: status === 'delivered' ? 'approved' : 'pending',
       driver_pay_pending: status === 'delivered' ? 0 : clamp(delivery_fee,25,45),
       driver_pay_approved: status === 'delivered' ? clamp(delivery_fee,25,45) : 0
     });
     const seed = {
-      "demo-abc123": o("demo-abc123","A", 180, 35, "pending"),
-      "demo-def456": o("demo-def456","C", 240, 45, "assigned"),
-      "demo-ghi789": o("demo-ghi789","D", 120, 25, "in_transit"),
-      "demo-jkl012": o("demo-jkl012","B", 220, 30, "delivered"),
+      "demo-abc123": o("demo-abc123",180,35,"pending"),
+      "demo-def456": o("demo-def456",240,45,"assigned"),
+      "demo-ghi789": o("demo-ghi789",120,25,"in_transit"),
+      "demo-jkl012": o("demo-jkl012",220,30,"delivered"),
     };
-    // helper to add a fresh pending to show dynamics
-    seed["demo-"+nowRef().slice(-6).toLowerCase()] = o("demo-"+nowRef().slice(-6).toLowerCase(),"E", 160, 40, "pending");
     return seed;
   })();
 
   // payout = delivery fee only (clamped 25–45)
   function calcDriverPayout(order){
     const fee = Number(order?.delivery_fee ?? 0);
-    const zoneBase = ({A:30,B:30,C:35,D:35,E:40})[order?.meta?.zone] ?? 30;
-    return clamp(fee || zoneBase, 25, 45);
+    return clamp(fee, 25, 45);
   }
 
-  // lightweight in-memory driver balances for demo (derived from DB)
   const driverTotals = { pending: 0, approved: 0 };
 
-  // store onboarding state (Add Your Store modal)
+  // store onboarding state
   const storeItems = []; // {name, price}
 
   // === YEAR FOOTER ===
@@ -1004,7 +1017,6 @@ window.addEventListener('DOMContentLoaded', () => {
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
   // === ELEMENT REFS ===
-  // mobile nav
   const mobileBtn       = document.getElementById('mobileMenuBtn');
   const mobileDropdown  = document.getElementById('mobileNavDropdown');
   const mobileIconOpen  = document.getElementById('mobileMenuIconOpen');
@@ -1016,7 +1028,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const closeBtn            = document.getElementById('closeOrderBuilder');
   const cancelOrderBuilder  = document.getElementById('cancelOrderBuilder');
   const itemsList           = document.getElementById('itemsList');
-  const zoneSelect          = document.getElementById('zoneSelect');
+
+  // REPURPOSED: zoneSelect -> collection (hub) select
+  const zoneSelect          = document.getElementById('zoneSelect'); // keep id for compatibility
   const rushToggle          = document.getElementById('rushToggle');
   const totalEl             = document.getElementById('orderTotal');
   const rushNote            = document.getElementById('rushNote');
@@ -1063,9 +1077,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const driverZoneDisplayEl = document.getElementById('driverZoneDisplay');
   const driverRadiusDisplayEl = document.getElementById('driverRadiusDisplay');
 
-  // For "Drive with us" CTA
-  const openDriverModalSection = document.getElementById('openDriverModalSection');
-
   // Admin panel refs
   const ordersPanel         = document.getElementById('ordersPanel');
   const ordersList          = document.getElementById('ordersList');
@@ -1074,15 +1085,12 @@ window.addEventListener('DOMContentLoaded', () => {
   const ordersRefresh       = document.getElementById('ordersRefresh');
   let   ordersTab           = 'pending';
 
-  // Admin mobile buttons (mirror desktop)
-  const adminBtnMobile      = document.getElementById('adminLoginBtnMobile');
-
   // Optional Admin "Pay Drivers" summary widgets
   const adminDriversCountEl   = document.getElementById('adminDriversCount');
   const adminPayPendingEl     = document.getElementById('adminPayPending');
   const adminPayApprovedEl    = document.getElementById('adminPayApproved');
 
-  // Store modal refs
+  // Store modal refs (unchanged)
   const storeModal          = document.getElementById('storeModal');
   const openStoreFooter     = document.getElementById('openStoreModalFooter');
   const closeStoreModalBtn  = document.getElementById('closeStoreModal');
@@ -1093,6 +1101,28 @@ window.addEventListener('DOMContentLoaded', () => {
   const storeNameEl         = document.getElementById('storeName');
   const storePhoneEl        = document.getElementById('storePhone');
   const storeZoneEl         = document.getElementById('storeZone');
+
+  // === “Collection points” (replace zones) ===
+  const COLLECTIONS = [
+    { id:'DEPOT-PA',   name:'Default Depot — Port Alfred', lat:-33.590, lng:26.890 },
+    { id:'DEPOT-KENT', name:'Kenton-on-Sea Depot',         lat:-33.686, lng:26.668 },
+    { id:'DEPOT-GHT',  name:'Makhanda / Grahamstown',      lat:-33.310, lng:26.520 }
+  ];
+  function ensureCollectionSelectPopulated(){
+    if(!zoneSelect) return;
+    if(zoneSelect.dataset.enhanced === '1') return;
+    zoneSelect.innerHTML = '';
+    COLLECTIONS.forEach((c,i)=>{
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      opt.dataset.lat = String(c.lat);
+      opt.dataset.lng = String(c.lng);
+      if(i===0){ opt.selected = true; COLLECTION_COORDS = {lat:c.lat,lng:c.lng}; }
+      zoneSelect.appendChild(opt);
+    });
+    zoneSelect.dataset.enhanced = '1';
+  }
 
   // === CATALOG (starter items) ===
   const CATALOG = [
@@ -1135,16 +1165,37 @@ window.addEventListener('DOMContentLoaded', () => {
     return el ? el.value : 'card';
   };
 
-  // === COMPUTE TOTAL + return structured summary (for order payload) ===
-  function computeTotal(){
-    if(!zoneSelect || !totalEl || !rushNote){
-      return { items:[], itemsTotal:0, fee:0, rush:0, total:0, zoneVal:'A', hubLat:-33.59, hubLng:26.89 };
-    }
+  // Try get customer coords
+  function tryGetCustomerCoords(){
+    return new Promise((resolve)=>{
+      if(!navigator.geolocation){ return resolve(null); }
+      navigator.geolocation.getCurrentPosition(
+        pos=> resolve({lat:pos.coords.latitude, lng:pos.coords.longitude}),
+        ()=> resolve(null),
+        { enableHighAccuracy:true, timeout:2500 }
+      );
+    });
+  }
 
-    const opt     = zoneSelect.options[zoneSelect.selectedIndex] || {};
-    const feeBase = Number(opt.dataset?.fee || 0);
-    const rushFee = rushToggle?.checked ? 30 : 0;
-    rushNote.textContent = rushFee ? ' + rush' : '';
+  // OSRM distance (driving). Fallback to haversine.
+  async function osrmDistanceMeters(a,b){
+    try{
+      const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`;
+      const r = await fetch(url);
+      const j = await r.json();
+      const meters = j?.routes?.[0]?.distance;
+      if(Number.isFinite(meters)){ return meters; }
+    }catch(_){}
+    return kmBetween(a,b)*1000;
+  }
+
+  // === COMPUTE TOTAL + structured summary ===
+  async function computeTotal(){
+    ensureCollectionSelectPopulated();
+
+    if(!totalEl || !rushNote){
+      return { items:[], itemsTotal:0, fee:0, rush:0, total:0, collectionName:'Default Depot', hubLat:COLLECTION_COORDS.lat, hubLng:COLLECTION_COORDS.lng, distanceKm:0 };
+    }
 
     const items = Array.from(document.querySelectorAll('.itemCheck'))
       .filter(c => c.checked)
@@ -1152,37 +1203,57 @@ window.addEventListener('DOMContentLoaded', () => {
         const i   = Number(c.dataset.idx);
         const qtyInput = document.querySelector(`.itemQty[data-idx="${i}"]`);
         const qty = Math.max(1, Number(qtyInput?.value || 1));
-        return {
-          name:  CATALOG[i].name,
-          price: Number(CATALOG[i].price),
-          qty:   qty
-        };
+        return { name: CATALOG[i].name, price: Number(CATALOG[i].price), qty };
       });
 
     const itemsTotal = items.reduce((sum,it)=> sum + (it.price * it.qty), 0);
-    const total      = itemsTotal + feeBase + rushFee;
 
+    // Resolve collection (hub)
+    const opt = zoneSelect?.options?.[zoneSelect.selectedIndex] || {};
+    const hubLat = Number(opt?.dataset?.lat ?? COLLECTION_COORDS.lat);
+    const hubLng = Number(opt?.dataset?.lng ?? COLLECTION_COORDS.lng);
+    const collectionName = opt?.textContent || 'Default Depot';
+    COLLECTION_COORDS = {lat:hubLat, lng:hubLng};
+
+    // Resolve customer coords (cached)
+    if(!DELIVERY_COORDS){
+      DELIVERY_COORDS = await tryGetCustomerCoords();
+    }
+
+    // Distance km (driving if OSRM works)
+    let distanceKm = 0;
+    if(DELIVERY_COORDS){
+      const meters = await osrmDistanceMeters(COLLECTION_COORDS, DELIVERY_COORDS);
+      distanceKm = Math.max(0, meters/1000);
+    } else {
+      distanceKm = 3; // fallback heuristic
+    }
+
+    const rushFee = rushToggle?.checked ? RUSH_FEE : 0;
+    rushNote.textContent = rushFee ? ' + rush' : '';
+
+    const deliveryFee = Math.round(BASE_DELIVERY_FEE + (PER_KM_PRICE * distanceKm));
+
+    const total = itemsTotal + deliveryFee + rushFee;
     totalEl.textContent = String(total);
+
     return {
-      items,
-      itemsTotal,
-      fee: feeBase,
+      items, itemsTotal,
+      fee: deliveryFee,
       rush: rushFee,
       total,
-      zoneVal: opt.value || 'A',
-      hubLat: Number(opt.dataset?.lat ?? -33.59),
-      hubLng: Number(opt.dataset?.lng ?? 26.89)
+      collectionName,
+      hubLat, hubLng,
+      distanceKm
     };
   }
 
   // helpers for ETA text
   const pad2 = (n)=> String(n).padStart(2,'0');
-
   function nextETA(rush){
     const now     = new Date();
     const windows = [[8,10],[12,14],[16,18]];
-    // delivery days: Sun(0) Wed(3) Thu(4) Fri(5) Sat(6)
-    const allowed = new Set([0,3,4,5,6]);
+    const allowed = new Set([0,3,4,5,6]); // Sun, Wed, Thu, Fri, Sat
     const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
     const fmt = (date,[h1,h2])=>{
@@ -1220,7 +1291,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // === MODAL OPEN/CLOSE WRAPPERS ===
-  const openOrder  = ()=>{ openFlex(modal); const s = computeTotal(); toggleDepositBanner(s.total); };
+  const openOrder  = async ()=>{ openFlex(modal); const s = await computeTotal(); toggleDepositBanner(s.total); };
   const closeOrder = ()=> closeFlex(modal);
 
   const openBot = ()=>{
@@ -1254,7 +1325,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const closeOrders= ()=> closeFlex(ordersPanel);
 
   const openDriverDash = ()=>{
-    // refresh dashboard numbers before showing
     if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
     if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
     openFlex(driverDashModal);
@@ -1273,15 +1343,6 @@ window.addEventListener('DOMContentLoaded', () => {
     botFeed.appendChild(wrap);
     botFeed.scrollTop = botFeed.scrollHeight;
   }
-
-  // build a small “no driver demand” badge for admin list
-  const demandBadge = (zone)=>{
-    const missCount = zoneDemandStats[zone]?.misses || 0;
-    if(missCount === 0) return "";
-    return `<span class="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-      demand ${missCount}x / no driver
-    </span>`;
-  };
 
   // === MOBILE NAV TOGGLE ===
   function toggleMobileMenu() {
@@ -1323,33 +1384,34 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('adminLoginBtn')?.click();
   });
 
-  // "Drive with us" CTA
-  openDriverModalSection?.addEventListener('click', ()=>{
+  // “Drive with us” CTA
+  document.getElementById('openDriverModalSection')?.addEventListener('click', ()=>{
     document.getElementById('openDriverModal')?.click();
   });
 
   // === INIT CART UI ===
   renderItems();
+  ensureCollectionSelectPopulated();
   computeTotal();
 
-  zoneSelect?.addEventListener('change', ()=>{
-    const s = computeTotal(); toggleDepositBanner(s.total);
+  zoneSelect?.addEventListener('change', async ()=>{
+    const s = await computeTotal(); toggleDepositBanner(s.total);
   });
-  rushToggle?.addEventListener('change', ()=>{
-    const s = computeTotal(); toggleDepositBanner(s.total);
+  rushToggle?.addEventListener('change', async ()=>{
+    const s = await computeTotal(); toggleDepositBanner(s.total);
   });
-  document.addEventListener('change', e=>{
+  document.addEventListener('change', async e=>{
     const t = e.target;
     if(
       (t?.classList && t.classList.contains('itemCheck')) ||
       (t?.classList && t.classList.contains('itemQty'))   ||
       t?.name === 'pay'
     ){
-      const s = computeTotal(); toggleDepositBanner(s.total);
+      const s = await computeTotal(); toggleDepositBanner(s.total);
     }
   });
 
-  // Persist & prefill customer details for convenience
+  // Persist & prefill customer details
   [custNameEl, custPhoneEl, custAddrEl].forEach((el)=>{
     if(!el) return;
     const key = 'yt_'+el.id;
@@ -1367,7 +1429,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if(!name || !Number.isFinite(price) || price<=0){ return; }
     CATALOG.push({name,price});
     renderItems();
-    const s=computeTotal(); toggleDepositBanner(s.total);
+    computeTotal().then(s=>toggleDepositBanner(s.total));
   });
 
   // === MODAL CLOSE BUTTONS ===
@@ -1391,7 +1453,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // === OPEN ORDER MODAL BUTTONS ===
-  openOrderButtons.forEach(id=>{
+  ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.addEventListener('click', openOrder);
   });
@@ -1451,7 +1513,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  openStoreFooter?.addEventListener('click', openStore);
+  document.getElementById('openStoreModalFooter')?.addEventListener('click', openStore);
   closeStoreModalBtn?.addEventListener('click', closeStore);
   cancelStoreBtn?.addEventListener('click', closeStore);
 
@@ -1467,8 +1529,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
   submitStoreBtn?.addEventListener('click', async ()=>{
     const storeName  = storeNameEl?.value.trim();
-    const storePhone = digits(storePhoneEl?.value.trim());
-    const zone       = storeZoneEl?.value || 'A';
+    the_store_phone: {
+      var storePhone = digits(storePhoneEl?.value.trim());
+    }
+    const zone       = storeZoneEl?.value || 'A'; // legacy
     if(!storeName || !storePhone){
       alert("Please add store name & WhatsApp.");
       return;
@@ -1481,7 +1545,7 @@ window.addEventListener('DOMContentLoaded', () => {
       store_id: `STORE-${Date.now().toString().slice(-6)}`,
       name: storeName,
       phone: storePhone,
-      zone: zone,
+      zone, // legacy field; safe to keep until backend updated
       items: storeItems.map(it=>({ name: it.name, price: it.price }))
     };
 
@@ -1503,7 +1567,6 @@ window.addEventListener('DOMContentLoaded', () => {
 `New store signup:
 Name: ${storeName}
 Phone: ${storePhone}
-Zone: ${zone}
 Items:
 ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
@@ -1515,14 +1578,14 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     // reset form
     if(storeNameEl) storeNameEl.value = '';
     if(storePhoneEl) storePhoneEl.value = '';
-    if(storeZoneEl) storeZoneEl.value = 'A';
+    if(storeZoneEl)  storeZoneEl.value = 'A';
     storeItems.splice(0,storeItems.length);
     renderStoreItems();
   });
 
   // === ADMIN PANEL ===
   ordersClose?.addEventListener('click', closeOrders);
-  adminBtnMobile?.addEventListener('click', () => { adminBtn?.click(); });
+  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', () => { adminBtn?.click(); });
 
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
@@ -1532,7 +1595,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   ordersRefresh?.addEventListener('click', renderOrders);
 
   function recalcAdminPayoutWidgets() {
-    // If you add these elements in Admin UI, they will update live.
     const driverCount = 0; // Placeholder (wire to backend /drivers if needed)
     if(adminDriversCountEl) adminDriversCountEl.textContent = String(driverCount);
     if(adminPayPendingEl)   adminPayPendingEl.textContent   = `R${driverTotals.pending}`;
@@ -1552,7 +1614,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
     driverTotals.pending  = pendingTotal;
     driverTotals.approved = approvedTotal;
-    // Live update dashboard if open
     if(driverDashModal && !driverDashModal.classList.contains('hidden')){
       if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent  = String(driverTotals.pending);
       if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
@@ -1566,12 +1627,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     if(DEMO_MODE){
       const o = DEMO_ORDERS_DB[internalId];
       if(o){
-        // set payout to delivery fee (clamped)
         const pay = calcDriverPayout(o);
         o.driver_pay_status   = 'pending';
         o.driver_pay_pending  = pay;
         o.driver_pay_approved = 0;
-        // stage progress
         if(o.status === 'pending') o.status = 'assigned';
       }
       computeDriverTotalsFromDB();
@@ -1608,7 +1667,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       const o = DEMO_ORDERS_DB[internalId];
       if(o){
         const pay = calcDriverPayout(o);
-        // if not yet started, assume direct to delivered
         o.status = 'delivered';
         o.driver_pay_status   = 'approved';
         o.driver_pay_approved = pay;
@@ -1640,7 +1698,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   async function autoAssignForAll(){
-    // assign all PENDING in current tab
     const ids = Object.values(DEMO_ORDERS_DB)
       .filter(o => o.status === ordersTab && o.status === 'pending')
       .map(o => o._internal_id);
@@ -1704,7 +1761,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   });
 
-  // Admin PIN gate (front-end demo; use ADMIN_SECRET on backend for real)
+  // Admin PIN gate (front-end demo; use ADMIN_SECRET on backend)
   adminBtn?.addEventListener('click', ()=>{
     const pin = prompt('Enter admin PIN:');
     if(pin && pin.trim() !== ""){
@@ -1715,10 +1772,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   });
 
-  // Fetch orders by status (backend or demo)
+  // Fetch orders by status
   async function fetchOrdersByStatus(status){
     if(DEMO_MODE){
-      // Return consistent view from the in-memory DB (no blinking)
       return Object.values(DEMO_ORDERS_DB).filter(o => o.status === status);
     }
 
@@ -1726,7 +1782,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
       const data = await res.json().catch(()=>({}));
       if(!res.ok || !data.ok){ return []; }
-      if (data.zone_demand_snapshot){ zoneDemandStats = data.zone_demand_snapshot; }
       return Array.isArray(data.orders) ? data.orders : [];
     } catch(err){
       console.error("fetchOrdersByStatus error",err);
@@ -1734,12 +1789,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   }
 
-  // Render orders into the admin panel list
+  // Render orders
   async function renderOrders(){
     const data = await fetchOrdersByStatus(ordersTab);
     currentOrdersByTab[ordersTab] = data;
 
-    // recalc driver totals whenever we fetch
     computeDriverTotalsFromDB();
 
     if(!ordersList) return;
@@ -1755,12 +1809,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
       const internalId = o._internal_id || o.internal_id || null;
       const refDisplay  = o.order_public_id || o.order_id || internalId || "REF?";
-      const zoneDisplay = (o.meta && o.meta.zone) ? o.meta.zone : "?";
+      const kmText      = (o.meta && Number.isFinite(o.meta.distance_km)) ? ` • ${o.meta.distance_km.toFixed(1)} km` : "";
       const fraudDisplay = (typeof o.fraud_score === "number")
         ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
         : "";
 
-      // driver pay info bloc
+      // driver pay
       let driverPayText = "Driver pay: R0";
       let driverPayStatusText = "Status: –";
       if(o.driver_pay_status === "pending"){
@@ -1784,9 +1838,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         <div class="flex-1 min-w-0">
           <div class="font-medium flex flex-wrap items-center gap-1">
             <span>Ref ${refDisplay}</span>
-            <span>• Zone ${zoneDisplay}</span>
             <span>• Total R${o.total}</span>
-            ${demandBadge(zoneDisplay)}
+            ${kmText}
           </div>
           <div class="text-xs text-slate-500 break-words">${itemsText}</div>
           <div class="text-xs text-slate-500">
@@ -1839,60 +1892,38 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   }
 
-  // === MAP SETUP (safe) ===
+  // === MAP SETUP with road-snapped animation ===
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
     if(!heroEl){ return; }
 
     let heroMap;
-    let cars   = [];
-    let parcels= [];
-    let localCars = []; // small cars orbiting around user area
+    let localCars = [];
 
-    function centerMapHeuristic() {
-      // Try user geolocation first
-      if(navigator.geolocation){
-        navigator.geolocation.getCurrentPosition(
-          (pos)=>{
-            const { latitude, longitude } = pos.coords;
-            try { heroMap.setView([latitude, longitude], 12, { animate:true }); } catch(_){}
-            // spawn subtle local traffic around user
-            spawnLocalTraffic({lat:latitude,lng:longitude}, 6);
-          },
-          ()=>{
-            // No permission or error -> center where most cars are
-            if(cars.length){
-              const avg = cars.reduce((acc,c)=>{
-                const ll=c.m.getLatLng();
-                acc.lat+=ll.lat; acc.lng+=ll.lng; return acc;
-              }, {lat:0,lng:0});
-              avg.lat/=cars.length; avg.lng/=cars.length;
-              try { heroMap.setView([avg.lat, avg.lng], 10, { animate:true }); } catch(_){}
-            }
-          },
-          { enableHighAccuracy:true, timeout:2500 }
-        );
-      } else if(cars.length){
-        const avg = cars.reduce((acc,c)=>{
-          const ll=c.m.getLatLng();
-          acc.lat+=ll.lat; acc.lng+=ll.lng; return acc;
-        }, {lat:0,lng:0});
-        avg.lat/=cars.length; avg.lng/=cars.length;
-        try { heroMap.setView([avg.lat, avg.lng], 10, { animate:true }); } catch(_){}
+    const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
+
+    async function centerMapHeuristic() {
+      DELIVERY_COORDS = DELIVERY_COORDS || await tryGetCustomerCoords();
+      if(DELIVERY_COORDS){
+        try { heroMap.setView([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], 12, { animate:true }); } catch(_){}
+        spawnLocalTraffic({lat:DELIVERY_COORDS.lat,lng:DELIVERY_COORDS.lng}, 6);
+        return;
       }
+      try { heroMap.setView([COLLECTION_COORDS.lat, COLLECTION_COORDS.lng], 10, { animate:true }); } catch(_){}
     }
 
     function spawnLocalTraffic(center, count){
       const makeLocal = ()=>{
         const r    = 0.01 + Math.random()*0.02; // ~1–3km radius wiggle
         const ang0 = Math.random()*Math.PI*2;
-        const spd  = 0.4 + Math.random()*0.6;   // radians/s
-        const zone = ['A','B','C','D','E'][(Math.random()*5)|0];
-        const m    = L.marker([center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)], { icon: carIcon(zone) }).addTo(heroMap);
+        const spd  = 0.4 + Math.random()*0.6;
+        const m    = L.circleMarker(
+          [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
+          { radius:4, opacity:.9, fillOpacity:.9 }
+        ).addTo(heroMap);
         localCars.push({m, cx:center.lat, cy:center.lng, r, ang:ang0, spd});
       };
       for(let i=0;i<count;i++) makeLocal();
-      // nice tiny pulsing ring at user center
       const pulse = L.circle([center.lat, center.lng], {radius: 60, color:'#10b981', weight:1, opacity:0.6, fillOpacity:0}).addTo(heroMap);
       let grow=true;
       setInterval(()=>{
@@ -1903,264 +1934,210 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }, 250);
     }
 
-    try {
-      if (typeof L === "undefined") {
-        throw new Error("Leaflet not loaded");
-      }
-
-      heroMap = L.map(heroEl,{
-        zoomControl:false,
-        dragging:false,
-        scrollWheelZoom:false,
-        doubleClickZoom:false,
-        boxZoom:false,
-        touchZoom:false
-      }).setView([-33.20, 26.55], 8);
-
-      L.tileLayer(
-        'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        { attribution:'', opacity:0.96, noWrap:true, detectRetina:true }
-      ).addTo(heroMap);
-
-      const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
-      heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
-
-      const HUBS=[
-        {name:'Port Alfred',zone:'A',lat:-33.590,lng:26.890},
-        {name:'Bathurst',zone:'B',lat:-33.498,lng:26.833},
-        {name:'Kenton-on-Sea',zone:'C',lat:-33.686,lng:26.668},
-        {name:'Makhanda/Grahamstown',zone:'D',lat:-33.310,lng:26.520},
-        {name:'Alice',zone:'D',lat:-32.787,lng:26.834},
-        {name:'Alexandria',zone:'E',lat:-33.653,lng:26.404},
-        {name:'Alicedale',zone:'E',lat:-33.321,lng:26.078}
-      ];
-
-      const ROADS = [
-        [[HUBS[1].lat,HUBS[1].lng],[HUBS[0].lat,HUBS[0].lng]],
-        [[HUBS[2].lat,HUBS[2].lng],[HUBS[5].lat,HUBS[5].lng]],
-        [[HUBS[6].lat,HUBS[6].lng],[HUBS[3].lat,HUBS[3].lng]],
-        [[HUBS[3].lat,HUBS[3].lng],[HUBS[4].lat,HUBS[4].lng]],
-        [[HUBS[4].lat,HUBS[4].lng],[HUBS[0].lat,HUBS[0].lng]],
-        [[HUBS[3].lat,HUBS[3].lng],[HUBS[2].lat,HUBS[2].lng]],
-        [[HUBS[5].lat,HUBS[5].lng],[HUBS[0].lat,HUBS[0].lng]],
-        [[HUBS[6].lat,HUBS[6].lng],[HUBS[2].lat,HUBS[2].lng]]
-      ];
-
-      function carIcon(zone){
-        const cls=`car-dot car-${zone}`;
-        const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
-          <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
-          <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
-          <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
-          <rect x='10' y='9' width='4' height='3' fill='#f59e0b'/>
-          <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
-          <circle cx='18' cy='20' r='3' fill='#0f172a'/>
-          <circle cx='46' cy='20' r='3' fill='#0f172a'/>
-        </g></svg>`;
-        return L.divIcon({ className:cls, html:svg, iconSize:[24,12], iconAnchor:[12,6] });
-      }
-
-      const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
-        <path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
-      </svg>`;
-
-      const pkgIcon=L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
-
-      const lerp=(a,b,t)=> a+(b-a)*t;
-      const posOnSeg=(seg,t)=>{
-        const [A,B]=seg;
-        return [lerp(A[0],B[0],t), lerp(A[1],B[1],t)];
-      };
-
-      cars   = [];
-      parcels= [];
-      localCars = [];
-
-      function jitterAround(pt,meters){
-        const d=(meters||800)/111111;
-        const r=Math.random()*d;
-        const a=Math.random()*Math.PI*2;
-        return { lat: pt.lat + r*Math.cos(a), lng: pt.lng + r*Math.sin(a) };
-      }
-
-      function makeCar(zone){
-        const seg     = ROADS[(Math.random()*ROADS.length)|0];
-        const startT  = Math.random();
-        const dir     = Math.random()<.5 ? 1 : -1;
-        const speed   = 0.10+Math.random()*0.06;
-        const [lat,lng]=posOnSeg(seg,startT);
-        const m      = L.marker([lat,lng],{icon:carIcon(zone)}).addTo(heroMap);
-        cars.push({m,seg,t:startT,dir,speed});
-      }
-
-      function makeParcel(){
-        const seg     = ROADS[(Math.random()*ROADS.length)|0];
-        const startT  = Math.random();
-        const dir     = Math.random()<.5 ? 1 : -1;
-        const speed   = 0.12+Math.random()*0.06;
-        const [lat,lng]=posOnSeg(seg,startT);
-        const m      = L.marker([lat,lng],{icon:pkgIcon}).addTo(heroMap);
-        parcels.push({m,seg,startT,t:startT,dir,speed});
-      }
-
-      for(let i=0;i<10;i++) makeCar(['A','B','C','D','E'][i%5]);
-      for(let i=0;i<6;i++)  makeParcel();
-
-      let lastTS = performance.now();
-      function animate(now){
-        const dt = Math.min((now-lastTS)/1000, 0.05);
-        lastTS = now;
-
-        // highway cars
-        for(const c of cars){
-          c.t += c.speed * c.dir * dt;
-          if(c.t>1){ c.t=1; c.dir=-1; }
-          else if(c.t<0){ c.t=0; c.dir=1; }
-          const [lat,lng] = posOnSeg(c.seg,c.t);
-          c.m.setLatLng([lat,lng]);
+    async function osrmRoute(a,b){
+      try{
+        const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
+        const r = await fetch(url);
+        const j = await r.json();
+        const coords = j?.routes?.[0]?.geometry?.coordinates;
+        if(Array.isArray(coords) && coords.length>1){
+          return coords.map(([lng,lat])=>[lat,lng]);
         }
-
-        // parcels (small packets)
-        for(const p of parcels){
-          p.t += p.speed * p.dir * dt;
-          if(p.t>1){ p.t=1; p.dir=-1; }
-          else if(p.t<0){ p.t=0; p.dir=1; }
-          const [lat,lng] = posOnSeg(p.seg,p.t);
-          p.m.setLatLng([lat,lng]);
-        }
-
-        // local cars orbiting user area
-        for(const lc of localCars){
-          lc.ang += lc.spd * dt * 0.25; // slower, relaxed
-          const lat = lc.cx + lc.r*Math.sin(lc.ang);
-          const lng = lc.cy + lc.r*Math.cos(lc.ang);
-          lc.m.setLatLng([lat,lng]);
-        }
-
-        requestAnimationFrame(animate);
-      }
-      requestAnimationFrame(animate);
-
-      setTimeout(()=>{ try{ heroMap.invalidateSize(); }catch(_){}; centerMapHeuristic(); },180);
-      window.addEventListener('resize',()=>{ try{ heroMap.invalidateSize(); }catch(_){}});
-
-      // DRIVER SIGNUP hook
-      formSignup?.addEventListener('submit', async e=>{
-        e.preventDefault();
-        const name    = document.getElementById('drvName')?.value.trim();
-        const phone   = digits(document.getElementById('drvPhone')?.value.trim());
-        const zone    = document.getElementById('drvZone')?.value || 'A';
-        const radius  = Math.max(1, Number(document.getElementById('drvRadius')?.value || 10));
-        const vehicle = document.getElementById('drvVehicle')?.value.trim();
-
-        if(!name || !phone){ alert("Please enter name and phone."); return; }
-
-        const hubMap = { A:HUBS[0], B:HUBS[1], C:HUBS[2], D:HUBS[3], E:HUBS[5] };
-        const hub   = hubMap[zone] || HUBS[0];
-        const start = jitterAround({lat:hub.lat,lng:hub.lng},1500);
-
-        // show driver marker live on map
-        L.marker([start.lat,start.lng],{icon:carIcon(zone)}).addTo(heroMap);
-
-        const driverPayload = {
-          driver_id: `DRV-${Date.now().toString().slice(-6)}`,
-          name,
-          phone,
-          vehicle,
-          available: true,
-          current_location: { lat:start.lat, lng:start.lng },
-          meta: { zone, radius_km: radius }
-        };
-
-        if(!DEMO_MODE){
-          try{
-            const r = await fetch(`${BASE_API}/drivers`,{
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body:JSON.stringify(driverPayload)
-            });
-            const j = await r.json().catch(()=>({}));
-            if (!r.ok || !j.ok){ alert("Driver save failed on server."); }
-          }catch(err){ console.error("driver create failed",err); }
-        } else { console.info("[DEMO] Would POST driver", driverPayload); }
-
-        const text = `New driver sign-up
-Name: ${name}
-Phone: ${phone}
-Zone: ${zone}
-Radius: ${radius}km
-Vehicle: ${vehicle}`;
-        window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
-
-        closeDriverWindow();
-
-        // fill dashboard demo
-        if(driverDashModal){
-          if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
-          if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
-          if(driverNextWindowEl)     driverNextWindowEl.textContent = 'Fri 17:00';
-          if(driverZoneDisplayEl)    driverZoneDisplayEl.textContent = zone;
-          if(driverRadiusDisplayEl)  driverRadiusDisplayEl.textContent = radius+'km';
-          openDriverDash();
-        }
-      });
-
-    } catch (err) {
-      console.warn("Map disabled:", err);
-
-      // Fallback driver signup without map marker
-      formSignup?.addEventListener('submit', async e=>{
-        e.preventDefault();
-        const name    = document.getElementById('drvName')?.value.trim();
-        const phone   = digits(document.getElementById('drvPhone')?.value.trim());
-        const zone    = document.getElementById('drvZone')?.value || 'A';
-        const radius  = Math.max(1, Number(document.getElementById('drvRadius')?.value || 10));
-        const vehicle = document.getElementById('drvVehicle')?.value.trim();
-
-        if(!name || !phone){ alert("Please enter name and phone."); return; }
-
-        const driverPayload = {
-          driver_id: `DRV-${Date.now().toString().slice(-6)}`,
-          name,
-          phone,
-          vehicle,
-          available: true,
-          current_location: null,
-          meta: { zone, radius_km: radius }
-        };
-
-        if(!DEMO_MODE){
-          try{
-            const r = await fetch(`${BASE_API}/drivers`,{
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body:JSON.stringify(driverPayload)
-            });
-            const j = await r.json().catch(()=>({}));
-            if (!r.ok || !j.ok){ alert("Driver save failed on server."); }
-          }catch(err2){ console.error("driver create failed",err2); }
-        } else { console.info("[DEMO] Would POST driver", driverPayload); }
-
-        const text = `New driver sign-up
-Name: ${name}
-Phone: ${phone}
-Zone: ${zone}
-Radius: ${radius}km
-Vehicle: ${vehicle}`;
-        window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
-
-        closeDriverWindow();
-
-        if(driverDashModal){
-          if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
-          if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
-          if(driverNextWindowEl)     driverNextWindowEl.textContent = 'Fri 17:00';
-          if(driverZoneDisplayEl)    driverZoneDisplayEl.textContent = zone;
-          if(driverRadiusDisplayEl)  driverRadiusDisplayEl.textContent = radius+'km';
-          openDriverDash();
-        }
-      });
+      }catch(_){}
+      return null;
     }
+
+    function buildStraight(a,b){
+      return [[a.lat,a.lng],[b.lat,b.lng]];
+    }
+
+    function carIcon(){
+      const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
+        <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
+        <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
+        <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
+        <rect x='10' y='9' width='4' height='3' fill='#f59e0b'/>
+        <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
+        <circle cx='18' cy='20' r='3' fill='#0f172a'/>
+        <circle cx='46' cy='20' r='3' fill='#0f172a'/>
+      </g></svg>`;
+      return L.divIcon({ className:'car-dot', html:svg, iconSize:[24,12], iconAnchor:[12,6] });
+    }
+
+    const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
+      <path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
+    </svg>`;
+    const pkgIcon=L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
+
+    function cumulativeLengths(latlngs){
+      const lens=[0];
+      let acc=0;
+      for(let i=1;i<latlngs.length;i++){
+        const a = {lat:latlngs[i-1][0], lng:latlngs[i-1][1]};
+        const b = {lat:latlngs[i][0],   lng:latlngs[i][1]};
+        acc += kmBetween(a,b);
+        lens.push(acc);
+      }
+      return { lensKm:lens, totalKm:acc };
+    }
+
+    function pointAtFraction(latlngs, lensKm, frac){
+      const target = frac*lensKm[lensKm.length-1];
+      let i=1; while(i<lensKm.length && lensKm[i]<target) i++;
+      const a=latlngs[i-1], b=latlngs[i];
+      const segLen = lensKm[i]-lensKm[i-1] || 1e-6;
+      const t = (target - lensKm[i-1]) / segLen;
+      const lat = a[0] + (b[0]-a[0])*t;
+      const lng = a[1] + (b[1]-a[1])*t;
+      return [lat,lng];
+    }
+
+    (async function(){
+      try {
+        if (typeof L === "undefined") {
+          throw new Error("Leaflet not loaded");
+        }
+
+        heroMap = L.map(heroEl,{
+          zoomControl:false,
+          dragging:false,
+          scrollWheelZoom:false,
+          doubleClickZoom:false,
+          boxZoom:false,
+          touchZoom:false
+        }).setView([-33.20, 26.55], 8);
+
+        L.tileLayer(
+          'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+          { attribution:'', opacity:0.96, noWrap:true, detectRetina:true }
+        ).addTo(heroMap);
+
+        heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
+
+        // Build a few routes between depots
+        const COLLECTIONS = [
+          { id:'DEPOT-PA',   name:'Default Depot — Port Alfred', lat:-33.590, lng:26.890 },
+          { id:'DEPOT-KENT', name:'Kenton-on-Sea Depot',         lat:-33.686, lng:26.668 },
+          { id:'DEPOT-GHT',  name:'Makhanda / Grahamstown',      lat:-33.310, lng:26.520 }
+        ];
+
+        const pairs = [
+          [COLLECTIONS[0], COLLECTIONS[1]],
+          [COLLECTIONS[1], COLLECTIONS[2]],
+          [COLLECTIONS[2], COLLECTIONS[0]]
+        ];
+
+        const routes = [];
+        for(const [A,B] of pairs){
+          const rr = await osrmRoute({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng});
+          routes.push(rr || buildStraight({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng}));
+        }
+
+        // Draw polylines & spawn movers
+        const movers = [];
+        routes.forEach((latlngs)=>{
+          L.polyline(latlngs,{weight:2, opacity:.35}).addTo(heroMap);
+          const {lensKm,totalKm} = cumulativeLengths(latlngs);
+
+          // cars
+          for(let i=0;i<3;i++){
+            const m = L.marker(latlngs[0],{icon:carIcon()}).addTo(heroMap);
+            const speed = 0.15 + Math.random()*0.1; // fraction / s
+            const dir   = Math.random()<.5 ? 1 : -1;
+            const start = Math.random();
+            movers.push({m, latlngs, lensKm, totalKm, t:start, speed, dir});
+          }
+          // parcels
+          for(let i=0;i<2;i++){
+            const m = L.marker(latlngs[0],{icon:pkgIcon}).addTo(heroMap);
+            const speed = 0.18 + Math.random()*0.1;
+            const dir   = Math.random()<.5 ? 1 : -1;
+            const start = Math.random();
+            movers.push({m, latlngs, lensKm, totalKm, t:start, speed, dir});
+          }
+        });
+
+        function animate(){
+          movers.forEach(o=>{
+            o.t += o.speed * o.dir * (1/60);
+            if(o.t>1){ o.t=1; o.dir=-1; }
+            if(o.t<0){ o.t=0; o.dir= 1; }
+            o.m.setLatLng(pointAtFraction(o.latlngs,o.lensKm,o.t));
+          });
+          for(const lc of localCars){
+            lc.ang += lc.spd * 0.004;
+            const lat = lc.cx + lc.r*Math.sin(lc.ang);
+            const lng = lc.cy + lc.r*Math.cos(lc.ang);
+            lc.m.setLatLng([lat,lng]);
+          }
+          requestAnimationFrame(animate);
+        }
+        requestAnimationFrame(animate);
+
+        setTimeout(()=>{ try{ heroMap.invalidateSize(); }catch(_){}; centerMapHeuristic(); },180);
+        window.addEventListener('resize',()=>{ try{ heroMap.invalidateSize(); }catch(_){}});
+
+        // DRIVER SIGNUP hook (zone-less)
+        formSignup?.addEventListener('submit', async e=>{
+          e.preventDefault();
+          const name    = document.getElementById('drvName')?.value.trim();
+          const phone   = digits(document.getElementById('drvPhone')?.value.trim());
+          const radius  = Math.max(1, Number(document.getElementById('drvRadius')?.value || 10));
+          const vehicle = document.getElementById('drvVehicle')?.value.trim();
+          if(!name || !phone){ alert("Please enter name and phone."); return; }
+
+          // Place them near current collection for demo
+          const jitter = ()=>{
+            const d=(1500)/111111, a=Math.random()*Math.PI*2, r=Math.random()*d;
+            return { lat: COLLECTION_COORDS.lat + r*Math.cos(a), lng: COLLECTION_COORDS.lng + r*Math.sin(a) };
+          };
+          const start = jitter();
+          L.marker([start.lat,start.lng],{icon:carIcon()}).addTo(heroMap);
+
+          const driverPayload = {
+            driver_id: `DRV-${Date.now().toString().slice(-6)}`,
+            name, phone, vehicle,
+            available: true,
+            current_location: start,
+            meta: { radius_km: radius, collection_id: (zoneSelect?.value || 'DEPOT-PA') }
+          };
+
+          if(!DEMO_MODE){
+            try{
+              const r = await fetch(`${BASE_API}/drivers`,{
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify(driverPayload)
+              });
+              const j = await r.json().catch(()=>({}));
+              if (!r.ok || !j.ok){ alert("Driver save failed on server."); }
+            }catch(err){ console.error("driver create failed",err); }
+          } else { console.info("[DEMO] Would POST driver", driverPayload); }
+
+          const text = `New driver sign-up
+Name: ${name}
+Phone: ${phone}
+Radius: ${radius}km
+Vehicle: ${vehicle}`;
+          window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
+
+          closeDriverWindow();
+
+          // fill dashboard demo
+          if(driverDashModal){
+            if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
+            if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
+            if(driverNextWindowEl)     driverNextWindowEl.textContent = 'Fri 17:00';
+            if(driverZoneDisplayEl)    driverZoneDisplayEl.textContent = (zoneSelect?.options?.[zoneSelect.selectedIndex]?.textContent || 'Depot');
+            if(driverRadiusDisplayEl)  driverRadiusDisplayEl.textContent = radius+'km';
+            openDriverDash();
+          }
+        });
+
+      } catch (err) {
+        console.warn("Map disabled:", err);
+      }
+    })();
   })();
 
   // === fake driver login (front-end demo; real flow uses /driver_login)
@@ -2175,7 +2152,7 @@ Vehicle: ${vehicle}`;
   confirmBtn2?.addEventListener('click', async ()=>{
     confirmBtn2.disabled = true;
     try{
-      const summary = computeTotal();
+      const summary = await computeTotal();
       if (!summary.items.length){ alert('Please select at least one item.'); return; }
 
       const custName  = (custNameEl?.value||'').trim();
@@ -2195,8 +2172,8 @@ Vehicle: ${vehicle}`;
           phone: custPhone,
           address: {
             line1: custAddr,
-            suburb: `Zone ${summary.zoneVal}`,
-            coords: { lat: summary.hubLat, lng: summary.hubLng }
+            suburb: '—',
+            coords: DELIVERY_COORDS || null
           }
         },
         items: summary.items.map(it => ({
@@ -2207,26 +2184,44 @@ Vehicle: ${vehicle}`;
         total: summary.total,
         payment: { method: paymentMethod, status: "pending", provider_ref: null },
         created_by: "web",
-        route: { eta_minutes: null, distance_km: null, eta_text: eta },
-        meta: { rush: !!summary.rush, zone: summary.zoneVal }
+        route: { eta_minutes: null, distance_km: Number(summary.distanceKm.toFixed(2)), eta_text: eta },
+        meta: { rush: !!summary.rush, collection_name: summary.collectionName }
       };
 
       if(DEMO_MODE){
         console.info("[DEMO] Would POST", orderPayload);
         const refStub = Date.now().toString().slice(-6);
+        const internalId = "demo-" + refStub.toLowerCase();
+        const driverPay  = clamp(orderPayload.delivery_fee,25,45);
+        // INSERT into demo DB so admin sees ALL orders
+        DEMO_ORDERS_DB[internalId] = {
+          _internal_id: internalId,
+          order_id:     ("YI-" + refStub).toUpperCase(),
+          order_public_id: ("DEMO-" + refStub).toUpperCase(),
+          status: "pending",
+          total: orderPayload.total,
+          delivery_fee: orderPayload.delivery_fee,
+          items: orderPayload.items.map(x=>({name:x.name, qty:x.qty})),
+          meta: { collection_name: orderPayload.meta.collection_name, distance_km: orderPayload.route.distance_km },
+          fraud_score: 0.00,
+          driver_pay_status: 'pending',
+          driver_pay_pending: driverPay,
+          driver_pay_approved: 0
+        };
+        window.dispatchEvent(new Event('yt-orders-updated'));
+
         latestOrderData = {
-          order_public_id: "DEMO-" + refStub,
+          order_public_id: ("DEMO-" + refStub).toUpperCase(),
           status: "pending",
           fraud_score: 0.0,
           total: summary.total,
-          zone: summary.zoneVal,
           items: summary.items,
           eta,
           payment_method: paymentMethod,
           wa_message:
             `Yi Thume, my order is:\n` +
             `Ref: DEMO-${refStub}\n` +
-            `Deliver to: Zone ${summary.zoneVal}, ${custAddr}\n` +
+            `Deliver to: ${custAddr}\n` +
             `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
             `Total: R${summary.total}\n` +
             `Expected: ${eta}\n` +
@@ -2245,7 +2240,7 @@ Vehicle: ${vehicle}`;
           try { data = await res.json(); } catch(_) { data = null; }
 
           if (res.status === 409 && data && data.error === "no_driver_available") {
-            alert(data.message || `Sorry, no driver currently available in Zone ${orderPayload.meta.zone}.`);
+            alert(data.message || `Sorry, no driver currently available near your area.`);
             return;
           }
           if(!res.ok || !data || !data.ok){
@@ -2259,14 +2254,11 @@ Vehicle: ${vehicle}`;
             status:         data.status || "pending",
             fraud_score:    data.fraud_score ?? null,
             total:          summary.total,
-            zone:           summary.zoneVal,
             items:          summary.items,
             eta,
             payment_method: paymentMethod,
             wa_message:     data.wa_message || null
           };
-
-          if (data.zone_demand_snapshot) { zoneDemandStats = data.zone_demand_snapshot; }
         } catch(err){
           console.error("Network/Fetch error", err);
           alert("Network error creating order.");
@@ -2283,9 +2275,8 @@ Vehicle: ${vehicle}`;
          Thanks for your order!<br/>
          <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
          <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
-         <b>Zone:</b> ${latestOrderData.zone}<br/>
          <b>Total:</b> R${latestOrderData.total}<br/>
-         <b>Estimated window:</b> ${latestOrderData.eta}`
+         <b>Estimated window:</b> ${eta}`
       );
 
       if(latestOrderData.status === "review_required"){
@@ -2348,7 +2339,6 @@ Vehicle: ${vehicle}`;
       : [
           "Yi Thume, my order is:",
           `Ref: ${latestOrderData.order_public_id}`,
-          `Deliver to: Zone ${latestOrderData.zone}`,
           `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
           `Total: R${latestOrderData.total}`,
           `Expected: ${latestOrderData.eta}`,
@@ -2378,6 +2368,7 @@ Vehicle: ${vehicle}`;
   if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
   recalcAdminPayoutWidgets();
 });
+
 </script>
 
 
