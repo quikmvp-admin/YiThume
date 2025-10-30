@@ -1077,6 +1077,18 @@ window.addEventListener('DOMContentLoaded', () => {
   const adminPayPendingEl     = document.getElementById('adminPayPending');
   const adminPayApprovedEl    = document.getElementById('adminPayApproved');
 
+  // === Store modal refs (these were missing and caused ReferenceErrors) ===
+  const storeModal          = document.getElementById('storeModal');
+  const openStoreFooter     = document.getElementById('openStoreModalFooter');
+  const closeStoreModalBtn  = document.getElementById('closeStoreModal');
+  const cancelStoreBtn      = document.getElementById('cancelStore');
+  const submitStoreBtn      = document.getElementById('submitStore');
+  const addStoreItemBtn     = document.getElementById('addStoreItem');
+  const storeItemsList      = document.getElementById('storeItemsList');
+  const storeNameEl         = document.getElementById('storeName');
+  const storePhoneEl        = document.getElementById('storePhone');
+  const storeZoneEl         = document.getElementById('storeZone');
+
   // === “Collection points” (replace zones) ===
   const COLLECTIONS = [
     { id:'DEPOT-PA',   name:'Default Depot — Port Alfred', lat:-33.590, lng:26.890 },
@@ -1123,7 +1135,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function loadDriversFromLS(){
     let parsed=null;
     try{ parsed = JSON.parse(localStorage.getItem(LS_DRIVERS)||'null'); }catch(_){}
-    return (parsed && typeof parsed==='object') ? parsed : null;
+    return (parsed && typeof parsed==='object']) ? parsed : null;
   }
 
   function seedIfEmpty(){
@@ -1482,7 +1494,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // Add custom item to basket
-  document.getElementById('addCustomItem')?.addEventListener('click', e=>{
+  addStoreItemBtn?.addEventListener('click', e=>{
     e.preventDefault();
     const name = prompt('Item name');
     const priceVal = prompt('Price (R)');
@@ -1574,7 +1586,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  document.getElementById('openStoreModalFooter')?.addEventListener('click', openStore);
+  openStoreFooter?.addEventListener('click', openStore);
   closeStoreModalBtn?.addEventListener('click', closeStore);
   cancelStoreBtn?.addEventListener('click', closeStore);
 
@@ -1590,9 +1602,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   submitStoreBtn?.addEventListener('click', async ()=>{
     const storeName  = storeNameEl?.value.trim();
-    the_store_phone: {
-      var storePhone = digits(storePhoneEl?.value.trim());
-    }
+    const storePhone = digits(storePhoneEl?.value.trim());
     const zone       = storeZoneEl?.value || 'A'; // legacy
     if(!storeName || !storePhone){
       alert("Please add store name & WhatsApp.");
@@ -1754,7 +1764,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   async function markDelivered(internalId){
     if(!internalId){ alert("Missing order id."); return; }
 
-    if(DEMO_MODE){
+  if(DEMO_MODE){
       mutateOrder(internalId, (o)=>{
         const pay = calcDriverPayout(o);
         o.status = 'delivered';
@@ -2145,7 +2155,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           throw new Error("Leaflet not loaded");
         }
 
-        heroMap = L.map(heroEl,{
+        const heroMap = L.map(heroEl,{
           zoomControl:false,
           dragging:false,
           scrollWheelZoom:false,
@@ -2189,7 +2199,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             const start = Math.random();
             movers.push({m, latlngs, lensKm, totalKm, t:start, speed, dir});
           }
-          // parcels (keep, emerald)
+          // parcels (emerald)
           for(let i=0;i<2;i++){
             const m = L.marker(latlngs[0],{icon:pkgIcon}).addTo(heroMap);
             const speed = 0.18 + Math.random()*0.1;
@@ -2495,8 +2505,6 @@ Vehicle: ${vehicle}`;
   // Initial render for admin panels if open later
   renderDrivers();
 });
-
-
 </script>
 
 
