@@ -888,18 +888,19 @@
 
 <script>
 /**
- * YiThume front-end (single-file demo) — Distance based + road-snapped cars
- * Changes in this version:
- * 1) Removed zones. Delivery fee = BASE + (per-km × route distance). Rush optional.
- * 2) “Store / Collection point” picker (repurposes #zoneSelect if present).
- * 3) Uses browser geolocation for the customer location (fallback to manual text).
- * 4) Orders created in DEMO mode are now inserted into the in-memory DB so the admin sees ALL orders.
- * 5) Car + parcel animation follows real roads using OSRM (fallback to straight segments if OSRM blocked).
- * 6) Minor a11y fixes and defensive guards.
+ * YiThume front-end (single-file demo) — Distance-based + road-snapped cars
+ * UPDATE (green map + drivers admin + real refresh + persistence):
+ * - Map routes/accents switched to emerald green, and all moving dots are CARS (no blue).
+ * - Admin panel now has a Drivers section (if your HTML has #driversList, #driversRefresh).
+ *   Shows driver #, name, stats, and an "Approve Pay" action per driver.
+ * - Refresh button now truly reloads current state from persistent storage and re-renders.
+ * - All order status changes (assign → in_transit → delivered) and driver payouts persist
+ *   across page refreshes using localStorage (acts like a mini “log book”).
  *
- * NOTE: These hooks expect existing HTML ids:
- * - #zoneSelect (now acts as “collection point” select), #rushToggle, #orderTotal, #custName, #custPhone, #custAddress
- * - Modals / admin ids unchanged.
+ * NOTE: This script enhances existing UI if the relevant elements exist:
+ *   Orders: #ordersPanel, #ordersList, #ordersRefresh, .yt-o-tab, #ordersAssign
+ *   Drivers: #driversList, #driversRefresh (optional, for the Drivers section)
+ *   Other IDs are unchanged from prior versions.
  */
 window.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & GLOBALS ===
@@ -913,6 +914,10 @@ window.addEventListener('DOMContentLoaded', () => {
   const PER_KM_PRICE      = 8;       // R / km
   const RUSH_FEE          = 30;      // R
 
+  // Storage keys (persistence)
+  const LS_ORDERS  = "YT_DEMO_ORDERS_V1";
+  const LS_DRIVERS = "YT_DEMO_DRIVERS_V1";
+
   // Helpers
   const waText = (str) => encodeURIComponent(str);
   const digits = (val) => (val || "").replace(/\D+/g, "");
@@ -925,6 +930,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const s1 = Math.sin(dLat/2)**2 + Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2;
     return 2*R*Math.asin(Math.sqrt(s1));
   };
+  const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
 
   // === BODY SCROLL LOCK + FOCUS RESTORE (for a11y) ===
   const lastFocus = new Map();
@@ -976,30 +982,9 @@ window.addEventListener('DOMContentLoaded', () => {
   let DELIVERY_COORDS   = null; // {lat,lng} (from geolocation)
   let COLLECTION_COORDS = {lat:-33.590, lng:26.890}; // default depot
 
-  // DEMO: stable in-memory "database"
-  const DEMO_ORDERS_DB = (() => {
-    const o = (id, total, delivery_fee, status) => ({
-      _internal_id: id,
-      order_id: id.replace("demo-","YI-").toUpperCase(),
-      order_public_id: id.toUpperCase(),
-      status,
-      total,
-      delivery_fee,
-      items: [{name:"Panado 500mg (24s)",qty:1},{name:"Cough Syrup 100ml",qty:1}],
-      meta: { collection_name: 'Default Depot', distance_km: 3.2 },
-      fraud_score: 0.04,
-      driver_pay_status: status === 'delivered' ? 'approved' : 'pending',
-      driver_pay_pending: status === 'delivered' ? 0 : clamp(delivery_fee,25,45),
-      driver_pay_approved: status === 'delivered' ? clamp(delivery_fee,25,45) : 0
-    });
-    const seed = {
-      "demo-abc123": o("demo-abc123",180,35,"pending"),
-      "demo-def456": o("demo-def456",240,45,"assigned"),
-      "demo-ghi789": o("demo-ghi789",120,25,"in_transit"),
-      "demo-jkl012": o("demo-jkl012",220,30,"delivered"),
-    };
-    return seed;
-  })();
+  // DEMO: in-memory DB, hydrated from localStorage and persisted back after any mutation
+  let DEMO_ORDERS_DB = {};
+  let DEMO_DRIVERS_DB = {};
 
   // payout = delivery fee only (clamped 25–45)
   function calcDriverPayout(order){
@@ -1008,8 +993,6 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   const driverTotals = { pending: 0, approved: 0 };
-
-  // store onboarding state
   const storeItems = []; // {name, price}
 
   // === YEAR FOOTER ===
@@ -1085,22 +1068,14 @@ window.addEventListener('DOMContentLoaded', () => {
   const ordersRefresh       = document.getElementById('ordersRefresh');
   let   ordersTab           = 'pending';
 
+  // Drivers section (optional if present in HTML)
+  const driversList         = document.getElementById('driversList');
+  const driversRefresh      = document.getElementById('driversRefresh');
+
   // Optional Admin "Pay Drivers" summary widgets
   const adminDriversCountEl   = document.getElementById('adminDriversCount');
   const adminPayPendingEl     = document.getElementById('adminPayPending');
   const adminPayApprovedEl    = document.getElementById('adminPayApproved');
-
-  // Store modal refs (unchanged)
-  const storeModal          = document.getElementById('storeModal');
-  const openStoreFooter     = document.getElementById('openStoreModalFooter');
-  const closeStoreModalBtn  = document.getElementById('closeStoreModal');
-  const cancelStoreBtn      = document.getElementById('cancelStore');
-  const submitStoreBtn      = document.getElementById('submitStore');
-  const addStoreItemBtn     = document.getElementById('addStoreItem');
-  const storeItemsList      = document.getElementById('storeItemsList');
-  const storeNameEl         = document.getElementById('storeName');
-  const storePhoneEl        = document.getElementById('storePhone');
-  const storeZoneEl         = document.getElementById('storeZone');
 
   // === “Collection points” (replace zones) ===
   const COLLECTIONS = [
@@ -1133,7 +1108,93 @@ window.addEventListener('DOMContentLoaded', () => {
     {name:'Bandages (set)',price:25}
   ];
 
-  // === RENDER ITEMS LIST ===
+  // === PERSISTENCE LAYER (localStorage) ===
+  function saveOrdersToLS(){
+    try{ localStorage.setItem(LS_ORDERS, JSON.stringify(DEMO_ORDERS_DB)); }catch(_){}
+  }
+  function saveDriversToLS(){
+    try{ localStorage.setItem(LS_DRIVERS, JSON.stringify(DEMO_DRIVERS_DB)); }catch(_){}
+  }
+  function loadOrdersFromLS(){
+    let parsed=null;
+    try{ parsed = JSON.parse(localStorage.getItem(LS_ORDERS)||'null'); }catch(_){}
+    return (parsed && typeof parsed==='object') ? parsed : null;
+  }
+  function loadDriversFromLS(){
+    let parsed=null;
+    try{ parsed = JSON.parse(localStorage.getItem(LS_DRIVERS)||'null'); }catch(_){}
+    return (parsed && typeof parsed==='object') ? parsed : null;
+  }
+
+  function seedIfEmpty(){
+    // Seed drivers
+    if(!DEMO_DRIVERS_DB || Object.keys(DEMO_DRIVERS_DB).length===0){
+      DEMO_DRIVERS_DB = {
+        "DRV-100001": { driver_id:"DRV-100001", name:"Sipho N", phone:"27810000001", vehicle:"Bike",
+                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
+        "DRV-100002": { driver_id:"DRV-100002", name:"Anele M", phone:"27810000002", vehicle:"Car",
+                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
+        "DRV-100003": { driver_id:"DRV-100003", name:"Thandi D", phone:"27810000003", vehicle:"Car",
+                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
+      };
+    }
+    // Seed orders
+    if(!DEMO_ORDERS_DB || Object.keys(DEMO_ORDERS_DB).length===0){
+      const o = (id, total, delivery_fee, status, driver_id=null) => ({
+        _internal_id: id,
+        order_id: id.replace("demo-","YI-").toUpperCase(),
+        order_public_id: id.toUpperCase(),
+        status,
+        total,
+        delivery_fee,
+        items: [{name:"Panado 500mg (24s)",qty:1},{name:"Cough Syrup 100ml",qty:1}],
+        meta: { collection_name: 'Default Depot', distance_km: 3.2 },
+        fraud_score: 0.04,
+        driver_id,
+        driver_pay_status: status === 'delivered' ? 'approved' : 'pending',
+        driver_pay_pending: status === 'delivered' ? 0 : clamp(delivery_fee,25,45),
+        driver_pay_approved: status === 'delivered' ? clamp(delivery_fee,25,45) : 0
+      });
+      DEMO_ORDERS_DB = {
+        "demo-abc123": o("demo-abc123",180,35,"pending",    "DRV-100001"),
+        "demo-def456": o("demo-def456",240,45,"assigned",   "DRV-100002"),
+        "demo-ghi789": o("demo-ghi789",120,25,"in_transit", "DRV-100002"),
+        "demo-jkl012": o("demo-jkl012",220,30,"delivered",  "DRV-100003"),
+      };
+    }
+  }
+
+  // (Re)hydrate from localStorage, seed defaults if empty, then recompute driver stats.
+  function hydrateState(){
+    const o = loadOrdersFromLS();
+    const d = loadDriversFromLS();
+    DEMO_ORDERS_DB  = o || {};
+    DEMO_DRIVERS_DB = d || {};
+    seedIfEmpty(); // fills any missing baseline
+
+    // Recompute driver stats & payouts from the order ledger (single source of truth)
+    Object.values(DEMO_DRIVERS_DB).forEach(dr=>{
+      dr.stats = {assigned:0,in_transit:0,delivered:0};
+      dr.payout_pending = 0;
+      dr.payout_approved= 0;
+    });
+    Object.values(DEMO_ORDERS_DB).forEach(ord=>{
+      const did = ord.driver_id;
+      if(did && DEMO_DRIVERS_DB[did]){
+        const dr = DEMO_DRIVERS_DB[did];
+        if(ord.status === 'assigned')   dr.stats.assigned++;
+        if(ord.status === 'in_transit') dr.stats.in_transit++;
+        if(ord.status === 'delivered')  dr.stats.delivered++;
+        if(ord.driver_pay_status === 'pending')  dr.payout_pending  += (ord.driver_pay_pending||0);
+        if(ord.driver_pay_status === 'approved') dr.payout_approved += (ord.driver_pay_approved||0);
+      }
+    });
+    saveOrdersToLS();
+    saveDriversToLS();
+  }
+  hydrateState();
+
+  // === UI RENDER HELPERS ===
   function renderItems(){
     if(!itemsList) return;
     itemsList.innerHTML = '';
@@ -1321,7 +1382,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const openStore = ()=> openFlex(storeModal);
   const closeStore= ()=> closeFlex(storeModal);
 
-  const openOrders = ()=>{ openFlex(ordersPanel); renderOrders(); };
+  const openOrders = ()=>{ openFlex(ordersPanel); renderOrders(); renderDrivers(); };
   const closeOrders= ()=> closeFlex(ordersPanel);
 
   const openDriverDash = ()=>{
@@ -1545,7 +1606,7 @@ window.addEventListener('DOMContentLoaded', () => {
       store_id: `STORE-${Date.now().toString().slice(-6)}`,
       name: storeName,
       phone: storePhone,
-      zone, // legacy field; safe to keep until backend updated
+      zone, // legacy field
       items: storeItems.map(it=>({ name: it.name, price: it.price }))
     };
 
@@ -1589,13 +1650,21 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
-    if(ordersPanel && !ordersPanel.classList.contains('hidden')) renderOrders();
+    if(ordersPanel && !ordersPanel.classList.contains('hidden')) { renderOrders(); renderDrivers(); }
   });
 
-  ordersRefresh?.addEventListener('click', renderOrders);
+  // REAL refresh: reload from LS, recompute, re-render
+  function hardRefresh(){
+    hydrateState();
+    computeDriverTotalsFromDB();
+    renderOrders();
+    renderDrivers();
+  }
+  ordersRefresh?.addEventListener('click', hardRefresh);
+  driversRefresh?.addEventListener('click', hardRefresh);
 
   function recalcAdminPayoutWidgets() {
-    const driverCount = 0; // Placeholder (wire to backend /drivers if needed)
+    const driverCount = Object.keys(DEMO_DRIVERS_DB).length;
     if(adminDriversCountEl) adminDriversCountEl.textContent = String(driverCount);
     if(adminPayPendingEl)   adminPayPendingEl.textContent   = `R${driverTotals.pending}`;
     if(adminPayApprovedEl)  adminPayApprovedEl.textContent  = `R${driverTotals.approved}`;
@@ -1621,24 +1690,46 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     recalcAdminPayoutWidgets();
   }
 
+  // Simple round-robin driver selector
+  let rrIdx = 0;
+  function pickDriverId(){
+    const ids = Object.keys(DEMO_DRIVERS_DB);
+    if(ids.length===0) return null;
+    const id = ids[rrIdx % ids.length];
+    rrIdx++;
+    return id;
+  }
+
+  function mutateOrder(internalId, mut){
+    const o = DEMO_ORDERS_DB[internalId];
+    if(!o) return null;
+    mut(o);
+    saveOrdersToLS();
+    // recompute driver stats from ledger
+    hydrateState();
+    window.dispatchEvent(new Event('yt-orders-updated'));
+    return o;
+  }
+
   async function assignOneOrder(internalId){
     if(!internalId){ alert("Missing order id."); return; }
 
     if(DEMO_MODE){
-      const o = DEMO_ORDERS_DB[internalId];
-      if(o){
+      mutateOrder(internalId, (o)=>{
+        if(!o.driver_id){ o.driver_id = pickDriverId(); }
         const pay = calcDriverPayout(o);
         o.driver_pay_status   = 'pending';
         o.driver_pay_pending  = pay;
         o.driver_pay_approved = 0;
         if(o.status === 'pending') o.status = 'assigned';
-      }
+      });
       computeDriverTotalsFromDB();
       renderOrders();
-      alert(`[DEMO] Assigned ${internalId}. Driver pending total: R${driverTotals.pending}`);
+      alert(`[DEMO] Assigned ${internalId}.`);
       return;
     }
 
+    // Backend path (unchanged)
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
         method: "POST",
@@ -1664,20 +1755,20 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     if(!internalId){ alert("Missing order id."); return; }
 
     if(DEMO_MODE){
-      const o = DEMO_ORDERS_DB[internalId];
-      if(o){
+      mutateOrder(internalId, (o)=>{
         const pay = calcDriverPayout(o);
         o.status = 'delivered';
         o.driver_pay_status   = 'approved';
         o.driver_pay_approved = pay;
         o.driver_pay_pending  = 0;
-      }
+      });
       computeDriverTotalsFromDB();
       renderOrders();
-      alert(`[DEMO] Delivered ${internalId}. Approved total: R${driverTotals.approved}`);
+      alert(`[DEMO] Delivered ${internalId}.`);
       return;
     }
 
+    // Backend path (unchanged)
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
         method: "POST",
@@ -1699,24 +1790,22 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   async function autoAssignForAll(){
     const ids = Object.values(DEMO_ORDERS_DB)
-      .filter(o => o.status === ordersTab && o.status === 'pending')
+      .filter(o => o.status === 'pending')
       .map(o => o._internal_id);
 
-    if (ids.length === 0){ alert("No pending orders in this view to assign."); return; }
+    if (ids.length === 0){ alert("No pending orders to assign."); return; }
 
     const results = [];
     for (const internalId of ids){
       if (DEMO_MODE){
-        const o = DEMO_ORDERS_DB[internalId];
-        if(o){
+        mutateOrder(internalId, (o)=>{
+          if(!o.driver_id){ o.driver_id = pickDriverId(); }
           const pay = calcDriverPayout(o);
           o.driver_pay_status  = 'pending';
           o.driver_pay_pending = pay;
           o.status             = 'assigned';
-          results.push(`✅ (demo) ${internalId} -> pending R${pay}`);
-        } else {
-          results.push(`❓ ${internalId}: not found`);
-        }
+          results.push(`✅ (demo) ${internalId} -> ${o.driver_id} (R${pay})`);
+        });
         continue;
       }
 
@@ -1772,7 +1861,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   });
 
-  // Fetch orders by status
+  // Fetch orders by status (demo uses local DB)
   async function fetchOrdersByStatus(status){
     if(DEMO_MODE){
       return Object.values(DEMO_ORDERS_DB).filter(o => o.status === status);
@@ -1791,12 +1880,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   // Render orders
   async function renderOrders(){
+    if(!ordersList) return;
     const data = await fetchOrdersByStatus(ordersTab);
     currentOrdersByTab[ordersTab] = data;
 
     computeDriverTotalsFromDB();
-
-    if(!ordersList) return;
 
     ordersList.innerHTML = data.length
       ? ''
@@ -1813,16 +1901,17 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       const fraudDisplay = (typeof o.fraud_score === "number")
         ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
         : "";
+      const driverName = (o.driver_id && DEMO_DRIVERS_DB[o.driver_id]) ? DEMO_DRIVERS_DB[o.driver_id].name : '—';
 
       // driver pay
       let driverPayText = "Driver pay: R0";
       let driverPayStatusText = "Status: –";
       if(o.driver_pay_status === "pending"){
         driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
-        driverPayStatusText = "Status: pending";
+        driverPayStatusText = "Pay: pending";
       } else if(o.driver_pay_status === "approved"){
         driverPayText = `Driver pay: R${o.driver_pay_approved || 0}`;
-        driverPayStatusText = "Status: approved";
+        driverPayStatusText = "Pay: approved";
       }
 
       const isDelivered = o.status === "delivered";
@@ -1843,7 +1932,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           </div>
           <div class="text-xs text-slate-500 break-words">${itemsText}</div>
           <div class="text-xs text-slate-500">
-            Status: ${o.status}${fraudDisplay}
+            Status: <b>${o.status}</b> • Driver: ${driverName}${fraudDisplay}
           </div>
           <div class="text-[11px] leading-snug text-slate-500 mt-1">
             ${driverPayText} • ${driverPayStatusText}
@@ -1881,8 +1970,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       btn.addEventListener('click', ()=>{
         const id = btn.getAttribute('data-id');
         if(DEMO_MODE && DEMO_ORDERS_DB[id]){
-          const o = DEMO_ORDERS_DB[id];
-          if(o.status === 'assigned') o.status = 'in_transit';
+          mutateOrder(id, (o)=>{
+            if(o.status === 'assigned') o.status = 'in_transit';
+          });
           renderOrders();
         }
       });
@@ -1892,7 +1982,67 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   }
 
-  // === MAP SETUP with road-snapped animation ===
+  // === DRIVERS SECTION RENDER ===
+  function renderDrivers(){
+    if(!driversList) return; // optional
+    const drivers = Object.values(DEMO_DRIVERS_DB);
+    driversList.innerHTML = '';
+    if(drivers.length===0){
+      driversList.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
+      return;
+    }
+    for(const dr of drivers){
+      const row = document.createElement('div');
+      row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
+      row.innerHTML = `
+        <div class="flex-1 min-w-0">
+          <div class="font-medium flex flex-wrap items-center gap-2">
+            <span>#${dr.driver_id}</span>
+            <span>• ${dr.name}</span>
+            <span class="text-slate-500">(${dr.vehicle})</span>
+          </div>
+          <div class="text-xs text-slate-500">
+            Assigned: <b>${dr.stats.assigned}</b> • In transit: <b>${dr.stats.in_transit}</b> • Delivered: <b>${dr.stats.delivered}</b>
+          </div>
+          <div class="text-xs text-slate-500">
+            Pending pay: <b>R${dr.payout_pending}</b> • Approved pay: <b>R${dr.payout_approved}</b>
+          </div>
+        </div>
+        <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
+          <button class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+                  data-id="${dr.driver_id}">
+            Approve Pay
+          </button>
+        </div>
+      `;
+      driversList.appendChild(row);
+    }
+
+    // Approve pay per driver: flip all that driver's pending order payouts to approved
+    driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const did = btn.getAttribute('data-id');
+        let count = 0;
+        Object.values(DEMO_ORDERS_DB).forEach(o=>{
+          if(o.driver_id===did && o.driver_pay_status==='pending'){
+            const amount = o.driver_pay_pending || 0;
+            o.driver_pay_status = 'approved';
+            o.driver_pay_approved = amount;
+            o.driver_pay_pending  = 0;
+            count++;
+          }
+        });
+        saveOrdersToLS();
+        hydrateState();
+        computeDriverTotalsFromDB();
+        renderDrivers();
+        renderOrders();
+        alert(count ? `Approved ${count} payout(s) for ${did}.` : `No pending payouts for ${did}.`);
+      });
+    });
+  }
+
+  // === MAP SETUP with road-snapped animation (GREEN + car icons) ===
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
     if(!heroEl){ return; }
@@ -1912,23 +2062,42 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       try { heroMap.setView([COLLECTION_COORDS.lat, COLLECTION_COORDS.lng], 10, { animate:true }); } catch(_){}
     }
 
+    function carIcon(){
+      const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
+        <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='${emerald[600]}' opacity='.95'/>
+        <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
+        <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
+        <rect x='10' y='9' width='4' height='3' fill='#f59e0b'/>
+        <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
+        <circle cx='18' cy='20' r='3' fill='#111827'/>
+        <circle cx='46' cy='20' r='3' fill='#111827'/>
+      </g></svg>`;
+      return L.divIcon({ className:'car-dot', html:svg, iconSize:[28,14], iconAnchor:[14,7] });
+    }
+
+    const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
+      <path fill='${emerald[600]}' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
+    </svg>`;
+    const pkgIcon=L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
+
     function spawnLocalTraffic(center, count){
-      const makeLocal = ()=>{
+      for(let i=0;i<count;i++){
         const r    = 0.01 + Math.random()*0.02; // ~1–3km radius wiggle
         const ang0 = Math.random()*Math.PI*2;
         const spd  = 0.4 + Math.random()*0.6;
-        const m    = L.circleMarker(
+        const m    = L.marker(
           [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
-          { radius:4, opacity:.9, fillOpacity:.9 }
+          { icon:carIcon() }
         ).addTo(heroMap);
         localCars.push({m, cx:center.lat, cy:center.lng, r, ang:ang0, spd});
-      };
-      for(let i=0;i<count;i++) makeLocal();
-      const pulse = L.circle([center.lat, center.lng], {radius: 60, color:'#10b981', weight:1, opacity:0.6, fillOpacity:0}).addTo(heroMap);
+      }
+      const pulse = L.circle([center.lat, center.lng], {
+        radius: 60, color:emerald[500], weight:1, opacity:0.7, fillOpacity:0
+      }).addTo(heroMap);
       let grow=true;
       setInterval(()=>{
-        const r = pulse.getRadius();
-        pulse.setRadius(grow ? r+10 : r-10);
+        const rr = pulse.getRadius();
+        pulse.setRadius(grow ? rr+10 : rr-10);
         if(pulse.getRadius()>140) grow=false;
         if(pulse.getRadius()<60)  grow=true;
       }, 250);
@@ -1946,28 +2115,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }catch(_){}
       return null;
     }
-
-    function buildStraight(a,b){
-      return [[a.lat,a.lng],[b.lat,b.lng]];
-    }
-
-    function carIcon(){
-      const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
-        <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='#0f172a' opacity='.85'/>
-        <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
-        <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
-        <rect x='10' y='9' width='4' height='3' fill='#f59e0b'/>
-        <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
-        <circle cx='18' cy='20' r='3' fill='#0f172a'/>
-        <circle cx='46' cy='20' r='3' fill='#0f172a'/>
-      </g></svg>`;
-      return L.divIcon({ className:'car-dot', html:svg, iconSize:[24,12], iconAnchor:[12,6] });
-    }
-
-    const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
-      <path fill='#059669' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
-    </svg>`;
-    const pkgIcon=L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
+    function buildStraight(a,b){ return [[a.lat,a.lng],[b.lat,b.lng]]; }
 
     function cumulativeLengths(latlngs){
       const lens=[0];
@@ -1980,7 +2128,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
       return { lensKm:lens, totalKm:acc };
     }
-
     function pointAtFraction(latlngs, lensKm, frac){
       const target = frac*lensKm[lensKm.length-1];
       let i=1; while(i<lensKm.length && lensKm[i]<target) i++;
@@ -2007,20 +2154,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           touchZoom:false
         }).setView([-33.20, 26.55], 8);
 
+        // Keep basemap neutral, we use GREEN overlays
         L.tileLayer(
-          'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-          { attribution:'', opacity:0.96, noWrap:true, detectRetina:true }
+          'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+          { attribution:'', opacity:0.98, noWrap:true, detectRetina:true }
         ).addTo(heroMap);
 
         heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
 
         // Build a few routes between depots
-        const COLLECTIONS = [
-          { id:'DEPOT-PA',   name:'Default Depot — Port Alfred', lat:-33.590, lng:26.890 },
-          { id:'DEPOT-KENT', name:'Kenton-on-Sea Depot',         lat:-33.686, lng:26.668 },
-          { id:'DEPOT-GHT',  name:'Makhanda / Grahamstown',      lat:-33.310, lng:26.520 }
-        ];
-
         const pairs = [
           [COLLECTIONS[0], COLLECTIONS[1]],
           [COLLECTIONS[1], COLLECTIONS[2]],
@@ -2033,10 +2175,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           routes.push(rr || buildStraight({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng}));
         }
 
-        // Draw polylines & spawn movers
+        // Draw GREEN polylines & spawn movers (cars + parcels)
         const movers = [];
         routes.forEach((latlngs)=>{
-          L.polyline(latlngs,{weight:2, opacity:.35}).addTo(heroMap);
+          L.polyline(latlngs,{weight:3, opacity:.55, color:emerald[500]}).addTo(heroMap);
           const {lensKm,totalKm} = cumulativeLengths(latlngs);
 
           // cars
@@ -2047,7 +2189,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             const start = Math.random();
             movers.push({m, latlngs, lensKm, totalKm, t:start, speed, dir});
           }
-          // parcels
+          // parcels (keep, emerald)
           for(let i=0;i<2;i++){
             const m = L.marker(latlngs[0],{icon:pkgIcon}).addTo(heroMap);
             const speed = 0.18 + Math.random()*0.1;
@@ -2094,25 +2236,13 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           const start = jitter();
           L.marker([start.lat,start.lng],{icon:carIcon()}).addTo(heroMap);
 
-          const driverPayload = {
-            driver_id: `DRV-${Date.now().toString().slice(-6)}`,
-            name, phone, vehicle,
-            available: true,
-            current_location: start,
-            meta: { radius_km: radius, collection_id: (zoneSelect?.value || 'DEPOT-PA') }
+          const driver_id = `DRV-${Date.now().toString().slice(-6)}`;
+          DEMO_DRIVERS_DB[driver_id] = {
+            driver_id, name, phone, vehicle,
+            stats:{assigned:0,in_transit:0,delivered:0},
+            payout_pending:0, payout_approved:0
           };
-
-          if(!DEMO_MODE){
-            try{
-              const r = await fetch(`${BASE_API}/drivers`,{
-                method:'POST',
-                headers:{'Content-Type':'application/json'},
-                body:JSON.stringify(driverPayload)
-              });
-              const j = await r.json().catch(()=>({}));
-              if (!r.ok || !j.ok){ alert("Driver save failed on server."); }
-            }catch(err){ console.error("driver create failed",err); }
-          } else { console.info("[DEMO] Would POST driver", driverPayload); }
+          saveDriversToLS();
 
           const text = `New driver sign-up
 Name: ${name}
@@ -2122,16 +2252,9 @@ Vehicle: ${vehicle}`;
           window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
 
           closeDriverWindow();
-
-          // fill dashboard demo
-          if(driverDashModal){
-            if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
-            if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
-            if(driverNextWindowEl)     driverNextWindowEl.textContent = 'Fri 17:00';
-            if(driverZoneDisplayEl)    driverZoneDisplayEl.textContent = (zoneSelect?.options?.[zoneSelect.selectedIndex]?.textContent || 'Depot');
-            if(driverRadiusDisplayEl)  driverRadiusDisplayEl.textContent = radius+'km';
-            openDriverDash();
-          }
+          hydrateState();
+          renderDrivers();
+          alert('Driver submitted (demo).');
         });
 
       } catch (err) {
@@ -2189,11 +2312,11 @@ Vehicle: ${vehicle}`;
       };
 
       if(DEMO_MODE){
-        console.info("[DEMO] Would POST", orderPayload);
         const refStub = Date.now().toString().slice(-6);
         const internalId = "demo-" + refStub.toLowerCase();
         const driverPay  = clamp(orderPayload.delivery_fee,25,45);
-        // INSERT into demo DB so admin sees ALL orders
+        // auto-assign a driver immediately for demo UX (can be reassigned later)
+        const did = pickDriverId();
         DEMO_ORDERS_DB[internalId] = {
           _internal_id: internalId,
           order_id:     ("YI-" + refStub).toUpperCase(),
@@ -2204,10 +2327,13 @@ Vehicle: ${vehicle}`;
           items: orderPayload.items.map(x=>({name:x.name, qty:x.qty})),
           meta: { collection_name: orderPayload.meta.collection_name, distance_km: orderPayload.route.distance_km },
           fraud_score: 0.00,
+          driver_id: did,
           driver_pay_status: 'pending',
           driver_pay_pending: driverPay,
           driver_pay_approved: 0
         };
+        saveOrdersToLS();
+        hydrateState();
         window.dispatchEvent(new Event('yt-orders-updated'));
 
         latestOrderData = {
@@ -2359,15 +2485,17 @@ Vehicle: ${vehicle}`;
     openOrder();
   });
 
-  // === INITIALIZE STORE ITEMS VIEW ===
+  // === INITIALIZE STORE ITEMS VIEW & DASH NUMBERS ===
   renderStoreItems();
-
-  // initial dashboard numbers
   computeDriverTotalsFromDB();
   if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
   if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
   recalcAdminPayoutWidgets();
+
+  // Initial render for admin panels if open later
+  renderDrivers();
 });
+
 
 </script>
 
