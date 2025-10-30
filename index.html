@@ -887,26 +887,32 @@
 </div>
 
 <script>
+
 window.addEventListener('DOMContentLoaded', () => {
-  // === CONFIG & GLOBALS ===
+  // === CONFIG & GLOBALS ======================================================
   const BASE_API        = "/api/app";
   const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
   const DEMO_MODE       = true;
 
-  // Delivery math
-  const BASE_DELIVERY_FEE = 15;
-  const PER_KM_PRICE      = 8;
-  const RUSH_FEE          = 30;
+  // Delivery math (feel free to tune)
+  const BASE_DELIVERY_FEE = 15; // R
+  const PER_KM_PRICE      = 8;  // R per km (OSRM distance when available)
+  const RUSH_FEE          = 30; // R flat
 
   // Storage keys
   const LS_ORDERS  = "YT_DEMO_ORDERS_V1";
   const LS_DRIVERS = "YT_DEMO_DRIVERS_V1";
 
+  // UI Colors
+  const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
+
   // Helpers
   const waText = (str) => encodeURIComponent(str);
   const digits = (val) => (val || "").replace(/\D+/g, "");
   const clamp  = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
+
+  // Haversine fallback (km)
   const kmBetween = (a,b)=>{
     if(!a||!b) return 0;
     const R = 6371;
@@ -915,9 +921,8 @@ window.addEventListener('DOMContentLoaded', () => {
     const s1 = Math.sin(dLat/2)**2 + Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2;
     return 2*R*Math.asin(Math.sqrt(s1));
   };
-  const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
 
-  // === BODY SCROLL LOCK + FOCUS RESTORE ===
+  // === BODY SCROLL LOCK + FOCUS RESTORE =====================================
   const lastFocus = new Map();
   const firstFocusable = (el) =>
     el?.querySelector?.('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
@@ -958,32 +963,38 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // === RUNTIME / GLOBAL STATE ===
+  // === RUNTIME / GLOBAL STATE ===============================================
   let latestOrderData = null;
   let botStage = 0;
+
+  // Track currently rendered docs per tab (e.g., pending/assigned/…)
   const currentOrdersByTab = {};
 
-  // Customer and collection coords
+  // Customer & collection positions
   let DELIVERY_COORDS   = null;
   let COLLECTION_COORDS = {lat:-33.590, lng:26.890};
 
-  // DEMO: in-memory DB
-  let DEMO_ORDERS_DB = {};
+  // DEMO: in-memory DB mirrors saved in localStorage
+  let DEMO_ORDERS_DB  = {};
   let DEMO_DRIVERS_DB = {};
 
+  // Driver payout helper (policy: clamp delivery_fee to 25–45)
   function calcDriverPayout(order){
     const fee = Number(order?.delivery_fee ?? 0);
     return clamp(fee, 25, 45);
   }
 
+  // Global payout totals for driver dashboard & admin widgets
   const driverTotals = { pending: 0, approved: 0 };
+
+  // Simple product catalog (user can add items via Store flow)
   const storeItems = [];
 
-  // === YEAR FOOTER ===
+  // === YEAR FOOTER ===========================================================
   const yearEl = document.getElementById('year');
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
-  // === ELEMENT REFS ===
+  // === ELEMENT REFS (grab everything we might use; null checks everywhere) ===
   const mobileBtn       = document.getElementById('mobileMenuBtn');
   const mobileDropdown  = document.getElementById('mobileNavDropdown');
   const mobileIconOpen  = document.getElementById('mobileMenuIconOpen');
@@ -994,6 +1005,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const cancelOrderBuilder  = document.getElementById('cancelOrderBuilder');
   const itemsList           = document.getElementById('itemsList');
 
+  // “Zone” here is actually our COLLECTION selector (no price zones)
   const zoneSelect          = document.getElementById('zoneSelect');
   const rushToggle          = document.getElementById('rushToggle');
   const totalEl             = document.getElementById('orderTotal');
@@ -1033,24 +1045,29 @@ window.addEventListener('DOMContentLoaded', () => {
   const closeDriverDash     = document.getElementById('closeDriverDash');
   const driverPayoutPendingEl   = document.getElementById('driverPayoutPending');
   const driverPayoutApprovedEl  = document.getElementById('driverPayoutApproved');
-  const driverNextWindowEl  = document.getElementById('driverNextWindow');
-  const driverZoneDisplayEl = document.getElementById('driverZoneDisplay');
-  const driverRadiusDisplayEl = document.getElementById('driverRadiusDisplay');
+  const driverNextWindowEl  = document.getElementById('driverNextWindow');   // optional
+  const driverZoneDisplayEl = document.getElementById('driverZoneDisplay');  // optional
+  const driverRadiusDisplayEl = document.getElementById('driverRadiusDisplay'); // optional
 
+  // Admin: Orders + Drivers + tabs
   const ordersPanel         = document.getElementById('ordersPanel');
   const ordersList          = document.getElementById('ordersList');
   const ordersClose         = document.getElementById('closeOrdersPanel');
   const ordersAssign        = document.getElementById('ordersAssign');
   const ordersRefresh       = document.getElementById('ordersRefresh');
-  let   ordersTab           = 'pending';
 
   const driversList         = document.getElementById('driversList');
   const driversRefresh      = document.getElementById('driversRefresh');
 
-  const adminDriversCountEl   = document.getElementById('adminDriversCount');
-  const adminPayPendingEl     = document.getElementById('adminPayPending');
-  const adminPayApprovedEl    = document.getElementById('adminPayApproved');
+  // Optional aggregate widgets (top of Admin panel)
+  const adminDriversCountEl = document.getElementById('adminDriversCount');
+  const adminPayPendingEl   = document.getElementById('adminPayPending');
+  const adminPayApprovedEl  = document.getElementById('adminPayApproved');
 
+  // Optional container for admin tabs (we’ll inject a “Drivers” tab if present)
+  const ordersTabsContainer = document.getElementById('ordersTabs');
+
+  // Store signup modal bits (optional feature)
   const storeModal          = document.getElementById('storeModal');
   const openStoreFooter     = document.getElementById('openStoreModalFooter');
   const closeStoreModalBtn  = document.getElementById('closeStoreModal');
@@ -1062,7 +1079,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const storePhoneEl        = document.getElementById('storePhone');
   const storeZoneEl         = document.getElementById('storeZone');
 
-  // === COLLECTION POINTS ===
+  // === COLLECTION POINTS (user picks “collection store/warehouse”) ==========
+  // You can add/remove to fit your region. This is NOT a pricing zone.
   const COLLECTIONS = [
     { id:'DEPOT-PA',   name:'Default Depot — Port Alfred', lat:-33.590, lng:26.890 },
     { id:'DEPOT-KENT', name:'Kenton-on-Sea Depot',         lat:-33.686, lng:26.668 },
@@ -1085,7 +1103,7 @@ window.addEventListener('DOMContentLoaded', () => {
     zoneSelect.dataset.enhanced = '1';
   }
 
-  // === CATALOG ===
+  // === CATALOG (customer can pick, store owner can extend) ===================
   const CATALOG = [
     {name:'Panado 500mg (24s)',price:35},
     {name:'Allergex 10mg (10s)',price:30},
@@ -1094,7 +1112,7 @@ window.addEventListener('DOMContentLoaded', () => {
     {name:'Bandages (set)',price:25}
   ];
 
-  // === PERSISTENCE LAYER ===
+  // === PERSISTENCE LAYER (localStorage as demo DB) ===========================
   function saveOrdersToLS(){
     try{ localStorage.setItem(LS_ORDERS, JSON.stringify(DEMO_ORDERS_DB)); }catch(_){}
   }
@@ -1112,6 +1130,7 @@ window.addEventListener('DOMContentLoaded', () => {
     return (parsed && typeof parsed==='object') ? parsed : null;
   }
 
+  // Seed demo drivers + a few demo orders on first load
   function seedIfEmpty(){
     if(!DEMO_DRIVERS_DB || Object.keys(DEMO_DRIVERS_DB).length===0){
       DEMO_DRIVERS_DB = {
@@ -1148,6 +1167,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Hydrate in-memory DBs from LS and recompute rollups
   function hydrateState(){
     const o = loadOrdersFromLS();
     const d = loadDriversFromLS();
@@ -1155,6 +1175,7 @@ window.addEventListener('DOMContentLoaded', () => {
     DEMO_DRIVERS_DB = d || {};
     seedIfEmpty();
 
+    // Reset computed stats and re-roll
     Object.values(DEMO_DRIVERS_DB).forEach(dr=>{
       dr.stats = {assigned:0,in_transit:0,delivered:0};
       dr.payout_pending = 0;
@@ -1176,7 +1197,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   hydrateState();
 
-  // === UI RENDER HELPERS ===
+  // === UI HELPERS: Items, totals, deposits ==================================
   function renderItems(){
     if(!itemsList) return;
     itemsList.innerHTML = '';
@@ -1227,6 +1248,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const meters = j?.routes?.[0]?.distance;
       if(Number.isFinite(meters)){ return meters; }
     }catch(_){}
+    // Fallback (straight line km → meters)
     return kmBetween(a,b)*1000;
   }
 
@@ -1263,14 +1285,13 @@ window.addEventListener('DOMContentLoaded', () => {
       const meters = await osrmDistanceMeters(COLLECTION_COORDS, DELIVERY_COORDS);
       distanceKm = Math.max(0, meters/1000);
     } else {
-      distanceKm = 3;
+      distanceKm = 3; // fallback demo
     }
 
     const rushFee = rushToggle?.checked ? RUSH_FEE : 0;
     rushNote.textContent = rushFee ? ' + rush' : '';
 
     const deliveryFee = Math.round(BASE_DELIVERY_FEE + (PER_KM_PRICE * distanceKm));
-
     const total = itemsTotal + deliveryFee + rushFee;
     totalEl.textContent = String(total);
 
@@ -1289,7 +1310,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function nextETA(rush){
     const now     = new Date();
     const windows = [[8,10],[12,14],[16,18]];
-    const allowed = new Set([0,3,4,5,6]);
+    const allowed = new Set([0,3,4,5,6]); // Sun, Wed, Thu, Fri, Sat
     const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
     const fmt = (date,[h1,h2])=>{
@@ -1326,7 +1347,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // === MODAL WRAPPERS ===
+  // === MODAL WRAPPERS (DRY helpers) =========================================
   const openOrder  = async ()=>{ openFlex(modal); const s = await computeTotal(); toggleDepositBanner(s.total); };
   const closeOrder = ()=> closeFlex(modal);
 
@@ -1357,7 +1378,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const openStore = ()=> openFlex(storeModal);
   const closeStore= ()=> closeFlex(storeModal);
 
-  const openOrders = ()=>{ openFlex(ordersPanel); renderOrders(); renderDrivers(); };
+  const openOrders = ()=>{ openFlex(ordersPanel); ensureAdminTabs(); setActiveAdminTab(ordersTab); renderOrders(); renderDrivers(); };
   const closeOrders= ()=> closeFlex(ordersPanel);
 
   const openDriverDash = ()=>{
@@ -1379,7 +1400,7 @@ window.addEventListener('DOMContentLoaded', () => {
     botFeed.scrollTop = botFeed.scrollHeight;
   }
 
-  // === MOBILE NAV ===
+  // === MOBILE NAV TOGGLES ====================================================
   function toggleMobileMenu() {
     if(!mobileDropdown || !mobileBtn || !mobileIconOpen || !mobileIconClose) return;
     const isHidden = mobileDropdown.classList.contains('hidden');
@@ -1421,7 +1442,7 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('openDriverModal')?.click();
   });
 
-  // === INIT ===
+  // === INIT CUSTOMER UI ======================================================
   renderItems();
   ensureCollectionSelectPopulated();
   computeTotal();
@@ -1451,6 +1472,7 @@ window.addEventListener('DOMContentLoaded', () => {
     el.addEventListener('input', ()=> localStorage.setItem(key, el.value));
   });
 
+  // Allow adding custom items to catalog (store owner flow)
   addStoreItemBtn?.addEventListener('click', e=>{
     e.preventDefault();
     const name = prompt('Item name');
@@ -1462,13 +1484,14 @@ window.addEventListener('DOMContentLoaded', () => {
     computeTotal().then(s=>toggleDepositBanner(s.total));
   });
 
-  // === MODAL CLOSES ===
+  // === MODAL CLOSE WIRING ====================================================
   document.getElementById('closeBot')?.addEventListener('click', closeBot);
   closeBtn?.addEventListener('click', closeOrder);
   cancelOrderBuilder?.addEventListener('click', closeOrder);
   closePayModalBtn?.addEventListener('click', closePayModal);
   btnCancelPay?.addEventListener('click', closePayModal);
 
+  // Demo “payment”
   btnFakePayNow?.addEventListener('click', ()=>{
     alert('No money taken. Demo only.');
     closePayModal();
@@ -1481,6 +1504,7 @@ window.addEventListener('DOMContentLoaded', () => {
     botStage = 2;
   });
 
+  // Openers
   ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.addEventListener('click', openOrder);
@@ -1492,6 +1516,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
   closeDriver?.addEventListener('click',closeDriverWindow);
 
+  // Driver modal tabs
   tabSignup?.addEventListener('click',()=>{
     tabSignup.classList.add('bg-emerald-600','text-white');
     tabLogin.classList.remove('bg-emerald-600','text-white');
@@ -1511,7 +1536,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   closeDriverDash?.addEventListener('click', closeDriverDashWindow);
 
-  // === STORE MODAL ===
+  // === STORE MODAL (optional) ===============================================
   function renderStoreItems(){
     if(!storeItemsList) return;
     storeItemsList.innerHTML = '';
@@ -1594,7 +1619,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     renderStoreItems();
   });
 
-  // === ADMIN PANEL ===
+  // === ADMIN PANEL: TABS, RENDERERS, ACTIONS ================================
   ordersClose?.addEventListener('click', closeOrders);
   document.getElementById('adminLoginBtnMobile')?.addEventListener('click', () => { adminBtn?.click(); });
 
@@ -1603,11 +1628,101 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     if(ordersPanel && !ordersPanel.classList.contains('hidden')) { renderOrders(); renderDrivers(); }
   });
 
+  // Current admin sub-tab. Default to “pending”.
+  let ordersTab = 'pending'; // 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'drivers' | 'by_driver:<id>'
+
+  // Inject a Drivers tab button into #ordersTabs (or after existing .yt-o-tab)
+  function ensureAdminTabs(){
+    // Find any existing tab buttons
+    let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
+
+    // Helper to create a tab button
+    function makeTabBtn(label, tabKey){
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'yt-o-tab px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 text-xs';
+      btn.dataset.oTab = tabKey;
+      btn.setAttribute('role','tab');
+      btn.setAttribute('aria-selected','false');
+      btn.textContent = label;
+      btn.addEventListener('click', ()=>{
+        setActiveAdminTab(tabKey);
+      });
+      return btn;
+    }
+
+    // Ensure the four order tabs exist somewhere
+    const wanted = [
+      ['Pending','pending'],
+      ['Assigned','assigned'],
+      ['In Transit','in_transit'],
+      ['Delivered','delivered']
+    ];
+
+    // Insert into #ordersTabs if present; otherwise append near ordersList’s parent
+    let host = ordersTabsContainer;
+    if(!host){
+      // Try to find a reasonable host (e.g., parent of ordersList)
+      host = ordersList?.parentElement || ordersPanel || document.body;
+    }
+
+    // Build a set of existing keys
+    const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
+
+    // Create missing base tabs
+    wanted.forEach(([label,key])=>{
+      if(!haveKeys.has(key)){
+        host.appendChild(makeTabBtn(label, key));
+      }
+    });
+
+    // Add Drivers tab if missing
+    if(!haveKeys.has('drivers')){
+      host.appendChild(makeTabBtn('Drivers', 'drivers'));
+    }
+
+    // Re-capture buttons (including anything we just injected)
+    tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
+    // Wire ARIA + selected state
+    tabButtons.forEach(b=>{
+      // Avoid double listeners; but we already added on creation. For legacy buttons:
+      if(!b.dataset.wired){
+        b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
+        b.dataset.wired = '1';
+      }
+    });
+  }
+
+  function setActiveAdminTab(tabKey){
+    ordersTab = tabKey;
+
+    // Visual active state
+    document.querySelectorAll('.yt-o-tab').forEach(x=>{
+      x.classList.remove('bg-emerald-600','text-white');
+      x.setAttribute('aria-selected','false');
+      if(x.dataset.oTab === tabKey){
+        x.classList.add('bg-emerald-600','text-white');
+        x.setAttribute('aria-selected','true');
+      }
+    });
+
+    // Show/hide list blocks depending on tab
+    const showDrivers = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
+    if(driversList) driversList.parentElement?.classList.toggle('hidden', !showDrivers);
+    if(ordersList)  ordersList.parentElement?.classList.toggle('hidden', showDrivers);
+
+    // Render appropriate section
+    if(showDrivers){ renderDrivers(); }
+    else { renderOrders(); }
+  }
+
   function hardRefresh(){
     hydrateState();
     computeDriverTotalsFromDB();
     renderOrders();
     renderDrivers();
+    // Keep current tab visible correctly after refresh
+    setActiveAdminTab(ordersTab);
   }
   ordersRefresh?.addEventListener('click', hardRefresh);
   driversRefresh?.addEventListener('click', hardRefresh);
@@ -1639,6 +1754,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     recalcAdminPayoutWidgets();
   }
 
+  // Simple round-robin driver picker (demo)
   let rrIdx = 0;
   function pickDriverId(){
     const ids = Object.keys(DEMO_DRIVERS_DB);
@@ -1648,6 +1764,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     return id;
   }
 
+  // Mutate order + persist + re-hydrate rollups + broadcast
   function mutateOrder(internalId, mut){
     const o = DEMO_ORDERS_DB[internalId];
     if(!o) return null;
@@ -1658,6 +1775,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     return o;
   }
 
+  // Admin actions: assign / mark delivered / auto-assign batch
   async function assignOneOrder(internalId){
     if(!internalId){ alert("Missing order id."); return; }
 
@@ -1780,6 +1898,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
+  // Legacy binding for any pre-existing tabs
   document.querySelectorAll('.yt-o-tab').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       document.querySelectorAll('.yt-o-tab')
@@ -1790,7 +1909,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       btn.classList.add('bg-emerald-600','text-white');
       btn.setAttribute('aria-selected','true');
       ordersTab = btn.dataset.oTab;
-      renderOrders();
+      setActiveAdminTab(ordersTab);
     });
   });
 
@@ -1804,11 +1923,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   });
 
+  // Fetch orders by status (DEMO → local memory, else → backend)
   async function fetchOrdersByStatus(status){
+    if(status === 'drivers' || (status||'').startsWith('by_driver:')) return []; // handled elsewhere
     if(DEMO_MODE){
       return Object.values(DEMO_ORDERS_DB).filter(o => o.status === status);
     }
-
     try {
       const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
       const data = await res.json().catch(()=>({}));
@@ -1820,8 +1940,28 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   }
 
+  // Render orders list for the active tab
   async function renderOrders(){
     if(!ordersList) return;
+
+    // Special “by_driver:ID” filter view:
+    if((ordersTab||'').startsWith('by_driver:')){
+      const did = ordersTab.split(':',2)[1];
+      const data = Object.values(DEMO_ORDERS_DB).filter(o => o.driver_id === did);
+      currentOrdersByTab[ordersTab] = data;
+      computeDriverTotalsFromDB();
+
+      ordersList.innerHTML = data.length
+        ? ''
+        : `<div class="text-sm text-slate-500 p-4">No orders for ${did}.</div>`;
+
+      for(const o of data){
+        ordersList.appendChild(buildOrderRow(o));
+      }
+      wireOrderRowButtons(ordersList);
+      return;
+    }
+
     const data = await fetchOrdersByStatus(ordersTab);
     currentOrdersByTab[ordersTab] = data;
 
@@ -1832,80 +1972,88 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
 
     for(const o of data){
-      const itemsText = (o.items || [])
-        .map(i=>`${i.name} x${i.qty}`)
-        .join(', ');
-
-      const internalId = o._internal_id || o.internal_id || null;
-      const refDisplay  = o.order_public_id || o.order_id || internalId || "REF?";
-      const kmText      = (o.meta && Number.isFinite(o.meta.distance_km)) ? ` • ${o.meta.distance_km.toFixed(1)} km` : "";
-      const fraudDisplay = (typeof o.fraud_score === "number")
-        ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
-        : "";
-      const driverName = (o.driver_id && DEMO_DRIVERS_DB[o.driver_id]) ? DEMO_DRIVERS_DB[o.driver_id].name : '—';
-
-      let driverPayText = "Driver pay: R0";
-      let driverPayStatusText = "Status: –";
-      if(o.driver_pay_status === "pending"){
-        driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
-        driverPayStatusText = "Pay: pending";
-      } else if(o.driver_pay_status === "approved"){
-        driverPayText = `Driver pay: R${o.driver_pay_approved || 0}`;
-        driverPayStatusText = "Pay: approved";
-      }
-
-      const isDelivered = o.status === "delivered";
-      const canAssign   = (o.status === "pending" || o.status === "review_required") && !isDelivered;
-      const canDeliver  = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
-
-      const row = document.createElement('div');
-      row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
-      row.setAttribute('data-order-id', internalId || '');
-      row.setAttribute('data-order-status', o.status || '');
-
-      row.innerHTML = `
-        <div class="flex-1 min-w-0">
-          <div class="font-medium flex flex-wrap items-center gap-1">
-            <span>Ref ${refDisplay}</span>
-            <span>• Total R${o.total}</span>
-            ${kmText}
-          </div>
-          <div class="text-xs text-slate-500 break-words">${itemsText}</div>
-          <div class="text-xs text-slate-500">
-            Status: <b>${o.status}</b> • Driver: ${driverName}${fraudDisplay}
-          </div>
-          <div class="text-[11px] leading-snug text-slate-500 mt-1">
-            ${driverPayText} • ${driverPayStatusText}
-          </div>
-        </div>
-        <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
-          <button
-            class="btn-assign px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            ${(!canAssign || !internalId) ? 'disabled' : ''}
-            data-id="${internalId || ''}">
-            Assign
-          </button>
-          <button
-            class="btn-start px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            ${(o.status !== 'assigned' || !internalId) ? 'disabled' : ''}
-            data-id="${internalId || ''}">
-            Start trip
-          </button>
-          <button
-            class="btn-delivered px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
-            ${(!canDeliver || !internalId) ? 'disabled' : ''}
-            data-id="${internalId || ''}">
-            Delivered
-          </button>
-        </div>
-      `;
-      ordersList.appendChild(row);
+      ordersList.appendChild(buildOrderRow(o));
     }
 
-    ordersList.querySelectorAll('.btn-assign').forEach(btn=>{
+    wireOrderRowButtons(ordersList);
+  }
+
+  function buildOrderRow(o){
+    const itemsText = (o.items || [])
+      .map(i=>`${i.name} x${i.qty}`)
+      .join(', ');
+
+    const internalId  = o._internal_id || o.internal_id || null;
+    const refDisplay  = o.order_public_id || o.order_id || internalId || "REF?";
+    const kmText      = (o.meta && Number.isFinite(o.meta.distance_km)) ? ` • ${o.meta.distance_km.toFixed(1)} km` : "";
+    const fraudDisplay = (typeof o.fraud_score === "number")
+      ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
+      : "";
+    const driverName = (o.driver_id && DEMO_DRIVERS_DB[o.driver_id]) ? DEMO_DRIVERS_DB[o.driver_id].name : '—';
+
+    let driverPayText = "Driver pay: R0";
+    let driverPayStatusText = "Status: –";
+    if(o.driver_pay_status === "pending"){
+      driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
+      driverPayStatusText = "Pay: pending";
+    } else if(o.driver_pay_status === "approved"){
+      driverPayText = `Driver pay: R${o.driver_pay_approved || 0}`;
+      driverPayStatusText = "Pay: approved";
+    }
+
+    const isDelivered = o.status === "delivered";
+    const canAssign   = (o.status === "pending" || o.status === "review_required") && !isDelivered;
+    const canDeliver  = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
+
+    const row = document.createElement('div');
+    row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
+    row.setAttribute('data-order-id', internalId || '');
+    row.setAttribute('data-order-status', o.status || '');
+
+    row.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <div class="font-medium flex flex-wrap items-center gap-1">
+          <span>Ref ${refDisplay}</span>
+          <span>• Total R${o.total}</span>
+          ${kmText}
+        </div>
+        <div class="text-xs text-slate-500 break-words">${itemsText}</div>
+        <div class="text-xs text-slate-500">
+          Status: <b>${o.status}</b> • Driver: ${driverName}${fraudDisplay}
+        </div>
+        <div class="text-[11px] leading-snug text-slate-500 mt-1">
+          ${driverPayText} • ${driverPayStatusText}
+        </div>
+      </div>
+      <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
+        <button
+          class="btn-assign px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          ${(!canAssign || !internalId) ? 'disabled' : ''}
+          data-id="${internalId || ''}">
+          Assign
+        </button>
+        <button
+          class="btn-start px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          ${(o.status !== 'assigned' || !internalId) ? 'disabled' : ''}
+          data-id="${internalId || ''}">
+          Start trip
+        </button>
+        <button
+          class="btn-delivered px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          ${(!canDeliver || !internalId) ? 'disabled' : ''}
+          data-id="${internalId || ''}">
+          Delivered
+        </button>
+      </div>
+    `;
+    return row;
+  }
+
+  function wireOrderRowButtons(scopeEl){
+    scopeEl.querySelectorAll('.btn-assign').forEach(btn=>{
       btn.addEventListener('click', ()=> assignOneOrder(btn.getAttribute('data-id')));
     });
-    ordersList.querySelectorAll('.btn-start').forEach(btn=>{
+    scopeEl.querySelectorAll('.btn-start').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const id = btn.getAttribute('data-id');
         if(DEMO_MODE && DEMO_ORDERS_DB[id]){
@@ -1916,46 +2064,76 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         }
       });
     });
-    ordersList.querySelectorAll('.btn-delivered').forEach(btn=>{
+    scopeEl.querySelectorAll('.btn-delivered').forEach(btn=>{
       btn.addEventListener('click', ()=> markDelivered(btn.getAttribute('data-id')));
     });
   }
 
+  // === DRIVERS TAB: RENDERERS & ACTIONS =====================================
   function renderDrivers(){
     if(!driversList) return;
+
+    // Keep totals up-to-date
+    computeDriverTotalsFromDB();
+
+    // Empty state
     const drivers = Object.values(DEMO_DRIVERS_DB);
     driversList.innerHTML = '';
     if(drivers.length===0){
       driversList.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
       return;
     }
+
+    // Render driver rows with actions
     for(const dr of drivers){
+      const computed = computeDriverDerived(dr.driver_id);
       const row = document.createElement('div');
-      row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
+      row.className = 'p-3 flex flex-col gap-2 border-b border-slate-200';
+
       row.innerHTML = `
-        <div class="flex-1 min-w-0">
-          <div class="font-medium flex flex-wrap items-center gap-2">
-            <span>#${dr.driver_id}</span>
-            <span>• ${dr.name}</span>
-            <span class="text-slate-500">(${dr.vehicle})</span>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="font-medium flex flex-wrap items-center gap-2">
+              <span>#${dr.driver_id}</span>
+              <span>• ${dr.name}</span>
+              <span class="text-slate-500">(${dr.vehicle})</span>
+              <span class="text-[11px] text-slate-500">WhatsApp: ${dr.phone || '—'}</span>
+            </div>
+            <div class="text-xs text-slate-500">
+              Assigned: <b>${dr.stats.assigned}</b> • In transit: <b>${dr.stats.in_transit}</b> • Delivered: <b>${dr.stats.delivered}</b>
+            </div>
+            <div class="text-xs text-slate-500">
+              Pending pay: <b>R${dr.payout_pending}</b> • Approved pay: <b>R${dr.payout_approved}</b> •
+              Delivered total (R): <b>${computed.deliveredRevenue}</b> • Avg fee: <b>R${computed.avgFee}</b>
+            </div>
           </div>
-          <div class="text-xs text-slate-500">
-            Assigned: <b>${dr.stats.assigned}</b> • In transit: <b>${dr.stats.in_transit}</b> • Delivered: <b>${dr.stats.delivered}</b>
-          </div>
-          <div class="text-xs text-slate-500">
-            Pending pay: <b>R${dr.payout_pending}</b> • Approved pay: <b>R${dr.payout_approved}</b>
+          <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
+            <button class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
+                    data-id="${dr.driver_id}">
+              View Orders
+            </button>
+            <button class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+                    data-id="${dr.driver_id}">
+              Approve All Pay
+            </button>
+            <a class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
+               href="https://wa.me/${dr.phone || ''}" target="_blank" rel="noopener">
+              WhatsApp
+            </a>
           </div>
         </div>
-        <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
-          <button class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-                  data-id="${dr.driver_id}">
-            Approve Pay
-          </button>
-        </div>
+        ${
+          computed.lastDeliveries.length
+            ? `<div class="text-[11px] text-slate-500 leading-snug">
+                 Recent delivered refs: ${computed.lastDeliveries.map(x=>`<code>${x}</code>`).join(', ')}
+               </div>`
+            : ''
+        }
       `;
       driversList.appendChild(row);
     }
 
+    // Wire “Approve All Pay”
     driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const did = btn.getAttribute('data-id');
@@ -1977,9 +2155,32 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         alert(count ? `Approved ${count} payout(s) for ${did}.` : `No pending payouts for ${did}.`);
       });
     });
+
+    // Wire “View Orders” → switches Orders panel to a driver-filtered view
+    driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const did = btn.getAttribute('data-id');
+        ordersTab = `by_driver:${did}`;
+        setActiveAdminTab(ordersTab);
+      });
+    });
   }
 
-  // === MAP SETUP ===
+  function computeDriverDerived(driverId){
+    // Compute delivered revenue & average delivery fee for this driver
+    const mine = Object.values(DEMO_ORDERS_DB).filter(o => o.driver_id === driverId);
+    const delivered = mine.filter(o => o.status === 'delivered');
+    const deliveredRevenue = delivered.reduce((s,o)=> s + (o.total||0), 0);
+    const avgFee = delivered.length
+      ? Math.round(delivered.reduce((s,o)=> s + (o.delivery_fee||0), 0) / delivered.length)
+      : 0;
+    const lastDeliveries = delivered
+      .slice(-3)
+      .map(o => o.order_public_id || o.order_id || o._internal_id || '—');
+    return { deliveredRevenue, avgFee, lastDeliveries };
+  }
+
+  // === MAP: Green theme + road-snapped movers ===============================
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
     if(!heroEl){ return; }
@@ -2082,14 +2283,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           throw new Error("Leaflet not loaded");
         }
 
-        heroMap = L.map(heroEl,{
+        const heroMapOpts = {
           zoomControl:false,
           dragging:false,
           scrollWheelZoom:false,
           doubleClickZoom:false,
           boxZoom:false,
           touchZoom:false
-        }).setView([-33.20, 26.55], 8);
+        };
+        heroMap = L.map(heroEl, heroMapOpts).setView([-33.20, 26.55], 8);
 
         L.tileLayer(
           'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
@@ -2115,6 +2317,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           L.polyline(latlngs,{weight:3, opacity:.55, color:emerald[500]}).addTo(heroMap);
           const {lensKm,totalKm} = cumulativeLengths(latlngs);
 
+          // Cars (green)
           for(let i=0;i<3;i++){
             const m = L.marker(latlngs[0],{icon:carIcon()}).addTo(heroMap);
             const speed = 0.15 + Math.random()*0.1;
@@ -2122,6 +2325,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             const start = Math.random();
             movers.push({m, latlngs, lensKm, totalKm, t:start, speed, dir});
           }
+          // Parcels (emerald icon)
           for(let i=0;i<2;i++){
             const m = L.marker(latlngs[0],{icon:pkgIcon}).addTo(heroMap);
             const speed = 0.18 + Math.random()*0.1;
@@ -2151,6 +2355,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         setTimeout(()=>{ try{ heroMap.invalidateSize(); }catch(_){}; centerMapHeuristic(); },180);
         window.addEventListener('resize',()=>{ try{ heroMap.invalidateSize(); }catch(_){}});
 
+        // Driver signup → add marker + LS persistence + WhatsApp notify
         formSignup?.addEventListener('submit', async e=>{
           e.preventDefault();
           const name    = document.getElementById('drvName')?.value.trim();
@@ -2193,6 +2398,7 @@ Vehicle: ${vehicle}`;
     })();
   })();
 
+  // === DRIVER LOGIN → DASH ===================================================
   formLogin?.addEventListener('submit',e=>{
     e.preventDefault();
     alert('Logged in (demo). Opening dashboard.');
@@ -2200,7 +2406,7 @@ Vehicle: ${vehicle}`;
     if(driverDashModal){ openDriverDash(); }
   });
 
-  // === SUBMIT ORDER ===
+  // === ORDER SUBMISSION (customer) ==========================================
   confirmBtn2?.addEventListener('click', async ()=>{
     confirmBtn2.disabled = true;
     try{
@@ -2345,7 +2551,7 @@ Vehicle: ${vehicle}`;
     }
   });
 
-  // === BOT PAY BUTTON ===
+  // === BOT PAY & WHATSAPP SEND ==============================================
   botNext?.addEventListener('click', ()=>{
     if(!latestOrderData) return;
 
@@ -2383,7 +2589,6 @@ Vehicle: ${vehicle}`;
     appendBot(`Click "Send to WhatsApp" so we can confirm the order and send the real secure payment link.`);
   });
 
-  // === SEND TO WHATSAPP ===
   botSendWA?.addEventListener('click', () => {
     if(!latestOrderData){ alert("No order data."); return; }
 
@@ -2406,21 +2611,25 @@ Vehicle: ${vehicle}`;
     alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
   });
 
-  // === NEW ORDER ===
   botNewOrder?.addEventListener('click', ()=>{
     closeBot();
     openOrder();
   });
 
-  // === INITIALIZE ===
+  // === INITIALIZE SIDE PANELS & WIDGETS =====================================
   renderStoreItems();
   computeDriverTotalsFromDB();
   if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
   if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
   recalcAdminPayoutWidgets();
 
-  renderDrivers();
+  // Ensure admin tabs exist (and inject Drivers tab), but only when panel opens.
+  // If the panel is already visible in your layout by default, you can uncomment:
+  // ensureAdminTabs();
+
+  renderDrivers(); // pre-compute so widgets show values even before opening panel
 });
+
 
 </script>
 
