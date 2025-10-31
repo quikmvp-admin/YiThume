@@ -1051,7 +1051,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const driverZoneDisplayEl = document.getElementById('driverZoneDisplay');  // optional
   const driverRadiusDisplayEl = document.getElementById('driverRadiusDisplay'); // optional
 
-  // Admin: Orders + Drivers + tabs
+  // Admin: Admin Panel (runs whole app)
   const ordersPanel         = document.getElementById('ordersPanel');
   const ordersList          = document.getElementById('ordersList');
   const ordersClose         = document.getElementById('closeOrdersPanel');
@@ -1061,22 +1061,21 @@ window.addEventListener('DOMContentLoaded', () => {
   const driversList         = document.getElementById('driversList');
   const driversRefresh      = document.getElementById('driversRefresh');
 
-  // Optional aggregate widgets (top of Admin panel)
-  const adminDriversCountEl = document.getElementById('adminDriversCount');
-  const adminPayPendingEl   = document.getElementById('adminPayPending');
-  const adminPayApprovedEl  = document.getElementById('adminPayApproved');
+  // Optional aggregate widgets (top of Admin/Stats)
+  let adminDriversCountEl = document.getElementById('adminDriversCount');
+  let adminPayPendingEl   = document.getElementById('adminPayPending');
+  let adminPayApprovedEl  = document.getElementById('adminPayApproved');
 
-  // Optional stats widgets (if present in your HTML)
-  const adminStatsOrdersEl   = document.getElementById('adminStatsOrders');   // total orders
-  const adminStatsRevenueEl  = document.getElementById('adminStatsRevenue');  // R total
-  const adminTopProductsEl   = document.getElementById('adminTopProducts');   // list
-  const adminTopAreasEl      = document.getElementById('adminTopAreas');      // list
+  // Optional stats widgets (if present in your HTML; otherwise we inject)
+  let adminStatsOrdersEl   = document.getElementById('adminStatsOrders');   // total orders
+  let adminStatsRevenueEl  = document.getElementById('adminStatsRevenue');  // R total
+  let adminTopProductsEl   = document.getElementById('adminTopProducts');   // list
+  let adminTopAreasEl      = document.getElementById('adminTopAreas');      // list
 
-  // Optional container for admin tabs (we’ll inject a “Drivers” tab if present)
+  // Optional container for admin tabs (we’ll inject tabs if missing)
   const ordersTabsContainer = document.getElementById('ordersTabs');
 
   // === COLLECTION POINTS (user picks “collection store/warehouse”) ==========
-  // Expanded depots; no default selection (user must choose).
   const COLLECTIONS = [
     { id:'DEPOT-PA',   name:'Port Alfred Depot',         lat:-33.590, lng:26.890 },
     { id:'DEPOT-ALC',  name:'Alice Depot',               lat:-32.787, lng:26.835 },
@@ -1089,7 +1088,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if(!zoneSelect) return;
     if(zoneSelect.dataset.enhanced === '1') return;
 
-    // Placeholder option (not selected)
     zoneSelect.innerHTML = '';
     const ph = document.createElement('option');
     ph.value = '';
@@ -1109,7 +1107,7 @@ window.addEventListener('DOMContentLoaded', () => {
     zoneSelect.dataset.enhanced = '1';
   }
 
-  // === CATALOG (customer can pick, store owner can extend) ===================
+  // === CATALOG ===============================================================
   const CATALOG = [
     {name:'Panado 500mg (24s)',price:35},
     {name:'Allergex 10mg (10s)',price:30},
@@ -1118,7 +1116,7 @@ window.addEventListener('DOMContentLoaded', () => {
     {name:'Bandages (set)',price:25}
   ];
 
-  // === PERSISTENCE LAYER (localStorage as demo DB) ===========================
+  // === PERSISTENCE LAYER =====================================================
   function saveOrdersToLS(){
     try{ localStorage.setItem(LS_ORDERS, JSON.stringify(DEMO_ORDERS_DB)); }catch(_){}
   }
@@ -1205,6 +1203,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // === ADMIN STATS (orders/revenue/top items/areas) ==========================
   function renderAdminStats(){
+    // Always re-grab in case we injected the Stats markup dynamically
+    adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
+    adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
+    adminTopProductsEl  = document.getElementById('adminTopProducts');
+    adminTopAreasEl     = document.getElementById('adminTopAreas');
+
     if(!adminStatsOrdersEl && !adminStatsRevenueEl && !adminTopProductsEl && !adminTopAreasEl) return;
 
     const orders = Object.values(DEMO_ORDERS_DB);
@@ -1432,7 +1436,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const openStore = ()=> openFlex(storeModal);
   const closeStore= ()=> closeFlex(storeModal);
 
-  // === WRAPPERS FIX (Drivers tab bug) =======================================
+  // === WRAPPERS FIX (Drivers/Stats tab containers) ==========================
   function ensureWrappers(){
     if(ordersList && !document.getElementById('ordersListWrap')){
       const wrap = document.createElement('div');
@@ -1446,6 +1450,47 @@ window.addEventListener('DOMContentLoaded', () => {
       driversList.parentElement?.insertBefore(wrap, driversList);
       wrap.appendChild(driversList);
     }
+    // Inject a Stats wrap with cards if not present
+    if(!document.getElementById('adminStatsWrap')){
+      const stats = document.createElement('div');
+      stats.id = 'adminStatsWrap';
+      stats.className = 'hidden';
+      stats.innerHTML = `
+        <div class="grid gap-3 sm:grid-cols-3">
+          <div class="border rounded-xl p-3">
+            <div class="text-xs text-slate-500">Total Orders</div>
+            <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
+          </div>
+          <div class="border rounded-xl p-3">
+            <div class="text-xs text-slate-500">Revenue</div>
+            <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
+          </div>
+          <div class="border rounded-xl p-3">
+            <div class="text-xs text-slate-500">Drivers</div>
+            <div class="text-sm">Count: <b id="adminDriversCount">0</b></div>
+            <div class="text-xs text-slate-500 mt-1">Payouts</div>
+            <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
+            <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
+          </div>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 mt-4">
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Products</div>
+            <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
+          </div>
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Areas</div>
+            <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
+          </div>
+        </div>
+      `;
+      // Place stats wrap near orders panel contents
+      (ordersPanel || document.body).appendChild(stats);
+      // refresh refs for driver payout widgets
+      adminDriversCountEl = document.getElementById('adminDriversCount');
+      adminPayPendingEl   = document.getElementById('adminPayPending');
+      adminPayApprovedEl  = document.getElementById('adminPayApproved');
+    }
     if(!document.getElementById('ordersTabs')){
       const host = ordersTabsContainer || ordersPanel || document.body;
       const tabs = document.createElement('div');
@@ -1456,10 +1501,11 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   const getWrapRefs = ()=>({
     ordersWrap: document.getElementById('ordersListWrap'),
-    driversWrap: document.getElementById('driversListWrap')
+    driversWrap: document.getElementById('driversListWrap'),
+    statsWrap:   document.getElementById('adminStatsWrap')
   });
 
-  // Open Admin panel (Orders) and ensure tabs are present
+  // Open Admin panel (runs the whole app)
   const openOrders = ()=>{
     openFlex(ordersPanel);
     ensureAdminTabs();
@@ -1740,9 +1786,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   });
 
   // Current admin sub-tab. Default to “pending”.
-  let ordersTab = 'pending'; // 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'drivers' | 'by_driver:<id>'
+  let ordersTab = 'pending'; // 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'drivers' | 'by_driver:<id>' | 'stats'
 
-  // Inject a Drivers tab button & ensure wrappers exist
+  // Inject a Drivers & Stats tab buttons & ensure wrappers exist
   function ensureAdminTabs(){
     ensureWrappers();
 
@@ -1765,7 +1811,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ['Assigned','assigned'],
       ['In Transit','in_transit'],
       ['Delivered','delivered'],
-      ['Drivers','drivers']
+      ['Drivers','drivers'],
+      ['Stats','stats']
     ];
 
     const host = document.getElementById('ordersTabs') || ordersTabsContainer || ordersPanel || document.body;
@@ -1800,16 +1847,20 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
 
     // Toggle only inner wrappers (never hide the entire panel)
-    const { ordersWrap, driversWrap } = getWrapRefs();
+    const { ordersWrap, driversWrap, statsWrap } = getWrapRefs();
     const showDrivers = tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:');
+    const showStats   = tabKey === 'stats';
 
-    if(ordersWrap) ordersWrap.classList.toggle('hidden', showDrivers);
+    if(ordersWrap) ordersWrap.classList.toggle('hidden', showDrivers || showStats);
     if(driversWrap) driversWrap.classList.toggle('hidden', !showDrivers);
+    if(statsWrap)   statsWrap.classList.toggle('hidden', !showStats);
 
     // Render appropriate section
     if(showDrivers){ renderDrivers(); }
+    else if(showStats){ renderAdminStats(); }
     else { renderOrders(); }
 
+    // Keep stats numbers fresh in any view
     renderAdminStats();
   }
 
@@ -2014,7 +2065,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const pin = prompt('Enter admin PIN:');
     if(pin && pin.trim() !== ""){
       alert('Admin mode ON');
-      openOrders();
+      openOrders(); // opens unified Admin with Orders/Drivers/Stats tabs
     } else {
       alert('Invalid PIN');
     }
@@ -2022,7 +2073,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   // Fetch orders by status (DEMO → local memory, else → backend)
   async function fetchOrdersByStatus(status){
-    if(status === 'drivers' || (status||'').startsWith('by_driver:')) return []; // handled elsewhere
+    if(status === 'drivers' || (status||'').startsWith('by_driver:') || status === 'stats') return []; // handled elsewhere
     if(DEMO_MODE){
       return Object.values(DEMO_ORDERS_DB).filter(o => o.status === status);
     }
@@ -2063,6 +2114,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     currentOrdersByTab[ordersTab] = data;
 
     computeDriverTotalsFromDB();
+
+    // If Stats tab is active, hide orders list content
+    if(ordersTab === 'stats'){
+      ordersList.innerHTML = '';
+      return;
+    }
 
     ordersList.innerHTML = data.length
       ? ''
@@ -2253,7 +2310,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       });
     });
 
-    // Wire “View Orders” → switches Orders panel to a driver-filtered view
+    // Wire “View Orders” → switches Admin to a driver-filtered view
     driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const did = btn.getAttribute('data-id');
@@ -2574,7 +2631,6 @@ Vehicle: ${vehicle}`;
         latestOrderData = {
           order_public_id: ("DEMO-" + refStub).toUpperCase(),
           status: "pending",
-          fraud_score: 0.0,
           total: summary.total,
           items: summary.items,
           eta,
@@ -2606,7 +2662,6 @@ Vehicle: ${vehicle}`;
           latestOrderData = {
             order_public_id: data.order_public_id || data.order_id || ("YI-" + Date.now().toString().slice(-6)),
             status:         data.status || "pending",
-            fraud_score:    data.fraud_score ?? null,
             total:          summary.total,
             items:          summary.items,
             eta,
