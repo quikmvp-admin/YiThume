@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop offset='0%25' stop-color='%2310b981'/%3E%3Cstop offset='100%25' stop-color='%23059669'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect rx='12' width='36' height='36' fill='url(%23g)'/%3E%3Cpath d='M10 12l5 8v4h-3v-3l-5-9h3zM26 12l-5 8v-3l5-9h-3z' fill='%23fff'/%3E%3C/svg%3E">
+  <!-- Favicon: Gradient square with a white Y -->
+  <link
+    rel="icon"
+    type="image/svg+xml"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop offset='0%25' stop-color='%2310b981'/%3E%3Cstop offset='100%25' stop-color='%23059669'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect rx='12' width='36' height='36' fill='url(%23g)'/%3E%3Cpath d='M10 10h4l4 4 4-4h4l-8 8v8h-4v-8z' fill='%23fff'/%3E%3C/svg%3E"
+  />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>YiThume — Health delivered. Fast.</title>
   <meta name="description" content="YiThume delivers OTC meds to remote areas. Order on website, confirm on WhatsApp. Port Alfred, Bathurst, Kenton-on-Sea, Makhanda, Alice, Alexandria, Alicedale." />
@@ -41,12 +46,6 @@
       height:18px;
       filter:drop-shadow(0 1px 1px rgba(0,0,0,.18));
     }
-    .car-A path{fill:var(--emerald-600);}
-    .car-B path{fill:var(--emerald-500);}
-    .car-C path{fill:var(--emerald-400);}
-    .car-D path{fill:var(--emerald-800);}
-    .car-E path{fill:var(--emerald-900);}
-
     .pkg-dot{transform:translate(-50%,-50%);}
     .pkg-dot svg{
       width:20px;
@@ -87,6 +86,7 @@
 <header class="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200">
   <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
     <div class="flex items-center gap-2">
+      <!-- Header logo: Gradient square with a white Y -->
       <svg width="36" height="36" viewBox="0 0 36 36" class="rounded-2xl" aria-label="YiThume logo">
         <defs>
           <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
@@ -94,7 +94,7 @@
           </linearGradient>
         </defs>
         <rect rx="12" width="36" height="36" fill="url(#g)"/>
-        <path d="M10 12l5 8v4h-3v-3l-5-9h3zM26 12l-5 8v-3l5-9h-3z" fill="#fff"/>
+        <path d="M10 10h4l4 4 4-4h4l-8 8v8h-4v-8z" fill="#fff"/>
       </svg>
       <div class="text-xl font-semibold tracking-tight">YiThume</div>
     </div>
@@ -103,7 +103,7 @@
     <nav class="hidden md:flex items-center gap-6" aria-label="Primary">
       <a href="#how" class="text-sm hover:text-emerald-700">How It Works</a>
       <a href="#services" class="text-sm hover:text-emerald-700">Services</a>
-      <a href="#pricing" class="text-sm hover:text-emerald-700">Pricing &amp; Zones</a>
+      <a href="#pricing" class="text-sm hover:text-emerald-700">Pricing</a>
       <a href="#drivers" class="text-sm hover:text-emerald-700">For Drivers</a>
       <a href="#faq" class="text-sm hover:text-emerald-700">FAQ</a>
     </nav>
@@ -151,7 +151,7 @@
     <nav class="px-4 py-4 text-sm flex flex-col gap-2 max-w-6xl mx-auto w-full">
       <a href="#how" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link" role="menuitem">How It Works</a>
       <a href="#services" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link" role="menuitem">Services</a>
-      <a href="#pricing" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link" role="menuitem">Pricing &amp; Zones</a>
+      <a href="#pricing" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link" role="menuitem">Pricing</a>
       <a href="#drivers" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link" role="menuitem">For Drivers</a>
       <a href="#faq" class="py-2 rounded-lg hover:bg-slate-50 block mobile-nav-link" role="menuitem">FAQ</a>
 
@@ -255,7 +255,7 @@
       <div class="p-5 rounded-2xl bg-white border shadow-sm">
         <div class="text-sm text-slate-500">Step 1</div>
         <div class="mt-1 font-semibold">Build order</div>
-        <p class="mt-2 text-sm text-slate-700">Choose items and delivery zone on the website.</p>
+        <p class="mt-2 text-sm text-slate-700">Choose items and your nearest pickup depot on the website.</p>
       </div>
       <div class="p-5 rounded-2xl bg-white border shadow-sm">
         <div class="text-sm text-slate-500">Step 2</div>
@@ -356,49 +356,44 @@
   </div>
 </section>
 
-<!-- Pricing & Zones -->
+<!-- Pricing (distance-based, no zones) -->
 <section id="pricing" class="py-12 sm:py-16 border-t border-slate-200">
   <div class="max-w-6xl mx-auto px-4 sm:px-6">
-    <h2 class="text-2xl sm:text-3xl font-bold">Pricing &amp; Zones</h2>
-    <div class="mt-6 overflow-hidden rounded-2xl border bg-white">
-      <table class="w-full text-sm">
-        <thead class="bg-slate-50 text-slate-600">
-          <tr>
-            <th class="py-3 px-4 text-left">Zone</th>
-            <th class="py-3 px-4 text-left">Areas</th>
-            <th class="py-3 px-4 text-left">Delivery Fee</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr class="border-t">
-            <td class="py-3 px-4 font-medium">Zone A</td>
-            <td class="py-3 px-4">Port Alfred, Nemato, East Beach, Seafield</td>
-            <td class="py-3 px-4">R25</td>
-          </tr>
-          <tr class="border-t">
-            <td class="py-3 px-4 font-medium">Zone B</td>
-            <td class="py-3 px-4">Bathurst, Eluce/Elitsi</td>
-            <td class="py-3 px-4">R35</td>
-          </tr>
-          <tr class="border-t">
-            <td class="py-3 px-4 font-medium">Zone C</td>
-            <td class="py-3 px-4">Kenton-on-Sea, Bushmans River, Boesmansriviermond</td>
-            <td class="py-3 px-4">R45</td>
-          </tr>
-          <tr class="border-t">
-            <td class="py-3 px-4 font-medium">Zone D</td>
-            <td class="py-3 px-4">Makhanda/Grahamstown, Eirini</td>
-            <td class="py-3 px-4">R60</td>
-          </tr>
-          <tr class="border-t">
-            <td class="py-3 px-4 font-medium">Zone E</td>
-            <td class="py-3 px-4">Alexandria, Alicedale, Surrounding Rural Areas</td>
-            <td class="py-3 px-4">R70</td>
-          </tr>
-        </tbody>
-      </table>
+    <h2 class="text-2xl sm:text-3xl font-bold">Pricing</h2>
+
+    <div class="mt-6 grid md:grid-cols-3 gap-4">
+      <div class="rounded-2xl border bg-white p-5 shadow-sm">
+        <div class="text-sm text-slate-500">Base</div>
+        <div class="mt-1 text-2xl font-bold">R15</div>
+        <div class="mt-2 text-sm text-slate-600">Base delivery fee per order.</div>
+      </div>
+      <div class="rounded-2xl border bg-white p-5 shadow-sm">
+        <div class="text-sm text-slate-500">Distance</div>
+        <div class="mt-1 text-2xl font-bold">R8 / km</div>
+        <div class="mt-2 text-sm text-slate-600">From pickup depot to your address.</div>
+      </div>
+      <div class="rounded-2xl border bg-white p-5 shadow-sm">
+        <div class="text-sm text-slate-500">Rush (optional)</div>
+        <div class="mt-1 text-2xl font-bold">+ R30</div>
+        <div class="mt-2 text-sm text-slate-600">When available in your area.</div>
+      </div>
     </div>
-    <div class="mt-4 text-xs text-slate-500">Delivery days: Wed–Sun. Rush +R30 when available.</div>
+
+    <div class="mt-6 rounded-2xl border bg-white p-5 shadow-sm">
+      <div class="text-sm text-slate-500">Pickup depots (select in checkout)</div>
+      <ul class="mt-2 text-sm text-slate-700 list-disc pl-5">
+        <li>Port Alfred Depot</li>
+        <li>Alice Depot</li>
+        <li>Makhanda / Grahamstown</li>
+        <li>Gqeberha (Port Elizabeth)</li>
+        <li>Pretoria (Main Depot)</li>
+      </ul>
+      <div class="mt-3 text-xs text-slate-500">
+        No defaults — choose the nearest pickup depot at checkout for the most accurate quote.
+      </div>
+    </div>
+
+    <div class="mt-4 text-xs text-slate-500">Delivery days: Wed–Sun. Windows: 08–10 • 12–14 • 16–18. If we can’t deliver, you’re refunded.</div>
   </div>
 </section>
 
@@ -441,10 +436,22 @@
 <footer class="py-10 border-t border-slate-200">
   <div class="max-w-6xl mx-auto px-4 sm:px-6">
     <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-      <div>
-        <div class="font-semibold">YiThume</div>
-        <div class="text-xs text-slate-500">
-          Delivery service only • POPIA compliant • © <span id="year"></span>
+      <div class="flex items-center gap-2">
+        <!-- Mini Y logo in footer for consistency -->
+        <svg width="24" height="24" viewBox="0 0 36 36" class="rounded-xl" aria-hidden="true">
+          <defs>
+            <linearGradient id="gf" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#059669"/>
+            </linearGradient>
+          </defs>
+        <rect rx="8" width="36" height="36" fill="url(#gf)"/>
+        <path d="M10 10h4l4 4 4-4h4l-8 8v8h-4v-8z" fill="#fff"/>
+        </svg>
+        <div>
+          <div class="font-semibold">YiThume</div>
+          <div class="text-xs text-slate-500">
+            Delivery service only • POPIA compliant • © <span id="year"></span>
+          </div>
         </div>
       </div>
       <div class="flex flex-col sm:flex-row gap-3">
@@ -684,15 +691,11 @@
         <div id="itemsList" class="mt-2 grid gap-2"></div>
       </div>
 
-      <!-- Zone -->
+      <!-- Pickup depot (no default; JS will populate) -->
       <div>
-        <label class="block text-xs text-slate-600 font-medium">Delivery zone</label>
-        <select id="zoneSelect" class="mt-1 w-full border rounded-lg p-2" aria-label="Delivery zone">
-          <option value="A" data-fee="25" data-lat="-33.590" data-lng="26.890">Zone A — Port Alfred (R25)</option>
-          <option value="B" data-fee="35" data-lat="-33.498" data-lng="26.833">Zone B — Bathurst (R35)</option>
-          <option value="C" data-fee="45" data-lat="-33.686" data-lng="26.668">Zone C — Kenton / Bushmans (R45)</option>
-          <option value="D" data-fee="60" data-lat="-33.310" data-lng="26.520">Zone D — Makhanda / Grahamstown / Alice (R60)</option>
-          <option value="E" data-fee="70" data-lat="-33.653" data-lng="26.404">Zone E — Alexandria / Alicedale (R70)</option>
+        <label class="block text-xs text-slate-600 font-medium">Pickup depot</label>
+        <select id="zoneSelect" class="mt-1 w-full border rounded-lg p-2" aria-label="Pickup depot">
+          <!-- Options injected by JS (no default) -->
         </select>
         <div class="flex items-center gap-2 mt-2">
           <input id="rushToggle" type="checkbox" class="h-4 w-4" />
