@@ -349,7 +349,7 @@
         </div>
       </div>
 
-      <div class="mt-auto pt-6 text-[11px] text-slate-500 leading-snug">
+      <div class="mt-auto pt-6 text:[11px] text-slate-500 leading-snug">
         We are a delivery service only. We do not provide medical advice.
       </div>
     </div>
@@ -444,8 +444,8 @@
               <stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#059669"/>
             </linearGradient>
           </defs>
-        <rect rx="8" width="36" height="36" fill="url(#gf)"/>
-        <path d="M10 10h4l4 4 4-4h4l-8 8v8h-4v-8z" fill="#fff"/>
+          <rect rx="8" width="36" height="36" fill="url(#gf)"/>
+          <path d="M10 10h4l4 4 4-4h4l-8 8v8h-4v-8z" fill="#fff"/>
         </svg>
         <div>
           <div class="font-semibold">YiThume</div>
@@ -618,8 +618,9 @@
         <button id="botNext" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">
           Pay
         </button>
+        <!-- Renamed label only (keep id for scripts) -->
         <button id="botSendWA" class="flex-1 py-2 rounded-xl border border-slate-300 font-medium hover:bg-slate-100 hidden">
-          Send to WhatsApp
+          Contact support
         </button>
         <button id="botNewOrder" class="flex-1 py-2 rounded-xl border border-slate-300 font-medium hover:bg-slate-100 hidden">
           New order
@@ -795,30 +796,13 @@
       <button id="closeOrdersPanel" class="text-slate-500 hover:text-slate-700" aria-label="Close admin panel">✕</button>
     </div>
 
-    <!-- tabs -->
-    <div class="p-4 border-b flex flex-wrap gap-2 text-xs" role="tablist" aria-label="Order status filter">
-      <button class="yt-o-tab px-3 py-1 rounded-lg bg-emerald-600 text-white" data-o-tab="pending" role="tab" aria-selected="true">
-        Pending
-      </button>
-      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="review_required" role="tab" aria-selected="false">
-        Review
-      </button>
-      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="assigned" role="tab" aria-selected="false">
-        Assigned
-      </button>
-      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="in_transit" role="tab" aria-selected="false">
-        In transit
-      </button>
-      <button class="yt-o-tab px-3 py-1 rounded-lg border border-slate-300" data-o-tab="delivered" role="tab" aria-selected="false">
-        Delivered
-      </button>
+    <!-- Tabs host injected by JS -->
+    <div id="ordersTabs" class="p-4 border-b flex flex-wrap gap-2 text-xs" role="tablist" aria-label="Order status filter">
+      <!-- JS will inject tab buttons -->
     </div>
 
-    <div class="flex-1 overflow-y-auto p-4 space-y-4 text-sm" id="ordersList" aria-live="polite">
-      <!-- JS fills orders -->
-    </div>
-
-    <div class="p-4 border-t flex flex-col sm:flex-row gap-2 text-sm">
+    <!-- Controls for orders list -->
+    <div class="p-4 pt-3 flex flex-col sm:flex-row gap-2 text-sm">
       <button id="ordersRefresh" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">
         Refresh
       </button>
@@ -826,6 +810,23 @@
               class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">
         Auto assign all
       </button>
+    </div>
+
+    <!-- Orders list (populated by JS) -->
+    <div class="flex-1 overflow-y-auto px-4 pb-4 space-y-4 text-sm" id="ordersList" aria-live="polite">
+      <!-- JS fills orders -->
+    </div>
+
+    <!-- Drivers section (shown when Drivers tab active; populated by JS) -->
+    <div class="px-4 pb-4 space-y-3">
+      <div class="flex gap-2">
+        <button id="driversRefresh" class="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-100 text-sm">
+          Drivers refresh
+        </button>
+      </div>
+      <div id="driversList" class="divide-y divide-slate-200 rounded-xl border text-sm">
+        <!-- JS fills drivers table/cards -->
+      </div>
     </div>
   </div>
 </div>
