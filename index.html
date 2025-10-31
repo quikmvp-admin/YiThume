@@ -1429,8 +1429,42 @@ window.addEventListener('DOMContentLoaded', () => {
   const openStore = ()=> openFlex(storeModal);
   const closeStore= ()=> closeFlex(storeModal);
 
+  // === WRAPPERS FIX (Drivers tab bug) =======================================
+  function ensureWrappers(){
+    if(ordersList && !document.getElementById('ordersListWrap')){
+      const wrap = document.createElement('div');
+      wrap.id = 'ordersListWrap';
+      ordersList.parentElement?.insertBefore(wrap, ordersList);
+      wrap.appendChild(ordersList);
+    }
+    if(driversList && !document.getElementById('driversListWrap')){
+      const wrap = document.createElement('div');
+      wrap.id = 'driversListWrap';
+      driversList.parentElement?.insertBefore(wrap, driversList);
+      wrap.appendChild(driversList);
+    }
+    if(!document.getElementById('ordersTabs')){
+      const host = ordersTabsContainer || ordersPanel || document.body;
+      const tabs = document.createElement('div');
+      tabs.id = 'ordersTabs';
+      tabs.className = 'flex gap-2 mb-3 flex-wrap';
+      host.insertBefore(tabs, host.firstChild);
+    }
+  }
+  const getWrapRefs = ()=>({
+    ordersWrap: document.getElementById('ordersListWrap'),
+    driversWrap: document.getElementById('driversListWrap')
+  });
+
   // Open Admin panel (Orders) and ensure tabs are present
-  const openOrders = ()=>{ openFlex(ordersPanel); ensureAdminTabs(); setActiveAdminTab(ordersTab); renderOrders(); renderDrivers(); renderAdminStats(); };
+  const openOrders = ()=>{
+    openFlex(ordersPanel);
+    ensureAdminTabs();
+    setActiveAdminTab(ordersTab);
+    renderOrders();
+    renderDrivers();
+    renderAdminStats();
+  };
   const closeOrders= ()=> closeFlex(ordersPanel);
 
   const openDriverDash = ()=>{
@@ -1495,15 +1529,12 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // === “Drivers tab, not pages/modals” FIX ==================================
-  // Any link/button that intends to show Drivers as a section should use one of:
-  // class="openDriversTab", id="openDriversTab", data-nav="drivers", or href="#drivers"
   function forceOpenDriversTab(e){
     e?.preventDefault?.();
     ordersTab = 'drivers';
     openOrders();
     setActiveAdminTab('drivers');
   }
-  // Capture common hooks without removing existing behavior elsewhere
   document.querySelectorAll('.openDriversTab, #openDriversTab, [data-nav="drivers"], a[href="#drivers"]')
     .forEach(el => el.addEventListener('click', forceOpenDriversTab, {capture:true}));
 
@@ -1708,12 +1739,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   // Current admin sub-tab. Default to “pending”.
   let ordersTab = 'pending'; // 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'drivers' | 'by_driver:<id>'
 
-  // Inject a Drivers tab button into #ordersTabs (or after existing .yt-o-tab)
+  // Inject a Drivers tab button & ensure wrappers exist
   function ensureAdminTabs(){
-    // Find any existing tab buttons
+    ensureWrappers();
+
     let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
 
-    // Helper to create a tab button
     function makeTabBtn(label, tabKey){
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -1722,45 +1753,28 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       btn.setAttribute('role','tab');
       btn.setAttribute('aria-selected','false');
       btn.textContent = label;
-      btn.addEventListener('click', ()=>{
-        setActiveAdminTab(tabKey);
-      });
+      btn.addEventListener('click', ()=> setActiveAdminTab(tabKey));
       return btn;
     }
 
-    // Ensure the four order tabs exist somewhere
     const wanted = [
       ['Pending','pending'],
       ['Assigned','assigned'],
       ['In Transit','in_transit'],
-      ['Delivered','delivered']
+      ['Delivered','delivered'],
+      ['Drivers','drivers']
     ];
 
-    // Insert into #ordersTabs if present; otherwise append near ordersList’s parent
-    let host = ordersTabsContainer;
-    if(!host){
-      // Try to find a reasonable host (e.g., parent of ordersList)
-      host = ordersList?.parentElement || ordersPanel || document.body;
-    }
-
-    // Build a set of existing keys
+    const host = document.getElementById('ordersTabs') || ordersTabsContainer || ordersPanel || document.body;
     const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
-
-    // Create missing base tabs
     wanted.forEach(([label,key])=>{
       if(!haveKeys.has(key)){
         host.appendChild(makeTabBtn(label, key));
       }
     });
 
-    // Add Drivers tab if missing
-    if(!haveKeys.has('drivers')){
-      host.appendChild(makeTabBtn('Drivers', 'drivers'));
-    }
-
-    // Re-capture buttons (including anything we just injected)
+    // Re-wire (idempotent)
     tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
-    // Wire ARIA + selected state (idempotent)
     tabButtons.forEach(b=>{
       if(!b.dataset.wired){
         b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
@@ -1772,7 +1786,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   function setActiveAdminTab(tabKey){
     ordersTab = tabKey;
 
-    // Visual active state
+    // Visual state
     document.querySelectorAll('.yt-o-tab').forEach(x=>{
       x.classList.remove('bg-emerald-600','text-white');
       x.setAttribute('aria-selected','false');
@@ -1782,10 +1796,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
     });
 
-    // Show/hide list blocks depending on tab
-    const showDrivers = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
-    if(driversList) driversList.parentElement?.classList.toggle('hidden', !showDrivers);
-    if(ordersList)  ordersList.parentElement?.classList.toggle('hidden', showDrivers);
+    // Toggle only inner wrappers (never hide the entire panel)
+    const { ordersWrap, driversWrap } = getWrapRefs();
+    const showDrivers = tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:');
+
+    if(ordersWrap) ordersWrap.classList.toggle('hidden', showDrivers);
+    if(driversWrap) driversWrap.classList.toggle('hidden', !showDrivers);
 
     // Render appropriate section
     if(showDrivers){ renderDrivers(); }
@@ -2680,13 +2696,16 @@ Vehicle: ${vehicle}`;
   recalcAdminPayoutWidgets();
   renderAdminStats();
 
-  // Ensure admin tabs exist (and inject Drivers tab), but only when panel opens.
-  // If the panel is already visible in your layout by default, you can uncomment:
+  // Ensure wrappers exist early so toggles never blank the panel
+  ensureWrappers();
+
+  // If your admin panel is visible by default, you can also inject tabs immediately:
   // ensureAdminTabs();
 
   renderDrivers(); // pre-compute so widgets show values even before opening panel
 });
 </script>
+
 
 
 </body>
