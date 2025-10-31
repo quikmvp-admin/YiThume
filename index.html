@@ -78,6 +78,32 @@
       overflow: hidden;
       touch-action: none;
     }
+
+    /* =========================
+       Orders Admin layout helpers
+       ========================= */
+    .yt-modal-body{
+      max-height:70vh;      /* scroll body only */
+      overflow-y:auto;
+    }
+    .yt-sticky{ position:sticky; z-index:10; background:#fff; }
+    .yt-sticky-top{ top:0; }
+    .yt-sticky-bottom{ bottom:0; }
+    .yt-chip{ line-height:1.1; }
+
+    /* Driver card grid for "Drivers" tab content */
+    .yt-driver-card{
+      display:grid;
+      grid-template-columns: 1fr auto; /* info | actions */
+      gap:.75rem;
+    }
+    @media (max-width:640px){
+      .yt-driver-card{ grid-template-columns: 1fr; } /* stack on mobile */
+    }
+    .yt-actions{
+      display:flex; align-items:flex-start; justify-content:flex-end;
+      gap:.5rem; flex-wrap:wrap;
+    }
   </style>
 </head>
 <body class="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-900">
@@ -349,7 +375,7 @@
         </div>
       </div>
 
-      <div class="mt-auto pt-6 text:[11px] text-slate-500 leading-snug">
+      <div class="mt-auto pt-6 text-[11px] text-slate-500 leading-snug">
         We are a delivery service only. We do not provide medical advice.
       </div>
     </div>
@@ -787,8 +813,9 @@
 <div id="ordersPanel"
      class="fixed inset-0 hidden items-start justify-center pt-16 sm:pt-20 bg-black/40 p-4 z-[11000] overflow-y-auto"
      role="dialog" aria-modal="true" aria-labelledby="ordersPanelTitle">
-  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-2xl flex flex-col max-h-[85vh] outline-none" tabindex="-1">
-    <div class="flex items-center justify-between p-4 border-b">
+  <div class="bg-white rounded-2xl shadow-xl border w-full max-w-4xl flex flex-col outline-none" tabindex="-1">
+    <!-- Header -->
+    <div class="flex items-center justify-between p-4 border-b yt-sticky yt-sticky-top">
       <div class="font-semibold flex flex-col">
         <span id="ordersPanelTitle">Orders Admin</span>
         <span class="text-xs text-slate-500">Assign drivers • Mark delivered</span>
@@ -796,36 +823,40 @@
       <button id="closeOrdersPanel" class="text-slate-500 hover:text-slate-700" aria-label="Close admin panel">✕</button>
     </div>
 
-    <!-- Tabs host injected by JS -->
-    <div id="ordersTabs" class="p-4 border-b flex flex-wrap gap-2 text-xs" role="tablist" aria-label="Order status filter">
+    <!-- Tabs (injected by JS) -->
+    <div id="ordersTabs" class="p-3 border-b yt-sticky yt-sticky-top flex flex-wrap gap-2 text-xs" role="tablist" aria-label="Order status filter">
       <!-- JS will inject tab buttons -->
     </div>
 
-    <!-- Controls for orders list -->
-    <div class="p-4 pt-3 flex flex-col sm:flex-row gap-2 text-sm">
-      <button id="ordersRefresh" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">
-        Refresh
-      </button>
-      <button id="ordersAssign"
-              class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">
-        Auto assign all
-      </button>
-    </div>
-
-    <!-- Orders list (populated by JS) -->
-    <div class="flex-1 overflow-y-auto px-4 pb-4 space-y-4 text-sm" id="ordersList" aria-live="polite">
-      <!-- JS fills orders -->
-    </div>
-
-    <!-- Drivers section (shown when Drivers tab active; populated by JS) -->
-    <div class="px-4 pb-4 space-y-3">
-      <div class="flex gap-2">
-        <button id="driversRefresh" class="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-100 text-sm">
-          Drivers refresh
-        </button>
+    <!-- Scrollable body (orders + drivers sections; show/hide via JS tabs) -->
+    <div class="yt-modal-body">
+      <!-- Orders list (populated by JS) -->
+      <div class="p-4 space-y-4 text-sm" id="ordersList" aria-live="polite">
+        <!-- JS fills orders -->
       </div>
-      <div id="driversList" class="divide-y divide-slate-200 rounded-xl border text-sm">
-        <!-- JS fills drivers table/cards -->
+
+      <!-- Drivers section (shown when Drivers tab active; populated by JS) -->
+      <div class="px-4 pb-4 space-y-3">
+        <div class="flex gap-2">
+          <button id="driversRefresh" class="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-100 text-sm">
+            Drivers refresh
+          </button>
+        </div>
+        <div id="driversList" class="divide-y divide-slate-200 rounded-xl border text-sm">
+          <!-- JS fills drivers table/cards -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Sticky footer actions -->
+    <div class="p-4 border-t yt-sticky yt-sticky-bottom">
+      <div class="flex flex-col sm:flex-row gap-2 text-sm">
+        <button id="ordersRefresh" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">
+          Refresh
+        </button>
+        <button id="ordersAssign" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">
+          Auto assign all
+        </button>
       </div>
     </div>
   </div>
@@ -889,7 +920,7 @@
     </div>
   </div>
 </div>
-
+  
 <script>
 window.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & GLOBALS ======================================================
