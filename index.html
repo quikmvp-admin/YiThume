@@ -920,6 +920,7 @@
     </div>
   </div>
 </div>
+
 <script>
 window.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & GLOBALS ======================================================
@@ -998,7 +999,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // caches
   const currentOrdersByTab = {};
-  let DRIVERS = [];                       // full driver docs from API
+  let DRIVERS = [];                        // full driver docs from API
   let DRIVERS_BY_ID = Object.create(null); // map by _internal_id
 
   // Customer & collection positions
@@ -1669,6 +1670,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   openStoreFooter?.addEventListener('click', openStore);
+  document.getElementById('openStoreHeader')?.addEventListener('click', openStore);
   closeStoreModalBtn?.addEventListener('click', closeStore);
   cancelStoreBtn?.addEventListener('click', closeStore);
 
@@ -1796,6 +1798,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     else if(showStats){ renderAdminStats(); }
     else { renderOrders(); }
 
+    // keep header cards fresh
     renderAdminStats();
   }
 
@@ -2504,6 +2507,19 @@ Vehicle: ${vehicle}`;
     closeBot();
     openOrder();
   });
+
+  // === WIRING: Open/Close buttons that were missing ==========================
+  document.getElementById('openOrderBuilder')?.addEventListener('click', openOrder);
+  closeBtn?.addEventListener('click', closeOrder);
+  cancelOrderBuilder?.addEventListener('click', closeOrder);
+
+  document.getElementById('openDriverModal')?.addEventListener('click', openDriverWindow);
+  closeDriver?.addEventListener('click', closeDriverWindow);
+
+  closeDriverDash?.addEventListener('click', closeDriverDashWindow);
+
+  closePayModalBtn?.addEventListener('click', closePayModal);
+  btnCancelPay?.addEventListener('click', closePayModal);
 
   // === ADMIN ENTRY ===========================================================
   adminBtn?.addEventListener('click', async ()=>{
