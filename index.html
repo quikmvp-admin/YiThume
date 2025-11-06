@@ -921,7 +921,7 @@
   </div>
 </div>
 
-<script>
+<script><script>
 window.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & GLOBALS ======================================================
   const BASE_API        = "/api/app";
@@ -2418,7 +2418,6 @@ Vehicle: ${vehicle}`;
   });
 
   // === ORDER SUBMISSION (customer) ==========================================
-  const confirmBtn2 = document.getElementById('confirmOrderBtn');
   confirmBtn2?.addEventListener('click', async ()=>{
     confirmBtn2.disabled = true;
     try{
@@ -2618,6 +2617,7 @@ Vehicle: ${vehicle}`;
   fetchDrivers();
 });
 </script>
+
 
 
 </body>
