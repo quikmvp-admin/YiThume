@@ -1056,6 +1056,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const btnFakePayNow       = document.getElementById('btnFakePayNow');
   const btnCancelPay        = document.getElementById('btnCancelPay');
 
+  // Driver modal + forms
   const driverModal         = document.getElementById('driverModal');       // signup/login modal
   const closeDriver         = document.getElementById('closeDriverModal');
   const tabSignup           = document.getElementById('tabSignup');
@@ -1063,6 +1064,11 @@ window.addEventListener('DOMContentLoaded', () => {
   const formSignup          = document.getElementById('driverFormSignup');
   const formLogin           = document.getElementById('driverFormLogin');
 
+  // Fields for login (expected IDs)
+  const drvLoginPhoneEl     = document.getElementById('drvLoginPhone');
+  const drvLoginPinEl       = document.getElementById('drvLoginPin');
+
+  // Driver dash
   const driverDashModal     = document.getElementById('driverDashModal');   // driver dashboard modal
   const closeDriverDash     = document.getElementById('closeDriverDash');
   const driverPayoutPendingEl   = document.getElementById('driverPayoutPending');
@@ -1205,7 +1211,9 @@ window.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
       `;
-      (ordersPanel || document.body).appendChild(stats);
+      // place inside the orders content region (not next to it)
+      ensureContentHost();
+      document.getElementById('ordersContent')?.appendChild(stats);
       adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
       adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
       adminTopProductsEl  = document.getElementById('adminTopProducts');
@@ -1435,31 +1443,71 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   const closePayModal = ()=> closeFlex(payModal);
 
-  const openDriverWindow  = ()=> openFlex(driverModal);
+  // === DRIVER MODAL TABS + OPEN =============================================
+  function showDriverTab(which){
+    const loginOn  = which === 'login';
+    const signupOn = which === 'signup';
+    formLogin?.classList.toggle('hidden', !loginOn);
+    formSignup?.classList.toggle('hidden', !signupOn);
+    tabLogin?.classList.toggle('bg-emerald-600', loginOn);
+    tabLogin?.classList.toggle('text-white', loginOn);
+    tabLogin?.setAttribute('aria-selected', loginOn ? 'true' : 'false');
+    tabSignup?.classList.toggle('bg-emerald-600', signupOn);
+    tabSignup?.classList.toggle('text-white', signupOn);
+    tabSignup?.setAttribute('aria-selected', signupOn ? 'true' : 'false');
+  }
+  const openDriverWindow  = ()=>{ openFlex(driverModal); showDriverTab('login'); };
   const closeDriverWindow = ()=> closeFlex(driverModal);
 
   const openStore = ()=> openFlex(storeModal);
   const closeStore= ()=> closeFlex(storeModal);
 
-  // === WRAPPERS / TABS =======================================================
+  tabLogin?.addEventListener('click', (e)=>{ e.preventDefault(); showDriverTab('login'); });
+  tabSignup?.addEventListener('click', (e)=>{ e.preventDefault(); showDriverTab('signup'); });
+
+  // === WRAPPERS / CONTENT REGION ============================================
+  function ensureContentHost(){
+    if(!ordersPanel) return;
+    if(!document.getElementById('ordersContent')){
+      const content = document.createElement('div');
+      content.id = 'ordersContent';
+      content.className = 'w-full';
+      // Insert after tabs if tabs exist, else as first child
+      const tabs = document.getElementById('ordersTabs');
+      if(tabs && tabs.nextSibling){
+        ordersPanel.insertBefore(content, tabs.nextSibling);
+      } else if(tabs){
+        ordersPanel.appendChild(content);
+      } else {
+        ordersPanel.appendChild(content);
+      }
+    }
+  }
+
   function ensureWrappers(){
+    ensureContentHost();
+
     if(ordersList && !document.getElementById('ordersListWrap')){
       const wrap = document.createElement('div');
       wrap.id = 'ordersListWrap';
+      wrap.className = 'w-full';
       ordersList.parentElement?.insertBefore(wrap, ordersList);
       wrap.appendChild(ordersList);
+      document.getElementById('ordersContent')?.appendChild(wrap);
     }
     if(driversList && !document.getElementById('driversListWrap')){
       const wrap = document.createElement('div');
       wrap.id = 'driversListWrap';
+      wrap.className = 'w-full hidden';
       driversList.parentElement?.insertBefore(wrap, driversList);
       wrap.appendChild(driversList);
+      document.getElementById('ordersContent')?.appendChild(wrap);
     }
     // Clean vertical Stats layout (labels ABOVE values)
     if(!document.getElementById('adminStatsWrap')){
       const stats = document.createElement('div');
       stats.id = 'adminStatsWrap';
-      stats.className = 'hidden';
+      stats.className = 'hidden w-full';
       stats.innerHTML = `
         <div class="grid gap-3 sm:grid-cols-3">
           <div class="border rounded-xl p-3 flex flex-col">
@@ -1489,7 +1537,7 @@ window.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
       `;
-      (ordersPanel || document.body).appendChild(stats);
+      document.getElementById('ordersContent')?.appendChild(stats);
       adminDriversCountEl = document.getElementById('adminDriversCount');
       adminPayPendingEl   = document.getElementById('adminPayPending');
       adminPayApprovedEl  = document.getElementById('adminPayApproved');
@@ -1613,7 +1661,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // Persist ONLY customer form locally (not orders/drivers/stats)
-  [custNameEl, custPhoneEl, custAddrEl].forEach((el)=>{
+  ;[custNameEl, custPhoneEl, custAddrEl].forEach((el)=>{
     if(!el) return;
     const key = 'yt_'+el.id;
     const saved = localStorage.getItem(key);
@@ -2332,15 +2380,45 @@ Vehicle: ${vehicle}`;
     })();
   })();
 
-  // === DRIVER LOGIN → DASH (placeholder demo view) ==========================
-  formLogin?.addEventListener('submit',e=>{
+  // === DRIVER LOGIN → SERVER AUTH + DASH ====================================
+  formLogin?.addEventListener('submit', async (e)=>{
     e.preventDefault();
-    alert('Logged in. Opening dashboard.');
-    closeDriverWindow();
-    if(driverDashModal){ openDriverDash(); }
+    const phone = digits(drvLoginPhoneEl?.value || '');
+    const pin   = (drvLoginPinEl?.value || '').trim();
+    if(!phone){
+      alert('Enter your WhatsApp number to log in.');
+      return;
+    }
+    try{
+      // Attempt backend login if available
+      const res = await fetch(`${BASE_API}/drivers/login`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ phone, pin })
+      });
+      const j = await res.json().catch(()=>({}));
+      if(res.ok && j && (j.ok || j.token || j.driver)){
+        // success path
+        closeDriverWindow();
+        openDriverDash();
+        return;
+      }
+      // Fallback UX if API not implemented
+      if(res.status === 404 || (j && j.error === 'not_implemented')){
+        alert('Login endpoint not available yet. Opening dashboard for demo.');
+        closeDriverWindow();
+        openDriverDash();
+        return;
+      }
+      alert(j?.message || 'Login failed. Check your details and try again.');
+    }catch(err){
+      console.error('Driver login error', err);
+      alert('Network error during login. Please try again.');
+    }
   });
 
   // === ORDER SUBMISSION (customer) ==========================================
+  const confirmBtn2 = document.getElementById('confirmOrderBtn');
   confirmBtn2?.addEventListener('click', async ()=>{
     confirmBtn2.disabled = true;
     try{
