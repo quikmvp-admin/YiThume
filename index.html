@@ -1186,8 +1186,26 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function ensureContentHost(){
+    if(!ordersPanel) return;
+    if(!document.getElementById('ordersContent')){
+      const content = document.createElement('div');
+      content.id = 'ordersContent';
+      content.className = 'w-full';
+      const tabs = document.getElementById('ordersTabs');
+      if(tabs && tabs.nextSibling){
+        ordersPanel.insertBefore(content, tabs.nextSibling);
+      } else if(tabs){
+        ordersPanel.appendChild(content);
+      } else {
+        ordersPanel.appendChild(content);
+      }
+    }
+  }
+
   async function renderAdminStats(){
     // Ensure stats container exists with correct layout (label over value)
+    ensureContentHost();
     adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
     adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
     adminTopProductsEl  = document.getElementById('adminTopProducts');
@@ -1226,8 +1244,6 @@ window.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
       `;
-      // place inside the orders content region (not next to it)
-      ensureContentHost();
       document.getElementById('ordersContent')?.appendChild(stats);
       adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
       adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
@@ -1481,24 +1497,6 @@ window.addEventListener('DOMContentLoaded', () => {
   tabSignup?.addEventListener('click', (e)=>{ e.preventDefault(); showDriverTab('signup'); });
 
   // === WRAPPERS / CONTENT REGION ============================================
-  function ensureContentHost(){
-    if(!ordersPanel) return;
-    if(!document.getElementById('ordersContent')){
-      const content = document.createElement('div');
-      content.id = 'ordersContent';
-      content.className = 'w-full';
-      // Insert after tabs if tabs exist, else as first child
-      const tabs = document.getElementById('ordersTabs');
-      if(tabs && tabs.nextSibling){
-        ordersPanel.insertBefore(content, tabs.nextSibling);
-      } else if(tabs){
-        ordersPanel.appendChild(content);
-      } else {
-        ordersPanel.appendChild(content);
-      }
-    }
-  }
-
   function ensureWrappers(){
     ensureContentHost();
 
@@ -1847,9 +1845,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     if(showDrivers){ renderDrivers(); }
     else if(showStats){ renderAdminStats(); }
     else { renderOrders(); }
-
-    // keep header cards fresh
-    renderAdminStats();
   }
 
   async function hardRefresh(){
@@ -2620,6 +2615,7 @@ Vehicle: ${vehicle}`;
   fetchDrivers();
 });
 </script>
+
 
 
 
