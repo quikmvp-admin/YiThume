@@ -31,6 +31,27 @@ ALLOW_PIN_PARAM = os.environ.get("ALLOW_PIN_PARAM", "true").lower() == "true"
 # Expose debug PINs for driver login (off in prod)
 PIN_DEBUG_EXPOSE = os.environ.get("PIN_DEBUG_EXPOSE", "false").lower() == "true"
 
+# ---------------- USSD / SECURITY CONFIG ----------------
+USSD_ENABLE = os.environ.get("USSD_ENABLE", "true").lower() == "true"
+
+# If you use Africa's Talking or Infobip, set their webhook source IPs (comma-separated)
+WEBHOOK_IP_ALLOWLIST = set(
+    filter(None, [i.strip() for i in os.environ.get("WEBHOOK_IP_ALLOWLIST", "").split(",")])
+)
+
+# Optional HMAC secret for providers that send signatures (some do for payments/voice; USSD often doesn't)
+WEBHOOK_HMAC_SECRET = os.environ.get("WEBHOOK_HMAC_SECRET", "").strip()
+
+# Basic rate limits (tune as needed)
+RATE_LIMIT_PER_PHONE_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_PHONE_PER_MIN", "12"))   # 12 requests/min
+RATE_LIMIT_PER_IP_PER_MIN    = int(os.environ.get("RATE_LIMIT_PER_IP_PER_MIN", "60"))     # 60 requests/min
+
+# Idempotency TTL for POST writes (seconds)
+IDEMPOTENCY_TTL_SEC = int(os.environ.get("IDEMPOTENCY_TTL_SEC", "3600"))
+
+# Optional: Your shared USSD code label for logs
+USSD_SERVICE_LABEL = os.environ.get("USSD_SERVICE_LABEL", "YiThume-USSD")
+
 mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
 
 def get_db():
@@ -56,6 +77,9 @@ SERVICE_BBOX = {"min_lat": -35.5, "max_lat": -22.0, "min_lng": 16.0, "max_lng": 
 
 DRIVER_TOKEN_TTL_MIN = 7 * 24 * 60  # 7 days
 DRIVER_PIN_TTL_MIN = 10             # 10 minutes
+
+# Build info (so /health shows when this file was last baked)
+BUILD_TS = datetime.utcnow().isoformat() + "Z"
 
 # -------------------------------------------------
 # FLASK
@@ -142,6 +166,89 @@ def ensure_indexes(db):
     db.stores.create_index([("_internal_id", ASCENDING)], unique=True)
     db.store_items.create_index([("store_id", ASCENDING)])
     db.whatsapp_log.create_index([("created_at", DESCENDING)])
+
+    # --- NEW: anti-fraud / infra
+    db.rate_limiter.create_index([("key", ASCENDING)], unique=True)
+    db.rate_limiter.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0)
+    db.idempotency.create_index([("key", ASCENDING)], unique=True)
+    db.idempotency.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0)
+
+    # --- NEW: catalog
+    db.catalog.create_index([("active", ASCENDING), ("name", ASCENDING)])
+    db.catalog.create_index([("category", ASCENDING), ("active", ASCENDING)])
+
+# --------- CATALOG SEEDER HELPERS (inline) ----------
+AUTO_SEED_CATALOG_ON_START = os.environ.get("AUTO_SEED_CATALOG_ON_START", "false").lower() == "true"
+
+def _catalog_seed_payload():
+    # Minimal sensible OTC mix for USSD menus: Pain Relief, Cold & Flu, Digestive, Vitamins, Hygiene, Baby Care, Women’s Health
+    return [
+        # Pain Relief
+        {"name":"Panado Tablets 500mg (24)","category":"Pain Relief","price":34.99,"sku":"PAN500-24"},
+        {"name":"Grand-Pa Powders (6)","category":"Pain Relief","price":39.99,"sku":"GPA-P6"},
+        {"name":"Nurofen 200mg (24)","category":"Pain Relief","price":79.99,"sku":"NUR-200-24"},
+        {"name":"Voltarin Gel 50g","category":"Pain Relief","price":109.99,"sku":"VLT-G50"},
+        # Cold & Flu
+        {"name":"Med-Lemon (6)","category":"Cold & Flu","price":39.99,"sku":"MDL-6"},
+        {"name":"ACC 200 Effervescent (10)","category":"Cold & Flu","price":89.99,"sku":"ACC-200-10"},
+        {"name":"Strepsils Honey & Lemon (16)","category":"Cold & Flu","price":54.99,"sku":"STR-HL-16"},
+        {"name":"Sinutab (10)","category":"Cold & Flu","price":94.99,"sku":"SNT-10"},
+        # Digestive
+        {"name":"Gaviscon Liquid 150ml","category":"Digestive","price":84.99,"sku":"GAV-L150"},
+        {"name":"Buscopan (20)","category":"Digestive","price":79.99,"sku":"BUS-20"},
+        {"name":"Imodium (6)","category":"Digestive","price":64.99,"sku":"IMO-6"},
+        {"name":"Eno Sachets (6)","category":"Digestive","price":29.99,"sku":"ENO-6"},
+        # Vitamins
+        {"name":"Vitamin C 1000mg (30)","category":"Vitamins","price":79.99,"sku":"VTC1000-30"},
+        {"name":"Multivitamin Adult (30)","category":"Vitamins","price":99.99,"sku":"MVA-30"},
+        {"name":"Zinc 15mg (30)","category":"Vitamins","price":69.99,"sku":"ZN15-30"},
+        # Hygiene
+        {"name":"Lifebuoy Soap 175g","category":"Hygiene","price":16.99,"sku":"LFB-175"},
+        {"name":"Colgate 100ml","category":"Hygiene","price":24.99,"sku":"COL-100"},
+        {"name":"Always Pads (8)","category":"Hygiene","price":29.99,"sku":"ALW-8"},
+        {"name":"Dove Roll-On 50ml","category":"Hygiene","price":29.99,"sku":"DOV-RO50"},
+        # Baby Care
+        {"name":"Pampers Size 3 (21)","category":"Baby Care","price":129.99,"sku":"PMP-S3-21"},
+        {"name":"Baby Wipes (80)","category":"Baby Care","price":34.99,"sku":"BWP-80"},
+        {"name":"Barrier Cream 100g","category":"Baby Care","price":39.99,"sku":"BAR-100"},
+        {"name":"Panado Syrup 100ml","category":"Baby Care","price":39.99,"sku":"PAN-SYR-100"},
+        # Women’s Health
+        {"name":"Canesten Cream 20g","category":"Women’s Health","price":119.99,"sku":"CAN-20"},
+        {"name":"UTI Test Strips (3)","category":"Women’s Health","price":59.99,"sku":"UTI-3"},
+        {"name":"Ibusor 400mg (20)","category":"Women’s Health","price":84.99,"sku":"IBU400-20"},
+    ]
+
+def upsert_catalog_items(db, items):
+    """
+    Idempotent-ish: if name+category exists, update price/sku/active; else insert.
+    Returns counts.
+    """
+    inserted = 0
+    updated = 0
+    for it in items:
+        base = {"name": it["name"], "category": it["category"]}
+        existing = db.catalog.find_one(base)
+        if existing:
+            updates = {
+                "price": float(it["price"]),
+                "sku": it.get("sku"),
+                "active": True
+            }
+            db.catalog.update_one({"_id": existing["_id"]}, {"$set": updates})
+            updated += 1
+        else:
+            doc = {
+                "_internal_id": str(uuid.uuid4()),
+                "name": it["name"],
+                "category": it["category"],
+                "price": float(it["price"]),
+                "sku": it.get("sku"),
+                "active": True,
+                "created_at": _now_dt()
+            }
+            db.catalog.insert_one(doc)
+            inserted += 1
+    return inserted, updated
 
 def wa_order_text(order):
     items_list = ", ".join([f"{i.get('name')} x{i.get('qty')}" for i in order.get("items", [])])
@@ -312,9 +419,66 @@ def _pin_or_header_ok():
 def require_admin():
     return _pin_or_header_ok()
 
-# init indexes once per cold start
+# -------- NEW: Security helpers (IP/HMAC, rate limit, idempotency) --------
+def client_ip():
+    # Works behind most proxies
+    return (request.headers.get("X-Forwarded-For", request.remote_addr or "")).split(",")[0].strip()
+
+def ip_allowed():
+    if not WEBHOOK_IP_ALLOWLIST:
+        return True
+    return client_ip() in WEBHOOK_IP_ALLOWLIST
+
+def verify_hmac_signature(raw_body: bytes) -> bool:
+    if not WEBHOOK_HMAC_SECRET:
+        return True
+    sig = request.headers.get("X-Signature") or request.headers.get("X-AT-Signature") or ""
+    try:
+        import hmac, hashlib as _hashlib
+        mac = hmac.new(WEBHOOK_HMAC_SECRET.encode("utf-8"), raw_body, _hashlib.sha256).hexdigest()
+        return hmac.compare_digest(mac, sig)
+    except Exception:
+        return False
+
+def rate_limit_touch(db, key: str, limit_per_min: int):
+    # rolling 60s window
+    now = _now_dt()
+    rec = db.rate_limiter.find_one({"key": key})
+    if not rec:
+        db.rate_limiter.insert_one({"key": key, "count": 1, "window_start": now, "expires_at": now + timedelta(minutes=1)})
+        return True
+    # if window expired, reset
+    if rec.get("window_start") and rec["window_start"] < now - timedelta(minutes=1):
+        db.rate_limiter.update_one({"key": key}, {"$set": {"count": 1, "window_start": now, "expires_at": now + timedelta(minutes=1)}})
+        return True
+    # otherwise increment
+    new_count = int(rec.get("count", 0)) + 1
+    if new_count > limit_per_min:
+        return False
+    db.rate_limiter.update_one({"key": key}, {"$set": {"count": new_count, "expires_at": now + timedelta(minutes=1)}})
+    return True
+
+def idempotency_guard(db):
+    """
+    Prevents duplicate writes when the client retries.
+    Client should send: X-Idempotency-Key (UUID).
+    If absent, we generate one per-request (less protection but avoids 400s).
+    """
+    key = request.headers.get("X-Idempotency-Key") or str(uuid.uuid4())
+    now = _now_dt()
+    try:
+        db.idempotency.insert_one({"key": key, "seen": True, "created_at": now, "expires_at": now + timedelta(seconds=IDEMPOTENCY_TTL_SEC)})
+        return key, False  # inserted now, not a replay
+    except mongo_errors.DuplicateKeyError:
+        return key, True   # replay
+
+# init indexes once per cold start (and optional auto-seed)
 try:
-    ensure_indexes(get_db())
+    _db_boot = get_db()
+    ensure_indexes(_db_boot)
+    if AUTO_SEED_CATALOG_ON_START:
+        if _db_boot.catalog.estimated_document_count() == 0:
+            upsert_catalog_items(_db_boot, _catalog_seed_payload())
 except Exception:
     pass
 
@@ -331,12 +495,20 @@ def health():
             "ok": True,
             "service": "YiThume (mongo)",
             "db": "up",
+            "build_info": {"built_at": BUILD_TS},
+            "now_utc": _now_iso(),
             "orders_count": db.orders.estimated_document_count(),
             "drivers_count": db.drivers.count_documents({"active": True}),
             "stores_count": db.stores.estimated_document_count()
         }), 200
     except Exception as e:
-        return jsonify({"ok": True, "service": "YiThume (mongo)", "db": "down", "error": str(e)}), 200
+        return jsonify({
+            "ok": True,
+            "service": "YiThume (mongo)",
+            "db": "down",
+            "build_info": {"built_at": BUILD_TS},
+            "error": str(e)
+        }), 200
 
 # ---------------- CREATE ORDER -------------------
 @app.route("/orders", methods=["POST"])
@@ -1084,5 +1256,313 @@ def send_whatsapp_confirmation():
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+# ---------------- CATALOG (NEW) -----------------------
+@app.route("/api/app/catalog", methods=["GET", "POST"])
+def catalog():
+    db = get_db()
+    if request.method == "POST":
+        if not require_admin():
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+        body = request.json or {}
+        doc = {
+            "_internal_id": str(uuid.uuid4()),
+            "name": body.get("name"),
+            "category": body.get("category", "General"),
+            "price": float(body.get("price") or 0),
+            "sku": body.get("sku"),
+            "active": bool(body.get("active", True)),
+            "created_at": _now_dt()
+        }
+        if not doc["name"] or doc["price"] <= 0:
+            return jsonify({"ok": False, "error": "bad_item"}), 400
+        db.catalog.insert_one(doc)
+        return jsonify({"ok": True, "item_id": doc["_internal_id"]}), 201
+
+    # GET
+    qcat = request.args.get("category")
+    only_active = request.args.get("active", "true").lower() == "true"
+    q = {}
+    if only_active:
+        q["active"] = True
+    if qcat:
+        q["category"] = qcat
+    items = list(db.catalog.find(q).sort("name", ASCENDING))
+    for it in items:
+        it["id"] = it.pop("_internal_id", None)
+        it.pop("_id", None)
+    return jsonify({"ok": True, "items": items}), 200
+
+@app.route("/api/app/catalog/search", methods=["GET"])
+def catalog_search():
+    db = get_db()
+    q = (request.args.get("q") or "").strip()
+    base = {"active": True}
+    if q:
+        base["name"] = {"$regex": re.escape(q), "$options": "i"}
+    items = list(db.catalog.find(base).limit(20))
+    for it in items:
+        it["id"] = it.pop("_internal_id", None)
+        it.pop("_id", None)
+    return jsonify({"ok": True, "items": items}), 200
+
+# ---------------- CATALOG SEEDER (ADMIN) ----------------
+@app.route("/api/app/dev/seed-catalog", methods=["POST"])
+def dev_seed_catalog():
+    """
+    Admin-only endpoint to (upsert) seed the OTC catalog you need for USSD tests.
+    Safe to call multiple times; existing items are updated, new ones inserted.
+    """
+    if not require_admin():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    try:
+        db = get_db()
+        payload = _catalog_seed_payload()
+        inserted, updated = upsert_catalog_items(db, payload)
+        total = db.catalog.count_documents({})
+        return jsonify({"ok": True, "inserted": inserted, "updated": updated, "total_items": total}), 200
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
+# ---------------- USSD (NEW, Lean Flow) -------------------
+@app.route("/api/app/ussd", methods=["POST"])
+def ussd_entry():
+    """
+    Compatible with Africa's Talking style parameters:
+      sessionId, serviceCode, phoneNumber, text
+    And Infobip-style: same fields or variations – we only rely on these four.
+    Response must start with "CON " (continue) or "END " (finish).
+    """
+    if not USSD_ENABLE:
+        return "END Service unavailable.", 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+    raw = request.get_data() or b""
+    if not ip_allowed() or not verify_hmac_signature(raw):
+        # Keep generic to avoid leaking security details
+        return "END Service temporarily unavailable.", 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+    db = get_db()
+
+    # Basic rate limiting
+    ip_key = f"ip:{client_ip()}"
+    if not rate_limit_touch(db, ip_key, RATE_LIMIT_PER_IP_PER_MIN):
+        return "END Too many requests. Try again in a minute.", 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+    session_id  = (request.values.get("sessionId") or "").strip()
+    serviceCode = (request.values.get("serviceCode") or "").strip()
+    phone       = (request.values.get("phoneNumber") or "").strip()
+    text        = (request.values.get("text") or "").strip()
+
+    # Rate limit per phone when present
+    if phone:
+        if not rate_limit_touch(db, f"phone:{phone}", RATE_LIMIT_PER_PHONE_PER_MIN):
+            return "END Too many requests. Please wait 1 minute.", 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+    steps = [s for s in text.split("*") if s] if text else []
+
+    # Minimal session doc (temporary state)
+    sess = db.ussd_sessions.find_one({"session_id": session_id}) if session_id else None
+    if not sess:
+        sess = {
+            "session_id": session_id or str(uuid.uuid4()),
+            "phone": phone,
+            "created_at": _now_dt(),
+            "state": {},
+            "expires_at": _now_dt() + timedelta(minutes=20)
+        }
+        try:
+            db.ussd_sessions.insert_one(sess)
+            db.ussd_sessions.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0)
+        except Exception:
+            pass
+
+    # === Menu helpers ===
+    def con(msg: str):
+        return f"CON {msg}", 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+    def end(msg: str):
+        return f"END {msg}", 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+    # === Menu steps ===
+    if len(steps) == 0:
+        # Home
+        return con(
+            "YiThume – Health Shop\n"
+            "1. Order Medicine\n"
+            "2. Hygiene & Baby\n"
+            "3. Track Order\n"
+            "0. Exit"
+        )
+
+    # Exit
+    if steps[0] == "0":
+        return end("Goodbye.")
+
+    # 3. Track order
+    if steps[0] == "3":
+        if len(steps) == 1:
+            # Example uses today's date pattern so users see a realistic format
+            return con("Enter Order ID (e.g. YI-20251106-ABC123):")
+        if len(steps) >= 2:
+            oid = steps[1].strip().upper()
+            o = db.orders.find_one({"order_id": oid})
+            if not o:
+                return end("Order not found.")
+            st = o.get("status", "pending").replace("_", " ").title()
+            return end(f"Order {oid}: {st}")
+
+    # 1 or 2 → Category flows
+    cat_map = {
+        "1": ["Pain Relief", "Cold & Flu", "Digestive", "Vitamins"],
+        "2": ["Hygiene", "Baby Care", "Women’s Health"]
+    }
+
+    if steps[0] in ("1", "2"):
+        top = cat_map[steps[0]]
+        # Step 1: show subcategories
+        if len(steps) == 1:
+            lines = [f"{i+1}. {c}" for i, c in enumerate(top)]
+            return con("Choose Category:\n" + "\n".join(lines) + "\n0. Back")
+        # Back
+        if steps[1] == "0":
+            return con(
+                "YiThume – Health Shop\n"
+                "1. Order Medicine\n"
+                "2. Hygiene & Baby\n"
+                "3. Track Order\n"
+                "0. Exit"
+            )
+        # Step 2: show items from selected subcategory
+        try:
+            idx = int(steps[1]) - 1
+            subcat = top[idx]
+        except Exception:
+            return end("Invalid option.")
+
+        if len(steps) == 2:
+            items = list(db.catalog.find({"category": subcat, "active": True}).sort("name", ASCENDING).limit(6))
+            if not items:
+                return end("No items in that category yet.")
+            # Keep an index map in session
+            imap = []
+            out_lines = []
+            for i, it in enumerate(items, start=1):
+                imap.append({"id": it["_internal_id"], "name": it["name"], "price": it["price"]})
+                out_lines.append(f"{i}. {it['name']} R{int(it['price'])}")
+            sess["state"]["last_items"] = imap
+            db.ussd_sessions.update_one({"session_id": sess["session_id"]}, {"$set": {"state": sess["state"]}})
+            return con("Pick item:\n" + "\n".join(out_lines) + "\n0. Back")
+
+        # Step 3: quantity
+        if len(steps) == 3:
+            if steps[2] == "0":
+                # back to subcategory list
+                lines = [f"{i+1}. {c}" for i, c in enumerate(top)]
+                return con("Choose Category:\n" + "\n".join(lines) + "\n0. Back")
+
+            try:
+                choice = int(steps[2]) - 1
+                imap = sess.get("state", {}).get("last_items", [])
+                sel = imap[choice]
+            except Exception:
+                return end("Invalid selection.")
+            sess["state"]["selected_item"] = sel
+            db.ussd_sessions.update_one({"session_id": sess["session_id"]}, {"$set": {"state": sess["state"]}})
+            return con(f"{sel['name']} – Enter quantity:")
+
+        # Step 4: address line (brief)
+        if len(steps) == 4:
+            try:
+                qty = max(1, int(steps[3]))
+            except Exception:
+                return end("Quantity must be a number.")
+            sess["state"]["qty"] = qty
+            db.ussd_sessions.update_one({"session_id": sess["session_id"]}, {"$set": {"state": sess["state"]}})
+            return con("Enter nearest landmark / village name:")
+
+        # Step 5: confirm and create order
+        if len(steps) >= 5:
+            landmark = steps[4][:60]
+            sel = (sess.get("state") or {}).get("selected_item")
+            qty = int((sess.get("state") or {}).get("qty") or 1)
+            if not sel:
+                return end("Session expired. Start again.")
+            # Price math
+            subtotal = float(sel["price"]) * qty
+            delivery_fee = 20.0  # simple flat fee for USSD; can replace with distance calc
+            total = round(subtotal + delivery_fee, 2)
+
+            # Idempotency: avoid double-click orders on flaky connections
+            _, replay = idempotency_guard(db)
+            if replay:
+                return end("Order already received. We’ll confirm on WhatsApp.")
+
+            # Build order payload for your existing /orders endpoint flow
+            order_doc = {
+                "_internal_id": str(uuid.uuid4()),
+                "order_id": make_order_public_id(),
+                "created_at": _now_dt(),
+                "created_at_iso": _now_iso(),
+                "customer": {
+                    "phone": phone,
+                    "name": phone,
+                    "address": {"line1": landmark, "coords": {"lat": None, "lng": None}}
+                },
+                "items": [{"name": sel["name"], "qty": qty, "price": float(sel["price"])}],
+                "subtotal": subtotal,
+                "delivery_fee": delivery_fee,
+                "total": total,
+                "payment": {"method": "cod", "status": "pending", "provider_ref": None, "fake_checkout_url": None},
+                "status": "pending",
+                "assigned_driver_id": None,
+                "assigned_at": None,
+                "delivered_at": None,
+                "route": {},
+                "created_by": "ussd",
+                "meta": {"channel": "ussd", "collection_name": landmark, "zone": None},
+                "fraud_score": 0.0,
+                "fraud_flags": {},
+                "cluster_key": None,
+                "delivery_photo_file_id": None,
+                "delivery_photo_url": None,
+                "driver_pay_status": "pending",
+                "driver_pay_pending": round(min(max(delivery_fee, 25), 45), 2),
+                "driver_pay_approved": 0.0,
+                "settlement": {"driver": 0.0, "platform": 0.0, "settled": False}
+            }
+
+            # Fraud + maybe assign
+            try:
+                fs, ff = rule_based_fraud_score(db, order_doc)
+                order_doc["fraud_score"], order_doc["fraud_flags"] = fs, ff
+                if fs >= 0.75:
+                    order_doc["status"] = "review_required"
+                order_doc["cluster_key"] = cluster_key(order_doc)
+
+                d = find_available_driver(db, None, None, None)
+                if d:
+                    order_doc["assigned_driver_id"] = d["_internal_id"]
+                    order_doc["assigned_at"] = _now_dt()
+                    if order_doc["status"] == "pending":
+                        order_doc["status"] = "assigned"
+
+                db.orders.insert_one(order_doc)
+
+                # tiny WhatsApp log
+                db.whatsapp_log.insert_one({
+                    "direction": "outbound",
+                    "to": phone or "UNKNOWN",
+                    "order_id": order_doc["order_id"],
+                    "body": wa_order_text(order_doc),
+                    "created_at": _now_dt()
+                })
+
+                return end(f"Order placed: {order_doc['order_id']}\nTotal: R{int(total)}\nWe’ll confirm on WhatsApp.")
+            except Exception:
+                return end("We couldn’t create your order. Please try later.")
+
+    return end("Invalid option.")
 
 # NOTE: no app.run(); importable for serverless (Vercel/Render/Gunicorn)
