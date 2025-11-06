@@ -921,7 +921,7 @@
   </div>
 </div>
 
-<script><script>
+<script>
 window.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & GLOBALS ======================================================
   const BASE_API        = "/api/app";
@@ -1100,6 +1100,18 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Optional container for admin tabs (we’ll inject tabs if missing)
   const ordersTabsContainer = document.getElementById('ordersTabs');
+
+  // Store modal refs (declare early to avoid TDZ in wrappers)
+  const storeModal          = document.getElementById('storeModal');
+  const addStoreItemBtn     = document.getElementById('addStoreItem');
+  const storeItemsList      = document.getElementById('storeItemsList');
+  const openStoreFooter     = document.getElementById('openStoreModalFooter');
+  const closeStoreModalBtn  = document.getElementById('closeStoreModal');
+  const cancelStoreBtn      = document.getElementById('cancelStore');
+  const submitStoreBtn      = document.getElementById('submitStore');
+  const storeNameEl         = document.getElementById('storeName');
+  const storePhoneEl        = document.getElementById('storePhone');
+  const storeZoneEl         = document.getElementById('storeZone');
 
   // === COLLECTION POINTS =====================================================
   const COLLECTIONS = [
@@ -1670,17 +1682,6 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // === STORE MODAL (optional) ===============================================
-  const addStoreItemBtn = document.getElementById('addStoreItem');
-  const storeItemsList  = document.getElementById('storeItemsList');
-  const storeModal      = document.getElementById('storeModal');
-  const openStoreFooter = document.getElementById('openStoreModalFooter');
-  const closeStoreModalBtn  = document.getElementById('closeStoreModal');
-  const cancelStoreBtn      = document.getElementById('cancelStore');
-  const submitStoreBtn      = document.getElementById('submitStore');
-  const storeNameEl         = document.getElementById('storeName');
-  const storePhoneEl        = document.getElementById('storePhone');
-  const storeZoneEl         = document.getElementById('storeZone');
-
   function renderStoreItems(){
     if(!storeItemsList) return;
     storeItemsList.innerHTML = '';
@@ -2157,7 +2158,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     recalcAdminPayoutWidgets();
   }
 
-  // === MAP (unchanged visuals) ==============================================
+  // === MAP (guarded) =========================================================
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
     if(!heroEl){ return; }
@@ -2165,7 +2166,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     let heroMap;
     let localCars = [];
 
-    const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
+    const southAfricaBounds = (window.L && L.latLngBounds) ? L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]) : null;
 
     async function centerMapHeuristic() {
       DELIVERY_COORDS = DELIVERY_COORDS || await tryGetCustomerCoords();
@@ -2193,9 +2194,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
       <path fill='${emerald[600]}' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
     </svg>`;
-    const pkgIcon=L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
+    const pkgIcon = (window.L && L.divIcon) ? L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] }) : null;
 
     function spawnLocalTraffic(center, count){
+      if(!window.L) return;
       for(let i=0;i<count;i++){
         const r    = 0.01 + Math.random()*0.02;
         const ang0 = Math.random()*Math.PI*2;
@@ -2275,7 +2277,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           { attribution:'', opacity:0.98, noWrap:true, detectRetina:true }
         ).addTo(heroMap);
 
-        heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
+        if (southAfricaBounds) heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
 
         const pairs = [
           [COLLECTIONS[0], COLLECTIONS[1]],
@@ -2585,7 +2587,7 @@ Vehicle: ${vehicle}`;
     openOrder();
   });
 
-  // === WIRING: Open/Close buttons that were missing ==========================
+  // === WIRING: Open/Close buttons ===========================================
   document.getElementById('openOrderBuilder')?.addEventListener('click', openOrder);
   closeBtn?.addEventListener('click', closeOrder);
   cancelOrderBuilder?.addEventListener('click', closeOrder);
@@ -2617,6 +2619,7 @@ Vehicle: ${vehicle}`;
   fetchDrivers();
 });
 </script>
+
 
 
 
