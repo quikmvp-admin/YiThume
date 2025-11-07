@@ -924,22 +924,26 @@
 window.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & GLOBALS ======================================================
   const BASE_API        = "/api/app";
-  const WHATSAPP_NUMBER = "270691456201"; // customer support / business inbox
+  const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
-  const DEMO_MODE       = false; // all writes go to backend
+  const DEMO_MODE       = true;
 
-  // Delivery math
+  // Delivery math (feel free to tune)
   const BASE_DELIVERY_FEE = 15; // R
-  const PER_KM_PRICE      = 8;  // R per km
+  const PER_KM_PRICE      = 8;  // R per km (OSRM distance when available)
   const RUSH_FEE          = 30; // R flat
+
+  // Storage keys
+  const LS_ORDERS  = "YT_DEMO_ORDERS_V1";
+  const LS_DRIVERS = "YT_DEMO_DRIVERS_V1";
 
   // UI Colors
   const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
 
   // Helpers
-  const waText  = (str) => encodeURIComponent(str);
-  const digits  = (val) => (val || "").replace(/\D+/g, "");
-  const clamp   = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
+  const waText = (str) => encodeURIComponent(str);
+  const digits = (val) => (val || "").replace(/\D+/g, "");
+  const clamp  = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
 
   // Haversine fallback (km)
   const kmBetween = (a,b)=>{
@@ -967,10 +971,7 @@ window.addEventListener('DOMContentLoaded', () => {
     el.classList.remove('hidden');
     el.classList.add('flex');
     lockScroll();
-    setTimeout(()=>{
-      const ff = firstFocusable(el);
-      if(ff) ff.focus();
-    }, 0);
+    setTimeout(()=>{ const ff = firstFocusable(el); if(ff) ff.focus(); }, 0);
   }
   function closeFlex(el){
     if(!el) return;
@@ -994,10 +995,7 @@ window.addEventListener('DOMContentLoaded', () => {
       document.getElementById('orderBuilder')
     ];
     for(const m of modals){
-      if(m && !m.classList.contains('hidden')) {
-        closeFlex(m);
-        break;
-      }
+      if(m && !m.classList.contains('hidden')) { closeFlex(m); break; }
     }
   });
 
@@ -1005,16 +1003,27 @@ window.addEventListener('DOMContentLoaded', () => {
   let latestOrderData = null;
   let botStage = 0;
 
-  // Admin tab state
-  let ordersTab = 'orders';
+  // Track currently rendered docs per tab
   const currentOrdersByTab = {};
-  let DRIVERS = [];
-  let DRIVERS_BY_ID = Object.create(null);
 
+  // Customer & collection positions
   let DELIVERY_COORDS   = null;
   let COLLECTION_COORDS = {lat:-33.590, lng:26.890};
 
+  // DEMO: in-memory DB mirrors saved in localStorage
+  let DEMO_ORDERS_DB  = {};
+  let DEMO_DRIVERS_DB = {};
+
+  // Driver payout helper
+  function calcDriverPayout(order){
+    const fee = Number(order?.delivery_fee ?? 0);
+    return clamp(fee, 25, 45);
+  }
+
+  // Global payout totals
   const driverTotals = { pending: 0, approved: 0 };
+
+  // Store items (for signup modal)
   const storeItems = [];
 
   // === YEAR FOOTER ===========================================================
@@ -1060,88 +1069,74 @@ window.addEventListener('DOMContentLoaded', () => {
   const btnFakePayNow       = document.getElementById('btnFakePayNow');
   const btnCancelPay        = document.getElementById('btnCancelPay');
 
-  // Driver modal + forms
   const driverModal         = document.getElementById('driverModal');
   const closeDriver         = document.getElementById('closeDriverModal');
   const tabSignup           = document.getElementById('tabSignup');
   const tabLogin            = document.getElementById('tabLogin');
   const formSignup          = document.getElementById('driverFormSignup');
   const formLogin           = document.getElementById('driverFormLogin');
-  const drvLoginPhoneEl     = document.getElementById('drvLoginPhone');
-  const drvLoginPinEl       = document.getElementById('drvLoginPin');
 
-  // Driver dash
   const driverDashModal         = document.getElementById('driverDashModal');
   const closeDriverDash         = document.getElementById('closeDriverDash');
   const driverPayoutPendingEl   = document.getElementById('driverPayoutPending');
   const driverPayoutApprovedEl  = document.getElementById('driverPayoutApproved');
-  const driverNextWindowEl      = document.getElementById('driverNextWindow');
-  const driverZoneDisplayEl     = document.getElementById('driverZoneDisplay');
-  const driverRadiusDisplayEl   = document.getElementById('driverRadiusDisplay');
+  const driverNextWindowEl      = document.getElementById('driverNextWindow');   // optional
+  const driverZoneDisplayEl     = document.getElementById('driverZoneDisplay');  // optional
+  const driverRadiusDisplayEl   = document.getElementById('driverRadiusDisplay'); // optional
 
-  // Admin Panel
   const ordersPanel         = document.getElementById('ordersPanel');
   const ordersList          = document.getElementById('ordersList');
   const ordersClose         = document.getElementById('closeOrdersPanel');
   const ordersAssign        = document.getElementById('ordersAssign');
   const ordersRefresh       = document.getElementById('ordersRefresh');
+
   const driversList         = document.getElementById('driversList');
   const driversRefresh      = document.getElementById('driversRefresh');
+
+  const adminDriversCountEl = document.getElementById('adminDriversCount');
+  const adminPayPendingEl   = document.getElementById('adminPayPending');
+  const adminPayApprovedEl  = document.getElementById('adminPayApproved');
+
   const ordersTabsContainer = document.getElementById('ordersTabs');
 
-  // Optional widgets (auto-created later if missing)
-  let adminDriversCountEl = document.getElementById('adminDriversCount');
-  let adminPayPendingEl   = document.getElementById('adminPayPending');
-  let adminPayApprovedEl  = document.getElementById('adminPayApproved');
-  let adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
-  let adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
-  let adminTopProductsEl  = document.getElementById('adminTopProducts');
-  let adminTopAreasEl     = document.getElementById('adminTopAreas');
-
-  // Store modal
   const storeModal          = document.getElementById('storeModal');
-  const addStoreItemBtn     = document.getElementById('addStoreItem');
-  const storeItemsList      = document.getElementById('storeItemsList');
   const openStoreFooter     = document.getElementById('openStoreModalFooter');
   const closeStoreModalBtn  = document.getElementById('closeStoreModal');
   const cancelStoreBtn      = document.getElementById('cancelStore');
   const submitStoreBtn      = document.getElementById('submitStore');
+  const addStoreItemBtn     = document.getElementById('addStoreItem');
+  const storeItemsList      = document.getElementById('storeItemsList');
   const storeNameEl         = document.getElementById('storeName');
   const storePhoneEl        = document.getElementById('storePhone');
   const storeZoneEl         = document.getElementById('storeZone');
 
   // === COLLECTION POINTS =====================================================
   const COLLECTIONS = [
-    { id:'DEPOT-PA',   name:'Port Alfred Depot',         lat:-33.590, lng:26.890 },
-    { id:'DEPOT-ALC',  name:'Alice Depot',               lat:-32.787, lng:26.835 },
-    { id:'DEPOT-GHT',  name:'Makhanda / Grahamstown',    lat:-33.310, lng:26.520 },
-    { id:'DEPOT-PE',   name:'Gqeberha (Port Elizabeth)', lat:-33.961, lng:25.602 },
-    { id:'DEPOT-PTA',  name:'Pretoria (Main Depot)',     lat:-25.747, lng:28.229 }
+    { id:'DEPOT-PA',   name:'Default Depot — Port Alfred', lat:-33.590, lng:26.890 },
+    { id:'DEPOT-KENT', name:'Kenton-on-Sea Depot',         lat:-33.686, lng:26.668 },
+    { id:'DEPOT-GHT',  name:'Makhanda / Grahamstown',      lat:-33.310, lng:26.520 }
   ];
 
   function ensureCollectionSelectPopulated(){
-    if(!zoneSelect || zoneSelect.dataset.enhanced === '1') return;
-
+    if(!zoneSelect) return;
+    if(zoneSelect.dataset.enhanced === '1') return;
     zoneSelect.innerHTML = '';
-    const ph = document.createElement('option');
-    ph.value = '';
-    ph.textContent = 'Select a pickup depot…';
-    ph.disabled = true;
-    ph.selected = true;
-    zoneSelect.appendChild(ph);
-
-    COLLECTIONS.forEach((c)=>{
+    COLLECTIONS.forEach((c,i)=>{
       const opt = document.createElement('option');
       opt.value = c.id;
       opt.textContent = c.name;
       opt.dataset.lat = String(c.lat);
       opt.dataset.lng = String(c.lng);
+      if(i===0){
+        opt.selected = true;
+        COLLECTION_COORDS = {lat:c.lat, lng:c.lng};
+      }
       zoneSelect.appendChild(opt);
     });
     zoneSelect.dataset.enhanced = '1';
   }
 
-  // === CATALOG (demo) ========================================================
+  // === CATALOG ===============================================================
   const CATALOG = [
     {name:'Panado 500mg (24s)',price:35},
     {name:'Allergex 10mg (10s)',price:30},
@@ -1150,146 +1145,89 @@ window.addEventListener('DOMContentLoaded', () => {
     {name:'Bandages (set)',price:25}
   ];
 
-  // === ADMIN DATA HELPERS ====================================================
-  async function fetchAllOrders(){
-    try{
-      const r = await fetch(`${BASE_API}/orders`);
-      const j = await r.json().catch(()=>({}));
-      if(!r.ok || !j.ok) return [];
-      return Array.isArray(j.orders) ? j.orders : [];
-    }catch(e){
-      console.error("fetchAllOrders", e);
-      return [];
-    }
+  // === PERSISTENCE (DEMO) ====================================================
+  function saveOrdersToLS(){
+    try{ localStorage.setItem(LS_ORDERS, JSON.stringify(DEMO_ORDERS_DB)); }catch(_){}
+  }
+  function saveDriversToLS(){
+    try{ localStorage.setItem(LS_DRIVERS, JSON.stringify(DEMO_DRIVERS_DB)); }catch(_){}
+  }
+  function loadOrdersFromLS(){
+    let parsed=null;
+    try{ parsed = JSON.parse(localStorage.getItem(LS_ORDERS)||'null'); }catch(_){}
+    return (parsed && typeof parsed==='object') ? parsed : null;
+  }
+  function loadDriversFromLS(){
+    let parsed=null;
+    try{ parsed = JSON.parse(localStorage.getItem(LS_DRIVERS)||'null'); }catch(_){}
+    return (parsed && typeof parsed==='object') ? parsed : null;
   }
 
-  async function fetchDrivers(){
-    try{
-      const r = await fetch(`${BASE_API}/drivers`);
-      const j = await r.json().catch(()=>({}));
-      if(!r.ok || !j.ok){
-        DRIVERS=[]; DRIVERS_BY_ID={}; return;
-      }
-      DRIVERS = Array.isArray(j.drivers) ? j.drivers : [];
-      DRIVERS_BY_ID = Object.create(null);
-      for(const d of DRIVERS){
-        if(d && d._internal_id) DRIVERS_BY_ID[d._internal_id] = d;
-        if(d && d.driver_id && !DRIVERS_BY_ID[d.driver_id]) DRIVERS_BY_ID[d.driver_id] = d;
-      }
-    }catch(e){
-      console.error("fetchDrivers", e);
-      DRIVERS=[]; DRIVERS_BY_ID={};
+  function seedIfEmpty(){
+    if(!DEMO_DRIVERS_DB || Object.keys(DEMO_DRIVERS_DB).length===0){
+      DEMO_DRIVERS_DB = {
+        "DRV-100001": { driver_id:"DRV-100001", name:"Sipho N", phone:"27810000001", vehicle:"Bike",
+                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
+        "DRV-100002": { driver_id:"DRV-100002", name:"Anele M", phone:"27810000002", vehicle:"Car",
+                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
+        "DRV-100003": { driver_id:"DRV-100003", name:"Thandi D", phone:"27810000003", vehicle:"Car",
+                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
+      };
     }
-  }
-
-  function ensureContentHost(){
-    if(!ordersPanel) return;
-    if(!document.getElementById('ordersContent')){
-      const content = document.createElement('div');
-      content.id = 'ordersContent';
-      content.className = 'w-full';
-      const tabs = document.getElementById('ordersTabs');
-      if(tabs && tabs.nextSibling){
-        ordersPanel.insertBefore(content, tabs.nextSibling);
-      } else if(tabs){
-        ordersPanel.appendChild(content);
-      } else {
-        ordersPanel.appendChild(content);
-      }
-    }
-  }
-
-  // === ADMIN STATS / KPIs ====================================================
-  async function renderAdminStats(){
-    ensureContentHost();
-
-    if(!document.getElementById('adminStatsWrap')){
-      const stats = document.createElement('div');
-      stats.id = 'adminStatsWrap';
-      stats.className = 'hidden w-full';
-      stats.innerHTML = `
-        <div class="grid gap-3 sm:grid-cols-3">
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-            <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
-          </div>
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Revenue</div>
-            <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
-          </div>
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Drivers & Payouts</div>
-            <div class="text-sm"><b id="adminDriversCount">0</b> drivers</div>
-            <div class="text-xs text-slate-500 mt-2">Payouts</div>
-            <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
-            <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
-          </div>
-        </div>
-        <div class="grid gap-3 sm:grid-cols-2 mt-4">
-          <div class="border rounded-xl p-3">
-            <div class="text-sm font-medium mb-2">Top Products</div>
-            <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
-          </div>
-          <div class="border rounded-xl p-3">
-            <div class="text-sm font-medium mb-2">Top Areas (by collection)</div>
-            <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
-          </div>
-        </div>
-      `;
-      document.getElementById('ordersContent')?.appendChild(stats);
-    }
-
-    adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
-    adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
-    adminTopProductsEl  = document.getElementById('adminTopProducts');
-    adminTopAreasEl     = document.getElementById('adminTopAreas');
-    adminDriversCountEl = document.getElementById('adminDriversCount');
-    adminPayPendingEl   = document.getElementById('adminPayPending');
-    adminPayApprovedEl  = document.getElementById('adminPayApproved');
-
-    const orders = await fetchAllOrders();
-    const totalOrders = orders.length;
-    const revenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
-
-    if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
-    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${revenue}`;
-
-    // Top products
-    const prodMap = new Map();
-    orders.forEach(o=>{
-      (o.items||[]).forEach(it=>{
-        const qty = Number(it.qty || 1);
-        if(!it.name) return;
-        prodMap.set(it.name, (prodMap.get(it.name)||0) + qty);
+    if(!DEMO_ORDERS_DB || Object.keys(DEMO_ORDERS_DB).length===0){
+      const o = (id, total, delivery_fee, status, driver_id=null) => ({
+        _internal_id: id,
+        order_id: id.replace("demo-","YI-").toUpperCase(),
+        order_public_id: id.toUpperCase(),
+        status,
+        total,
+        delivery_fee,
+        items: [{name:"Panado 500mg (24s)",qty:1},{name:"Cough Syrup 100ml",qty:1}],
+        meta: { collection_name: 'Default Depot', distance_km: 3.2 },
+        fraud_score: 0.04,
+        driver_id,
+        driver_pay_status: status === 'delivered' ? 'approved' : 'pending',
+        driver_pay_pending: status === 'delivered' ? 0 : clamp(delivery_fee,25,45),
+        driver_pay_approved: status === 'delivered' ? clamp(delivery_fee,25,45) : 0
       });
-    });
-    const topProducts = Array.from(prodMap.entries())
-      .sort((a,b)=>b[1]-a[1]).slice(0,5);
-    if(adminTopProductsEl){
-      adminTopProductsEl.innerHTML = topProducts.length
-        ? topProducts.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
-        : '<li class="text-slate-500">No data yet</li>';
+      DEMO_ORDERS_DB = {
+        "demo-abc123": o("demo-abc123",180,35,"pending",    "DRV-100001"),
+        "demo-def456": o("demo-def456",240,45,"assigned",   "DRV-100002"),
+        "demo-ghi789": o("demo-ghi789",120,25,"in_transit", "DRV-100002"),
+        "demo-jkl012": o("demo-jkl012",220,30,"delivered",  "DRV-100003"),
+      };
     }
-
-    // Top areas
-    const areaMap = new Map();
-    orders.forEach(o=>{
-      const k = o.meta?.collection_name || '—';
-      areaMap.set(k, (areaMap.get(k)||0)+1);
-    });
-    const topAreas = Array.from(areaMap.entries())
-      .sort((a,b)=>b[1]-a[1]).slice(0,5);
-    if(adminTopAreasEl){
-      adminTopAreasEl.innerHTML = topAreas.length
-        ? topAreas.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
-        : '<li class="text-slate-500">No data yet</li>';
-    }
-
-    await fetchDrivers();
-    recalcAdminPayoutWidgets();
   }
 
-  // === CUSTOMER UI HELPERS ===================================================
+  function hydrateState(){
+    const o = loadOrdersFromLS();
+    const d = loadDriversFromLS();
+    DEMO_ORDERS_DB  = o || {};
+    DEMO_DRIVERS_DB = d || {};
+    seedIfEmpty();
+
+    Object.values(DEMO_DRIVERS_DB).forEach(dr=>{
+      dr.stats = {assigned:0,in_transit:0,delivered:0};
+      dr.payout_pending = 0;
+      dr.payout_approved= 0;
+    });
+    Object.values(DEMO_ORDERS_DB).forEach(ord=>{
+      const did = ord.driver_id;
+      if(did && DEMO_DRIVERS_DB[did]){
+        const dr = DEMO_DRIVERS_DB[did];
+        if(ord.status === 'assigned')   dr.stats.assigned++;
+        if(ord.status === 'in_transit') dr.stats.in_transit++;
+        if(ord.status === 'delivered')  dr.stats.delivered++;
+        if(ord.driver_pay_status === 'pending')  dr.payout_pending  += (ord.driver_pay_pending||0);
+        if(ord.driver_pay_status === 'approved') dr.payout_approved += (ord.driver_pay_approved||0);
+      }
+    });
+    saveOrdersToLS();
+    saveDriversToLS();
+  }
+  hydrateState();
+
+  // === UI HELPERS: Items, totals, deposits ==================================
   function renderItems(){
     if(!itemsList) return;
     itemsList.innerHTML = '';
@@ -1349,8 +1287,8 @@ window.addEventListener('DOMContentLoaded', () => {
     if(!totalEl || !rushNote){
       return {
         items:[], itemsTotal:0, fee:0, rush:0, total:0,
-        collectionName:'', hubLat:COLLECTION_COORDS.lat,
-        hubLng:COLLECTION_COORDS.lng, distanceKm:0
+        collectionName:'Default Depot',
+        hubLat:COLLECTION_COORDS.lat, hubLng:COLLECTION_COORDS.lng, distanceKm:0
       };
     }
 
@@ -1365,37 +1303,28 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const itemsTotal = items.reduce((sum,it)=> sum + (it.price * it.qty), 0);
 
-    const opt = (zoneSelect && zoneSelect.value)
-      ? zoneSelect.options[zoneSelect.selectedIndex]
-      : null;
-
-    let hubLat = COLLECTION_COORDS.lat,
-        hubLng = COLLECTION_COORDS.lng,
-        collectionName = '';
-    if(opt){
-      hubLat = Number(opt.dataset.lat);
-      hubLng = Number(opt.dataset.lng);
-      collectionName = opt.textContent || '';
-      COLLECTION_COORDS = {lat:hubLat, lng:hubLng};
-    }
+    const opt = zoneSelect?.options?.[zoneSelect.selectedIndex] || {};
+    const hubLat = Number(opt?.dataset?.lat ?? COLLECTION_COORDS.lat);
+    const hubLng = Number(opt?.dataset?.lng ?? COLLECTION_COORDS.lng);
+    const collectionName = opt?.textContent || 'Default Depot';
+    COLLECTION_COORDS = {lat:hubLat, lng:hubLng};
 
     if(!DELIVERY_COORDS){
       DELIVERY_COORDS = await tryGetCustomerCoords();
     }
 
     let distanceKm = 0;
-    if(DELIVERY_COORDS && opt){
-      const meters = await osrmDistanceMeters({lat:hubLat,lng:hubLng}, DELIVERY_COORDS);
+    if(DELIVERY_COORDS){
+      const meters = await osrmDistanceMeters(COLLECTION_COORDS, DELIVERY_COORDS);
       distanceKm = Math.max(0, meters/1000);
+    } else {
+      distanceKm = 3; // demo fallback
     }
 
     const rushFee = rushToggle?.checked ? RUSH_FEE : 0;
     rushNote.textContent = rushFee ? ' + rush' : '';
 
-    const deliveryFee = opt
-      ? Math.round(BASE_DELIVERY_FEE + (PER_KM_PRICE * distanceKm))
-      : 0;
-
+    const deliveryFee = Math.round(BASE_DELIVERY_FEE + (PER_KM_PRICE * distanceKm));
     const total = itemsTotal + deliveryFee + rushFee;
     totalEl.textContent = String(total);
 
@@ -1414,7 +1343,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function nextETA(rush){
     const now     = new Date();
     const windows = [[8,10],[12,14],[16,18]];
-    const allowed = new Set([0,3,4,5,6]); // Sun, Wed, Thu, Fri, Sat
+    const allowed = new Set([0,3,4,5,6]);
     const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
     const fmt = (date,[h1,h2])=>{
@@ -1470,10 +1399,7 @@ window.addEventListener('DOMContentLoaded', () => {
     botFeed.innerHTML = "";
     openFlex(botModal);
   };
-  const closeBot = ()=>{
-    if(botFeed) botFeed.innerHTML='';
-    closeFlex(botModal);
-  };
+  const closeBot    = ()=>{ if(botFeed) botFeed.innerHTML=''; closeFlex(botModal); };
 
   const openPayModal  = (orderRef, amount)=>{
     if(!payModal) return;
@@ -1483,122 +1409,18 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   const closePayModal = ()=> closeFlex(payModal);
 
-  function showDriverTab(which){
-    const loginOn  = which === 'login';
-    const signupOn = which === 'signup';
-    formLogin?.classList.toggle('hidden', !loginOn);
-    formSignup?.classList.toggle('hidden', !signupOn);
-    tabLogin?.classList.toggle('bg-emerald-600', loginOn);
-    tabLogin?.classList.toggle('text-white', loginOn);
-    tabLogin?.setAttribute('aria-selected', loginOn ? 'true' : 'false');
-    tabSignup?.classList.toggle('bg-emerald-600', signupOn);
-    tabSignup?.classList.toggle('text-white', signupOn);
-    tabSignup?.setAttribute('aria-selected', signupOn ? 'true' : 'false');
-  }
-  const openDriverWindow  = ()=>{ openFlex(driverModal); showDriverTab('login'); };
+  const openDriverWindow  = ()=> openFlex(driverModal);
   const closeDriverWindow = ()=> closeFlex(driverModal);
 
   const openStore = ()=> openFlex(storeModal);
   const closeStore= ()=> closeFlex(storeModal);
 
-  tabLogin?.addEventListener('click', (e)=>{ e.preventDefault(); showDriverTab('login'); });
-  tabSignup?.addEventListener('click', (e)=>{ e.preventDefault(); showDriverTab('signup'); });
-
-  // === WRAPPERS / CONTENT REGION ============================================
-  function ensureWrappers(){
-    ensureContentHost();
-
-    if(ordersList && !document.getElementById('ordersListWrap')){
-      const wrap = document.createElement('div');
-      wrap.id = 'ordersListWrap';
-      wrap.className = 'w-full';
-      ordersList.parentElement?.insertBefore(wrap, ordersList);
-      wrap.appendChild(ordersList);
-      document.getElementById('ordersContent')?.appendChild(wrap);
-    }
-
-    if(driversList && !document.getElementById('driversListWrap')){
-      const wrap = document.createElement('div');
-      wrap.id = 'driversListWrap';
-      wrap.className = 'w-full hidden';
-      driversList.parentElement?.insertBefore(wrap, driversList);
-      wrap.appendChild(driversList);
-      document.getElementById('ordersContent')?.appendChild(wrap);
-    }
-
-    if(!document.getElementById('adminStatsWrap')){
-      const stats = document.createElement('div');
-      stats.id = 'adminStatsWrap';
-      stats.className = 'hidden w-full';
-      stats.innerHTML = `
-        <div class="grid gap-3 sm:grid-cols-3">
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-            <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
-          </div>
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Revenue</div>
-            <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
-          </div>
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Drivers & Payouts</div>
-            <div class="text-sm"><b id="adminDriversCount">0</b> drivers</div>
-            <div class="text-xs text-slate-500 mt-2">Payouts</div>
-            <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
-            <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
-          </div>
-        </div>
-        <div class="grid gap-3 sm:grid-cols-2 mt-4">
-          <div class="border rounded-xl p-3">
-            <div class="text-sm font-medium mb-2">Top Products</div>
-            <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
-          </div>
-          <div class="border rounded-xl p-3">
-            <div class="text-sm font-medium mb-2">Top Areas (by collection)</div>
-            <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
-          </div>
-        </div>
-      `;
-      document.getElementById('ordersContent')?.appendChild(stats);
-      adminDriversCountEl = document.getElementById('adminDriversCount');
-      adminPayPendingEl   = document.getElementById('adminPayPending');
-      adminPayApprovedEl  = document.getElementById('adminPayApproved');
-    }
-
-    if(!document.getElementById('payoutsWrap')){
-      const p = document.createElement('div');
-      p.id = 'payoutsWrap';
-      p.className = 'hidden w-full';
-      p.innerHTML = `<div class="text-sm text-slate-500 p-3">Loading payouts…</div>`;
-      document.getElementById('ordersContent')?.appendChild(p);
-    }
-
-    if(!document.getElementById('ordersTabs')){
-      const host = ordersTabsContainer || ordersPanel || document.body;
-      const tabs = document.createElement('div');
-      tabs.id = 'ordersTabs';
-      tabs.className = 'flex gap-2 mb-3 flex-wrap';
-      host.insertBefore(tabs, host.firstChild);
-    }
-  }
-
-  const getWrapRefs = ()=>({
-    ordersWrap:  document.getElementById('ordersListWrap'),
-    driversWrap: document.getElementById('driversListWrap'),
-    statsWrap:   document.getElementById('adminStatsWrap'),
-    payoutsWrap: document.getElementById('payoutsWrap')
-  });
-
-  // === ADMIN OPEN/CLOSE ======================================================
-  const openOrders = async ()=>{
+  const openOrders = ()=>{
     openFlex(ordersPanel);
     ensureAdminTabs();
     setActiveAdminTab(ordersTab);
-    await fetchDrivers();
-    await renderOrders();
-    await renderDrivers();
-    await renderAdminStats();
-    await renderPayouts();
+    renderOrders();
+    renderDrivers();
   };
   const closeOrders= ()=> closeFlex(ordersPanel);
 
@@ -1649,32 +1471,18 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', (e)=>{
-    e.preventDefault();
+  document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{
     document.getElementById('openOrderBuilder')?.click();
   });
-  document.getElementById('openDriverModalTopMobile')?.addEventListener('click', (e)=>{
-    e.preventDefault();
+  document.getElementById('openDriverModalTopMobile')?.addEventListener('click', ()=>{
     document.getElementById('openDriverModal')?.click();
   });
-  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', (e)=>{
-    e.preventDefault();
+  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{
     document.getElementById('adminLoginBtn')?.click();
   });
-  document.getElementById('openDriverModalSection')?.addEventListener('click', (e)=>{
-    e.preventDefault();
+  document.getElementById('openDriverModalSection')?.addEventListener('click', ()=>{
     document.getElementById('openDriverModal')?.click();
   });
-
-  // Direct “open drivers tab” links
-  function forceOpenDriversTab(e){
-    e?.preventDefault?.();
-    ordersTab = 'drivers';
-    openOrders();
-    setActiveAdminTab('drivers');
-  }
-  document.querySelectorAll('.openDriversTab, #openDriversTab, [data-nav="drivers"], a[href="#drivers"]')
-    .forEach(el => el.addEventListener('click', forceOpenDriversTab, {capture:true}));
 
   // === INIT CUSTOMER UI ======================================================
   renderItems();
@@ -1698,13 +1506,75 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Persist only customer fields
   [custNameEl, custPhoneEl, custAddrEl].forEach((el)=>{
     if(!el) return;
     const key = 'yt_'+el.id;
     const saved = localStorage.getItem(key);
     if(saved) el.value = saved;
     el.addEventListener('input', ()=> localStorage.setItem(key, el.value));
+  });
+
+  // Store items add (simple)
+  addStoreItemBtn?.addEventListener('click', e=>{
+    e.preventDefault();
+    const name = prompt('Item name');
+    const priceVal = prompt('Price (R)');
+    const price = Number(priceVal);
+    if(!name || !Number.isFinite(price) || price<=0){ return; }
+    CATALOG.push({name,price});
+    storeItems.push({name,price});
+    renderItems();
+    computeTotal().then(s=>toggleDepositBanner(s.total));
+  });
+
+  // === MODAL CLOSE WIRING ====================================================
+  document.getElementById('closeBot')?.addEventListener('click', closeBot);
+  closeBtn?.addEventListener('click', closeOrder);
+  cancelOrderBuilder?.addEventListener('click', closeOrder);
+  closePayModalBtn?.addEventListener('click', closePayModal);
+  btnCancelPay?.addEventListener('click', closePayModal);
+  closeDriver?.addEventListener('click', closeDriverWindow);
+  closeDriverDash?.addEventListener('click', closeDriverDashWindow);
+
+  // Demo “payment”
+  btnFakePayNow?.addEventListener('click', ()=>{
+    alert('No money taken. Demo only.');
+    closePayModal();
+
+    botSendWA?.classList.remove('hidden');
+    botNewOrder?.classList.remove('hidden');
+    if(botDemoNote) botDemoNote.hidden = false;
+
+    appendBot(`<b>Payment marked (demo)</b><br/>We'll WhatsApp you the real secure link next.`, 'bot');
+    botStage = 2;
+  });
+
+  // Openers
+  ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('click', openOrder);
+  });
+  ['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('click', openDriverWindow);
+  });
+
+  // Driver modal tabs
+  tabSignup?.addEventListener('click',()=>{
+    tabSignup.classList.add('bg-emerald-600','text-white');
+    tabLogin.classList.remove('bg-emerald-600','text-white');
+    formSignup?.classList.remove('hidden');
+    formLogin?.classList.add('hidden');
+    tabSignup.setAttribute('aria-selected','true');
+    tabLogin.setAttribute('aria-selected','false');
+  });
+  tabLogin?.addEventListener('click',()=>{
+    tabLogin.classList.add('bg-emerald-600','text-white');
+    tabSignup.classList.remove('bg-emerald-600','text-white');
+    formSignup?.classList.add('hidden');
+    formLogin?.classList.remove('hidden');
+    tabSignup.setAttribute('aria-selected','false');
+    tabLogin.setAttribute('aria-selected','true');
   });
 
   // === STORE MODAL ===========================================================
@@ -1733,52 +1603,41 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  addStoreItemBtn?.addEventListener('click', e=>{
-    e.preventDefault();
-    const name = prompt('Item name');
-    const priceVal = prompt('Price (R)');
-    const price = Number(priceVal);
-    if(!name || !Number.isFinite(price) || price<=0){ return; }
-    CATALOG.push({name,price});
-    storeItems.push({name,price});
-    renderItems();
-    renderStoreItems();
-    computeTotal().then(s=>toggleDepositBanner(s.total));
-  });
-
-  openStoreFooter?.addEventListener('click', (e)=>{ e.preventDefault(); openStore(); });
-  document.getElementById('openStoreHeader')?.addEventListener('click', (e)=>{ e.preventDefault(); openStore(); });
-  closeStoreModalBtn?.addEventListener('click', (e)=>{ e.preventDefault(); closeStore(); });
-  cancelStoreBtn?.addEventListener('click', (e)=>{ e.preventDefault(); closeStore(); });
+  openStoreFooter?.addEventListener('click', openStore);
+  closeStoreModalBtn?.addEventListener('click', closeStore);
+  cancelStoreBtn?.addEventListener('click', closeStore);
 
   submitStoreBtn?.addEventListener('click', async ()=>{
     const storeName  = storeNameEl?.value.trim();
     const storePhone = digits(storePhoneEl?.value.trim());
     const zone       = storeZoneEl?.value || 'A';
-
     if(!storeName || !storePhone){
       alert("Please add store name & WhatsApp.");
       return;
     }
+    if(storeItems.length === 0){
+      if(!confirm("No items added yet. Submit anyway?")) return;
+    }
 
     const payload = {
+      store_id: `STORE-${Date.now().toString().slice(-6)}`,
       name: storeName,
-      owner_name: storeName,
       phone: storePhone,
       zone,
-      address: {},
-      items: storeItems.map(i=>({ name:i.name, price:i.price }))
+      items: storeItems.map(it=>({ name: it.name, price: it.price }))
     };
 
-    try{
-      const r = await fetch(`${BASE_API}/stores`, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(payload)
-      });
-      const j = await r.json().catch(()=>({}));
-      if(!r.ok || !j.ok){ alert("Store save failed."); return; }
-    }catch(err){ console.error("store create failed",err); }
+    if(!DEMO_MODE){
+      try{
+        const r = await fetch(`${BASE_API}/stores`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(payload)
+        });
+        const j = await r.json().catch(()=>({}));
+        if(!r.ok || !j.ok){ alert("Store save failed on server."); }
+      }catch(err){ console.error("store create failed",err); }
+    }
 
     const adminMsg =
 `New store signup:
@@ -1799,20 +1658,22 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     renderStoreItems();
   });
 
-  // === ADMIN PANEL: TABS =====================================================
-  ordersClose?.addEventListener('click', (e)=>{ e.preventDefault(); closeOrders(); });
+  // === ADMIN PANEL ===========================================================
+  ordersClose?.addEventListener('click', closeOrders);
+  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', () => { adminBtn?.click(); });
+
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
     if(ordersPanel && !ordersPanel.classList.contains('hidden')) {
       renderOrders();
       renderDrivers();
-      renderAdminStats();
-      renderPayouts();
     }
   });
 
+  let ordersTab = 'pending'; // initial tab
+
   function ensureAdminTabs(){
-    ensureWrappers();
+    let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
 
     function makeTabBtn(label, tabKey){
       const btn = document.createElement('button');
@@ -1827,26 +1688,26 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
 
     const wanted = [
-      ['Orders','orders'],
       ['Pending','pending'],
       ['Assigned','assigned'],
       ['In Transit','in_transit'],
-      ['Delivered','delivered'],
-      ['Order History','history'],
-      ['Drivers','drivers'],
-      ['Stats / KPIs','stats'],
-      ['Payouts','payouts']
+      ['Delivered','delivered']
     ];
 
-    const host = document.getElementById('ordersTabs') || ordersTabsContainer || ordersPanel || document.body;
-    const haveKeys = new Set(Array.from(document.querySelectorAll('.yt-o-tab')).map(b=>b.dataset.oTab));
+    let host = ordersTabsContainer || ordersList?.parentElement || ordersPanel || document.body;
+
+    const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
     wanted.forEach(([label,key])=>{
       if(!haveKeys.has(key)){
         host.appendChild(makeTabBtn(label, key));
       }
     });
+    if(!haveKeys.has('drivers')){
+      host.appendChild(makeTabBtn('Drivers', 'drivers'));
+    }
 
-    document.querySelectorAll('.yt-o-tab').forEach(b=>{
+    tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
+    tabButtons.forEach(b=>{
       if(!b.dataset.wired){
         b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
         b.dataset.wired = '1';
@@ -1866,76 +1727,92 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
     });
 
-    const { ordersWrap, driversWrap, statsWrap, payoutsWrap } = getWrapRefs();
+    const showDrivers = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
+    if(driversList) driversList.parentElement?.classList.toggle('hidden', !showDrivers);
+    if(ordersList)  ordersList.parentElement?.classList.toggle('hidden', showDrivers);
 
-    const showDrivers = tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:');
-    const showStats   = tabKey === 'stats';
-    const showPayouts = tabKey === 'payouts';
-    const showOrders  = !showDrivers && !showStats && !showPayouts;
-
-    if(ordersWrap)  ordersWrap.classList.toggle('hidden', !showOrders);
-    if(driversWrap) driversWrap.classList.toggle('hidden', !showDrivers);
-    if(statsWrap)   statsWrap.classList.toggle('hidden', !showStats);
-    if(payoutsWrap) payoutsWrap.classList.toggle('hidden', !showPayouts);
-
-    if(showDrivers)      renderDrivers();
-    else if(showStats)   renderAdminStats();
-    else if(showPayouts) renderPayouts();
-    else                 renderOrders();
+    if(showDrivers){ renderDrivers(); }
+    else { renderOrders(); }
   }
 
-  async function hardRefresh(){
-    await fetchDrivers();
-    await renderOrders();
-    await renderDrivers();
-    await renderAdminStats();
-    await renderPayouts();
+  function hardRefresh(){
+    hydrateState();
+    computeDriverTotalsFromDB();
+    renderOrders();
+    renderDrivers();
     setActiveAdminTab(ordersTab);
   }
   ordersRefresh?.addEventListener('click', hardRefresh);
   driversRefresh?.addEventListener('click', hardRefresh);
 
   function recalcAdminPayoutWidgets() {
-    const driverCount  = DRIVERS.length;
-    const pendingTotal = DRIVERS.reduce((s,d)=> s + Number(d.weekly_payout_due || 0), 0);
-    const approvedTotal = 0; // hook real approved totals when backend supports
-
-    driverTotals.pending  = pendingTotal;
-    driverTotals.approved = approvedTotal;
-
+    const driverCount = Object.keys(DEMO_DRIVERS_DB).length;
     if(adminDriversCountEl) adminDriversCountEl.textContent = String(driverCount);
-    if(adminPayPendingEl)   adminPayPendingEl.textContent   = `R${pendingTotal}`;
-    if(adminPayApprovedEl)  adminPayApprovedEl.textContent  = `R${approvedTotal}`;
-
-    if(driverDashModal && !driverDashModal.classList.contains('hidden')){
-      if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent  = String(pendingTotal);
-      if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(approvedTotal);
-    }
+    if(adminPayPendingEl)   adminPayPendingEl.textContent   = `R${driverTotals.pending}`;
+    if(adminPayApprovedEl)  adminPayApprovedEl.textContent  = `R${driverTotals.approved}`;
   }
 
-  // === API: Orders & actions =================================================
-  async function fetchOrdersByStatus(status){
-    if(status === 'drivers' || (status||'').startsWith('by_driver:') || status === 'stats' || status === 'payouts') return [];
-    try {
-      const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
-      const data = await res.json().catch(()=>({}));
-      if(!res.ok || !data.ok){ return []; }
-      return Array.isArray(data.orders) ? data.orders : [];
-    } catch(err){
-      console.error("fetchOrdersByStatus error",err);
-      return [];
+  function computeDriverTotalsFromDB() {
+    let pendingTotal = 0;
+    let approvedTotal = 0;
+    Object.values(DEMO_ORDERS_DB).forEach(o=>{
+      if(o.driver_pay_status === 'pending'){
+        pendingTotal += (o.driver_pay_pending || 0);
+      }
+      if(o.driver_pay_status === 'approved'){
+        approvedTotal += (o.driver_pay_approved || 0);
+      }
+    });
+    driverTotals.pending  = pendingTotal;
+    driverTotals.approved = approvedTotal;
+    if(driverDashModal && !driverDashModal.classList.contains('hidden')){
+      if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent  = String(driverTotals.pending);
+      if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
     }
+    recalcAdminPayoutWidgets();
+  }
+
+  let rrIdx = 0;
+  function pickDriverId(){
+    const ids = Object.keys(DEMO_DRIVERS_DB);
+    if(ids.length===0) return null;
+    const id = ids[rrIdx % ids.length];
+    rrIdx++;
+    return id;
+  }
+
+  function mutateOrder(internalId, mut){
+    const o = DEMO_ORDERS_DB[internalId];
+    if(!o) return null;
+    mut(o);
+    saveOrdersToLS();
+    hydrateState();
+    window.dispatchEvent(new Event('yt-orders-updated'));
+    return o;
   }
 
   async function assignOneOrder(internalId){
     if(!internalId){ alert("Missing order id."); return; }
+
+    if(DEMO_MODE){
+      mutateOrder(internalId, (o)=>{
+        if(!o.driver_id){ o.driver_id = pickDriverId(); }
+        const pay = calcDriverPayout(o);
+        o.driver_pay_status   = 'pending';
+        o.driver_pay_pending  = pay;
+        o.driver_pay_approved = 0;
+        if(o.status === 'pending') o.status = 'assigned';
+      });
+      computeDriverTotalsFromDB();
+      renderOrders();
+      alert(`[DEMO] Assigned ${internalId}.`);
+      return;
+    }
+
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
         method: "POST",
-        headers: {
-          "Content-Type":"application/json",
-          "X-Admin-Secret": (window.YT_ADMIN_SECRET||'changeme-admin')
-        }
+        headers: {"Content-Type":"application/json"}
       });
       const data = await res.json().catch(()=>({}));
 
@@ -1955,6 +1832,21 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   async function markDelivered(internalId){
     if(!internalId){ alert("Missing order id."); return; }
+
+    if(DEMO_MODE){
+      mutateOrder(internalId, (o)=>{
+        const pay = calcDriverPayout(o);
+        o.status = 'delivered';
+        o.driver_pay_status   = 'approved';
+        o.driver_pay_approved = pay;
+        o.driver_pay_pending  = 0;
+      });
+      computeDriverTotalsFromDB();
+      renderOrders();
+      alert(`[DEMO] Delivered ${internalId}.`);
+      return;
+    }
+
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
         method: "POST",
@@ -1975,19 +1867,30 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   async function autoAssignForAll(){
-    const pend = await fetchOrdersByStatus('pending');
-    const ids = pend.map(o => o._internal_id).filter(Boolean);
+    const ids = Object.values(DEMO_ORDERS_DB)
+      .filter(o => o.status === 'pending')
+      .map(o => o._internal_id);
+
     if (ids.length === 0){ alert("No pending orders to assign."); return; }
 
     const results = [];
     for (const internalId of ids){
+      if (DEMO_MODE){
+        mutateOrder(internalId, (o)=>{
+          if(!o.driver_id){ o.driver_id = pickDriverId(); }
+          const pay = calcDriverPayout(o);
+          o.driver_pay_status  = 'pending';
+          o.driver_pay_pending = pay;
+          o.status             = 'assigned';
+          results.push(`✅ (demo) ${internalId} -> ${o.driver_id} (R${pay})`);
+        });
+        continue;
+      }
+
       try {
         const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
           method: "POST",
-          headers: {
-            "Content-Type":"application/json",
-            "X-Admin-Secret": (window.YT_ADMIN_SECRET||'changeme-admin')
-          }
+          headers: {"Content-Type":"application/json"}
         });
         const data = await res.json().catch(()=>({}));
 
@@ -2004,26 +1907,64 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         results.push(`❌ ${internalId}: network error`);
       }
     }
-    await renderDrivers();
+    computeDriverTotalsFromDB();
     alert(results.join("\n"));
     renderOrders();
   }
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
-  // === RENDER: Orders / Status / History ====================================
+  document.querySelectorAll('.yt-o-tab').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.yt-o-tab')
+        .forEach(x=>{
+          x.classList.remove('bg-emerald-600','text-white');
+          x.setAttribute('aria-selected','false');
+        });
+      btn.classList.add('bg-emerald-600','text-white');
+      btn.setAttribute('aria-selected','true');
+      ordersTab = btn.dataset.oTab;
+      setActiveAdminTab(ordersTab);
+    });
+  });
+
+  adminBtn?.addEventListener('click', ()=>{
+    const pin = prompt('Enter admin PIN:');
+    if(pin && pin.trim() !== ""){
+      alert('Admin mode ON');
+      openOrders();
+    } else {
+      alert('Invalid PIN');
+    }
+  });
+
+  async function fetchOrdersByStatus(status){
+    if(status === 'drivers' || (status||'').startsWith('by_driver:')) return [];
+    if(DEMO_MODE){
+      return Object.values(DEMO_ORDERS_DB).filter(o => o.status === status);
+    }
+    try {
+      const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok || !data.ok){ return []; }
+      return Array.isArray(data.orders) ? data.orders : [];
+    } catch(err){
+      console.error("fetchOrdersByStatus error",err);
+      return [];
+    }
+  }
+
   async function renderOrders(){
     if(!ordersList) return;
 
-    // Per-driver filtered
     if((ordersTab||'').startsWith('by_driver:')){
       const did = ordersTab.split(':',2)[1];
-      const all = await fetchAllOrders();
-      const data = all.filter(o => (o.assigned_driver_id || '') === did);
+      const data = Object.values(DEMO_ORDERS_DB).filter(o => o.driver_id === did);
       currentOrdersByTab[ordersTab] = data;
+      computeDriverTotalsFromDB();
 
       ordersList.innerHTML = data.length
         ? ''
-        : `<div class="text-sm text-slate-500 p-4">No orders for this driver.</div>`;
+        : `<div class="text-sm text-slate-500 p-4">No orders for ${did}.</div>`;
 
       for(const o of data){
         ordersList.appendChild(buildOrderRow(o));
@@ -2032,43 +1973,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
-    // All active orders
-    if(ordersTab === 'orders'){
-      const all = await fetchAllOrders();
-      const data = all.filter(o => o.status !== 'delivered');
-      currentOrdersByTab[ordersTab] = data;
-
-      ordersList.innerHTML = data.length
-        ? ''
-        : `<div class="text-sm text-slate-500 p-4">No active orders.</div>`;
-      for(const o of data){
-        ordersList.appendChild(buildOrderRow(o));
-      }
-      wireOrderRowButtons(ordersList);
-      return;
-    }
-
-    // Order history (delivered)
-    if(ordersTab === 'history'){
-      const all = await fetchAllOrders();
-      const data = all
-        .filter(o => o.status === 'delivered')
-        .sort((a,b)=> (new Date(b.updated_at||b.created_at||0)) - (new Date(a.updated_at||a.created_at||0)));
-      currentOrdersByTab[ordersTab] = data;
-
-      ordersList.innerHTML = data.length
-        ? ''
-        : `<div class="text-sm text-slate-500 p-4">No delivered orders yet.</div>`;
-      for(const o of data){
-        ordersList.appendChild(buildOrderRow(o));
-      }
-      wireOrderRowButtons(ordersList);
-      return;
-    }
-
-    // Single-status view
     const data = await fetchOrdersByStatus(ordersTab);
     currentOrdersByTab[ordersTab] = data;
+
+    computeDriverTotalsFromDB();
 
     ordersList.innerHTML = data.length
       ? ''
@@ -2085,29 +1993,30 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       .map(i=>`${i.name} x${i.qty}`)
       .join(', ');
 
-    const internalId   = o._internal_id || o.internal_id || null;
-    const refDisplay   = o.order_id || o.order_public_id || internalId || "REF?";
-    const kmText       = (o.route && Number.isFinite(o.route.distance_km))
-      ? ` • ${Number(o.route.distance_km).toFixed(1)} km`
+    const internalId  = o._internal_id || o.internal_id || null;
+    const refDisplay  = o.order_public_id || o.order_id || internalId || "REF?";
+    const kmText      = (o.meta && Number.isFinite(o.meta.distance_km))
+      ? ` • ${o.meta.distance_km.toFixed(1)} km`
       : "";
     const fraudDisplay = (typeof o.fraud_score === "number")
       ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
       : "";
+    const driverName = (o.driver_id && DEMO_DRIVERS_DB[o.driver_id])
+      ? DEMO_DRIVERS_DB[o.driver_id].name
+      : '—';
 
-    const assignedDriverId = o.assigned_driver_id || null;
-    const driver = assignedDriverId && DRIVERS_BY_ID[assignedDriverId]
-      ? DRIVERS_BY_ID[assignedDriverId]
-      : null;
-    const driverName = driver ? (driver.name || 'Driver') : '—';
-
-    let driverPayText = "Driver pay: —";
-    if (o.settlement && typeof o.settlement.driver === 'number'){
-      driverPayText = `Driver pay: R${o.settlement.driver}`;
+    let driverPayText = "Driver pay: R0";
+    let driverPayStatusText = "Status: –";
+    if(o.driver_pay_status === "pending"){
+      driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
+      driverPayStatusText = "Pay: pending";
+    } else if(o.driver_pay_status === "approved"){
+      driverPayText = `Driver pay: R${o.driver_pay_approved || 0}`;
+      driverPayStatusText = "Pay: approved";
     }
 
     const isDelivered = o.status === "delivered";
     const canAssign   = (o.status === "pending" || o.status === "review_required") && !isDelivered;
-    const canStart    = (o.status === "assigned");
     const canDeliver  = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
 
     const row = document.createElement('div');
@@ -2127,7 +2036,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           Status: <b>${o.status}</b> • Driver: ${driverName}${fraudDisplay}
         </div>
         <div class="text-[11px] leading-snug text-slate-500 mt-1">
-          ${driverPayText}
+          ${driverPayText} • ${driverPayStatusText}
         </div>
       </div>
       <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
@@ -2139,7 +2048,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         </button>
         <button
           class="btn-start px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-          ${(!canStart || !internalId) ? 'disabled' : ''}
+          ${(o.status !== 'assigned' || !internalId) ? 'disabled' : ''}
           data-id="${internalId || ''}">
           Start trip
         </button>
@@ -2156,190 +2065,136 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   function wireOrderRowButtons(scopeEl){
     scopeEl.querySelectorAll('.btn-assign').forEach(btn=>{
-      if(btn.dataset.wiredAssign) return;
-      btn.dataset.wiredAssign = '1';
       btn.addEventListener('click', ()=> assignOneOrder(btn.getAttribute('data-id')));
     });
     scopeEl.querySelectorAll('.btn-start').forEach(btn=>{
-      if(btn.dataset.wiredStart) return;
-      btn.dataset.wiredStart = '1';
-      btn.addEventListener('click', async ()=>{
+      btn.addEventListener('click', ()=>{
         const id = btn.getAttribute('data-id');
-        if(!id) return;
-        try{
-          const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(id)}/status`, {
-            method: "POST",
-            headers: {"Content-Type":"application/json"},
-            body: JSON.stringify({status:"in_transit"})
+        if(DEMO_MODE && DEMO_ORDERS_DB[id]){
+          mutateOrder(id, (o)=>{
+            if(o.status === 'assigned') o.status = 'in_transit';
           });
-          await res.json().catch(()=>({}));
-        }catch(e){ console.error('start trip', e); }
-        renderOrders();
+          renderOrders();
+        }
       });
     });
     scopeEl.querySelectorAll('.btn-delivered').forEach(btn=>{
-      if(btn.dataset.wiredDelivered) return;
-      btn.dataset.wiredDelivered = '1';
       btn.addEventListener('click', ()=> markDelivered(btn.getAttribute('data-id')));
     });
   }
 
-  // === DRIVERS TAB ===========================================================
-  async function renderDrivers(){
-    if(!driversList) return;
-    await fetchDrivers();
+  function computeDriverDerived(driverId){
+    const mine = Object.values(DEMO_ORDERS_DB).filter(o => o.driver_id === driverId);
+    const delivered = mine.filter(o => o.status === 'delivered');
+    const deliveredRevenue = delivered.reduce((s,o)=> s + (o.total||0), 0);
+    const avgFee = delivered.length
+      ? Math.round(delivered.reduce((s,o)=> s + (o.delivery_fee||0), 0) / delivered.length)
+      : 0;
+    const lastDeliveries = delivered
+      .slice(-3)
+      .map(o => o.order_public_id || o.order_id || o._internal_id || '—');
+    return { deliveredRevenue, avgFee, lastDeliveries };
+  }
 
-    const drivers = DRIVERS;
+  function renderDrivers(){
+    if(!driversList) return;
+
+    computeDriverTotalsFromDB();
+
+    const drivers = Object.values(DEMO_DRIVERS_DB);
     driversList.innerHTML = '';
     if(drivers.length===0){
       driversList.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
-      recalcAdminPayoutWidgets();
       return;
     }
 
     for(const dr of drivers){
+      const computed = computeDriverDerived(dr.driver_id);
       const row = document.createElement('div');
       row.className = 'p-3 flex flex-col gap-2 border-b border-slate-200';
-
-      const stats = dr.stats || {};
-      const pendingDue = Number(dr.weekly_payout_due || 0);
 
       row.innerHTML = `
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div class="flex-1 min-w-0">
             <div class="font-medium flex flex-wrap items-center gap-2">
-              <span>#${dr.driver_id || (dr._internal_id||'DRV')}</span>
-              <span>• ${dr.name || 'Driver'}</span>
-              <span class="text-slate-500">(${dr.vehicle || 'car'})</span>
+              <span>#${dr.driver_id}</span>
+              <span>• ${dr.name}</span>
+              <span class="text-slate-500">(${dr.vehicle})</span>
               <span class="text-[11px] text-slate-500">WhatsApp: ${dr.phone || '—'}</span>
             </div>
             <div class="text-xs text-slate-500">
-              Assigned: <b>${stats.assigned||0}</b> • In transit: <b>${stats.in_transit||0}</b> • Delivered: <b>${stats.delivered||0}</b>
+              Assigned: <b>${dr.stats.assigned}</b> • In transit: <b>${dr.stats.in_transit}</b> • Delivered: <b>${dr.stats.delivered}</b>
             </div>
             <div class="text-xs text-slate-500">
-              Weekly due: <b>R${pendingDue}</b>
+              Pending pay: <b>R${dr.payout_pending}</b> • Approved pay: <b>R${dr.payout_approved}</b> •
+              Delivered total (R): <b>${computed.deliveredRevenue}</b> • Avg fee: <b>R${computed.avgFee}</b>
             </div>
           </div>
           <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
             <button class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-                    data-id="${dr._internal_id || dr.driver_id}">
+                    data-id="${dr.driver_id}">
               View Orders
             </button>
+            <button class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+                    data-id="${dr.driver_id}">
+              Approve All Pay
+            </button>
+            <a class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
+               href="https://wa.me/${dr.phone || ''}" target="_blank" rel="noopener">
+              WhatsApp
+            </a>
           </div>
         </div>
+        ${
+          computed.lastDeliveries.length
+            ? `<div class="text-[11px] text-slate-500 leading-snug">
+                 Recent delivered refs: ${computed.lastDeliveries.map(x=>`<code>${x}</code>`).join(', ')}
+               </div>`
+            : ''
+        }
       `;
       driversList.appendChild(row);
     }
 
+    driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const did = btn.getAttribute('data-id');
+        let count = 0;
+        Object.values(DEMO_ORDERS_DB).forEach(o=>{
+          if(o.driver_id===did && o.driver_pay_status==='pending'){
+            const amount = o.driver_pay_pending || 0;
+            o.driver_pay_status = 'approved';
+            o.driver_pay_approved = amount;
+            o.driver_pay_pending  = 0;
+            count++;
+          }
+        });
+        saveOrdersToLS();
+        hydrateState();
+        computeDriverTotalsFromDB();
+        renderDrivers();
+        renderOrders();
+        alert(count ? `Approved ${count} payout(s) for ${did}.` : `No pending payouts for ${did}.`);
+      });
+    });
+
     driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const did = btn.getAttribute('data-id');
-        if(!did) return;
         ordersTab = `by_driver:${did}`;
         setActiveAdminTab(ordersTab);
       });
     });
-
-    recalcAdminPayoutWidgets();
   }
 
-  // === PAYOUTS TAB ===========================================================
-  async function renderPayouts(){
-    const wrap = document.getElementById('payoutsWrap');
-    if(!wrap) return;
-
-    await fetchDrivers();
-    wrap.innerHTML = '';
-
-    if(!DRIVERS.length){
-      wrap.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
-      return;
-    }
-
-    const dueDrivers = DRIVERS.filter(d => Number(d.weekly_payout_due || 0) > 0);
-
-    if(!dueDrivers.length){
-      wrap.innerHTML = `<div class="text-sm text-slate-500 p-4">No pending payouts. 🎉</div>`;
-      recalcAdminPayoutWidgets();
-      return;
-    }
-
-    dueDrivers.forEach(dr=>{
-      const due = Number(dr.weekly_payout_due || 0);
-      const row = document.createElement('div');
-      row.className = 'p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-200';
-      row.innerHTML = `
-        <div class="flex-1 min-w-0">
-          <div class="font-medium flex flex-wrap items-center gap-2">
-            <span>${dr.name || 'Driver'}</span>
-            <span class="text-xs text-slate-500">ID: ${dr.driver_id || dr._internal_id || '-'}</span>
-          </div>
-          <div class="text-xs text-slate-500">
-            WhatsApp: ${dr.phone || '—'} • Vehicle: ${dr.vehicle || 'car'}
-          </div>
-          <div class="text-sm">
-            Pending payout: <b>R${due}</b>
-          </div>
-        </div>
-        <div class="flex flex-row gap-2 text-xs sm:justify-end">
-          <button
-            class="btn-approve-payout px-3 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-            data-id="${dr._internal_id || dr.driver_id}"
-            data-amt="${due}">
-            Approve paid
-          </button>
-        </div>
-      `;
-      wrap.appendChild(row);
-    });
-
-    wrap.querySelectorAll('.btn-approve-payout').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const id  = btn.getAttribute('data-id');
-        const amt = Number(btn.getAttribute('data-amt') || 0);
-        if(!id || !amt) return;
-
-        try{
-          const res = await fetch(`${BASE_API}/drivers/${encodeURIComponent(id)}/payouts/approve`, {
-            method:'POST',
-            headers:{
-              'Content-Type':'application/json',
-              'X-Admin-Secret': (window.YT_ADMIN_SECRET || 'changeme-admin')
-            },
-            body: JSON.stringify({ amount: amt })
-          });
-          const j = await res.json().catch(()=>({}));
-          if(res.ok && j && j.ok){
-            alert('Payout approved.');
-            const d = DRIVERS_BY_ID[id];
-            if(d){ d.weekly_payout_due = 0; }
-            recalcAdminPayoutWidgets();
-            renderPayouts();
-          } else {
-            alert(j.message || 'Failed to approve payout.');
-          }
-        }catch(err){
-          console.error('approve payout error', err);
-          alert('Network error approving payout.');
-        }
-      });
-    });
-
-    recalcAdminPayoutWidgets();
-  }
-
-  // === MAP (closest depot → user route) =====================================
-  ;(function initMapSafely(){
+  // === MAP: NEAREST DEPOT → USER, FITTED VIEW ===============================
+  (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
-    if(!heroEl){ return; }
+    if(!heroEl) return;
 
     let heroMap;
-    let localCars = [];
+    const localCars = [];
     const movers = [];
-
-    const southAfricaBounds = (window.L && L.latLngBounds)
-      ? L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]])
-      : null;
 
     function carIcon(){
       const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
@@ -2351,17 +2206,13 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         <circle cx='18' cy='20' r='3' fill='#111827'/>
         <circle cx='46' cy='20' r='3' fill='#111827'/>
       </g></svg>`;
-      return window.L
-        ? L.divIcon({ className:'car-dot', html:svg, iconSize:[28,14], iconAnchor:[14,7] })
-        : null;
+      return L.divIcon({ className:'car-dot', html:svg, iconSize:[28,14], iconAnchor:[14,7] });
     }
 
     const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
       <path fill='${emerald[600]}' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
     </svg>`;
-    const pkgIcon = (window.L && L.divIcon)
-      ? L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] })
-      : null;
+    const pkgIcon = () => L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
 
     async function osrmRoute(a,b){
       try{
@@ -2375,6 +2226,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }catch(_){}
       return null;
     }
+
     function buildStraight(a,b){ return [[a.lat,a.lng],[b.lat,b.lng]]; }
 
     function cumulativeLengths(latlngs){
@@ -2388,93 +2240,133 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
       return { lensKm:lens, totalKm:acc };
     }
+
     function pointAtFraction(latlngs, lensKm, frac){
       const target = frac*lensKm[lensKm.length-1];
-      let i=1; while(i<lensKm.length && lensKm[i]<target) i++;
+      let i=1;
+      while(i<lensKm.length && lensKm[i]<target) i++;
       const a=latlngs[i-1], b=latlngs[i];
       const segLen = lensKm[i]-lensKm[i-1] || 1e-6;
       const t = (target - lensKm[i-1]) / segLen;
-      const lat = a[0] + (b[0]-a[0])*t;
-      const lng = a[1] + (b[1]-a[1])*t;
-      return [lat,lng];
+      return [
+        a[0] + (b[0]-a[0])*t,
+        a[1] + (b[1]-a[1])*t
+      ];
     }
 
     function spawnLocalTraffic(center, count){
-      if(!window.L || !heroMap) return;
       for(let i=0;i<count;i++){
         const r    = 0.01 + Math.random()*0.02;
         const ang0 = Math.random()*Math.PI*2;
         const spd  = 0.4 + Math.random()*0.6;
         const m    = L.marker(
           [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
-          { icon:carIcon() || undefined }
+          { icon:carIcon() }
         ).addTo(heroMap);
         localCars.push({m, cx:center.lat, cy:center.lng, r, ang:ang0, spd});
       }
     }
 
-    async function centerMapHeuristic() {
+    async function centerAndDraw(){
       DELIVERY_COORDS = DELIVERY_COORDS || await tryGetCustomerCoords();
 
-      if(DELIVERY_COORDS){
-        try { heroMap.setView([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], 12, { animate:true }); } catch(_){}
-
-        // Nearest depot
-        let best = null;
-        for(const c of COLLECTIONS){
-          const d = kmBetween({lat:c.lat,lng:c.lng}, DELIVERY_COORDS);
-          if(!best || d < best.d) best = { c, d };
-        }
-
-        if(best){
-          const depot = best.c;
-          let latlngs = await osrmRoute(
-            {lat:depot.lat, lng:depot.lng},
-            {lat:DELIVERY_COORDS.lat, lng:DELIVERY_COORDS.lng}
-          );
-          if(!latlngs){
-            latlngs = buildStraight(
-              {lat:depot.lat, lng:depot.lng},
-              {lat:DELIVERY_COORDS.lat, lng:DELIVERY_COORDS.lng}
-            );
-          }
-
-          L.polyline(latlngs,{weight:3, opacity:.9, color:emerald[600]}).addTo(heroMap);
-
-          const {lensKm} = cumulativeLengths(latlngs);
-          for(let i=0;i<3;i++){
-            const m = L.marker(latlngs[0],{icon:carIcon() || undefined}).addTo(heroMap);
-            const speed = 0.22 + Math.random()*0.08;
-            const start = Math.random()*0.25;
-            movers.push({m, latlngs, lensKm, t:start, speed, dir:1});
-          }
-
-          // small pulse at user location
-          if(window.L){
-            const pulse = L.circle([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], {
-              radius: 40, color:emerald[500], weight:1, opacity:0.7, fillOpacity:0
-            }).addTo(heroMap);
-            let grow=true;
-            setInterval(()=>{
-              const rr = pulse.getRadius();
-              pulse.setRadius(grow ? rr+6 : rr-6);
-              if(pulse.getRadius()>110) grow=false;
-              if(pulse.getRadius()<40)  grow=true;
-            }, 220);
-          }
-        }
-
-        spawnLocalTraffic(DELIVERY_COORDS, 4);
+      // No geolocation: just center on default depot + light traffic
+      if(!DELIVERY_COORDS){
+        heroMap.setView([COLLECTION_COORDS.lat, COLLECTION_COORDS.lng], 9);
+        L.marker([COLLECTION_COORDS.lat, COLLECTION_COORDS.lng], {
+          icon: pkgIcon(),
+          title: 'Pickup depot'
+        }).addTo(heroMap);
+        spawnLocalTraffic(COLLECTION_COORDS, 4);
         return;
       }
 
-      // Fallback center
-      try { heroMap.setView([COLLECTION_COORDS.lat, COLLECTION_COORDS.lng], 9, { animate:true }); } catch(_){}
+      // Find nearest depot to the user
+      let best = null;
+      for(const c of COLLECTIONS){
+        const d = kmBetween({lat:c.lat,lng:c.lng}, DELIVERY_COORDS);
+        if(!best || d < best.d) best = { c, d };
+      }
+      const depot = best.c;
+
+      // Markers: depot + user
+      const depotMarker = L.marker([depot.lat,depot.lng], {
+        icon: pkgIcon(),
+        title: depot.name
+      }).addTo(heroMap).bindTooltip(depot.name, {permanent:false});
+
+      const userMarker = L.circleMarker(
+        [DELIVERY_COORDS.lat, DELIVERY_COORDS.lng],
+        {
+          radius: 7,
+          color: emerald[600],
+          fillColor: emerald[600],
+          fillOpacity: 0.95
+        }
+      ).addTo(heroMap).bindTooltip('You', {permanent:false});
+
+      // Route from depot to user
+      let latlngs = await osrmRoute(
+        {lat:depot.lat, lng:depot.lng},
+        DELIVERY_COORDS
+      );
+      if(!latlngs){
+        latlngs = buildStraight(
+          {lat:depot.lat, lng:depot.lng},
+          DELIVERY_COORDS
+        );
+      }
+
+      const routeLine = L.polyline(latlngs, {
+        weight:3,
+        color:emerald[600],
+        opacity:0.9
+      }).addTo(heroMap);
+
+      // Fit viewport so both points + route are nicely in view
+      const bounds = L.latLngBounds(latlngs);
+      bounds.extend([depot.lat,depot.lng]);
+      bounds.extend([DELIVERY_COORDS.lat,DELIVERY_COORDS.lng]);
+      heroMap.fitBounds(bounds, { padding:[30,30], maxZoom:14 });
+
+      // Animated cars along this route
+      const { lensKm } = cumulativeLengths(latlngs);
+      for(let i=0;i<3;i++){
+        const m = L.marker(latlngs[0], {icon:carIcon()}).addTo(heroMap);
+        movers.push({
+          m,
+          latlngs,
+          lensKm,
+          t: Math.random(),            // start somewhere along the route
+          speed: 0.22 + Math.random()*0.08,
+          dir: 1
+        });
+      }
+
+      // A bit of local traffic near user
+      spawnLocalTraffic(DELIVERY_COORDS, 3);
+
+      // Soft pulsing ring on user to make it obvious
+      const pulse = L.circle(
+        [DELIVERY_COORDS.lat, DELIVERY_COORDS.lng],
+        { radius: 50, color:emerald[500], weight:1, opacity:0.6, fillOpacity:0 }
+      ).addTo(heroMap);
+      let grow=true;
+      setInterval(()=>{
+        const r = pulse.getRadius();
+        pulse.setRadius(grow ? r+6 : r-6);
+        if(pulse.getRadius()>120) grow=false;
+        if(pulse.getRadius()<40)  grow=true;
+      }, 220);
     }
 
     (async function(){
-      try {
-        if (typeof L === "undefined") throw new Error("Leaflet not loaded");
+      try{
+        if(typeof L === 'undefined'){
+          throw new Error("Leaflet not loaded");
+        }
+
+        const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
 
         heroMap = L.map(heroEl, {
           zoomControl:false,
@@ -2483,103 +2375,112 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           doubleClickZoom:false,
           boxZoom:false,
           touchZoom:false
-        }).setView([-33.20, 26.55], 8);
+        }).setView([-33.20, 26.55], 7);
 
         L.tileLayer(
           'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
           { attribution:'', opacity:0.98, noWrap:true, detectRetina:true }
         ).addTo(heroMap);
 
-        if (southAfricaBounds) heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
+        heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
 
-        // Background depot-to-depot routes (visual)
-        const depotPairs = [
-          [COLLECTIONS[0], COLLECTIONS[1]],
-          [COLLECTIONS[1], COLLECTIONS[2]],
-          [COLLECTIONS[2], COLLECTIONS[3] || COLLECTIONS[0]]
-        ];
-        for(const [A,B] of depotPairs){
-          let latlngs = await osrmRoute({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng});
-          if(!latlngs){
-            latlngs = buildStraight({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng});
+        // Subtle background depot network (kept light so main route stands out)
+        if(COLLECTIONS.length >= 2){
+          const bgPairs = [];
+          for(let i=0;i<COLLECTIONS.length;i++){
+            const a = COLLECTIONS[i];
+            const b = COLLECTIONS[(i+1)%COLLECTIONS.length];
+            bgPairs.push([a,b]);
           }
-          L.polyline(latlngs,{weight:2, opacity:.35, color:emerald[500]}).addTo(heroMap);
-          const {lensKm} = cumulativeLengths(latlngs);
+          for(const [A,B] of bgPairs){
+            let latlngs = await osrmRoute(
+              {lat:A.lat,lng:A.lng},
+              {lat:B.lat,lng:B.lng}
+            );
+            if(!latlngs){
+              latlngs = buildStraight(
+                {lat:A.lat,lng:A.lng},
+                {lat:B.lat,lng:B.lng}
+              );
+            }
+            const { lensKm } = cumulativeLengths(latlngs);
+            L.polyline(latlngs, {
+              weight:2,
+              color:emerald[500],
+              opacity:0.25
+            }).addTo(heroMap);
 
-          for(let i=0;i<2;i++){
-            const m = L.marker(latlngs[0],{icon:carIcon() || undefined}).addTo(heroMap);
-            const speed = 0.12 + Math.random()*0.06;
-            const dir   = Math.random()<.5 ? 1 : -1;
-            const start = Math.random();
-            movers.push({m, latlngs, lensKm, t:start, speed, dir});
-          }
-          for(let i=0;i<1;i++){
-            const m = L.marker(latlngs[0],{icon:pkgIcon || undefined}).addTo(heroMap);
-            const speed = 0.15 + Math.random()*0.06;
-            const dir   = Math.random()<.5 ? 1 : -1;
-            const start = Math.random();
-            movers.push({m, latlngs, lensKm, t:start, speed, dir});
+            // Light background movers
+            for(let i=0;i<2;i++){
+              const m = L.marker(latlngs[0], {icon:carIcon()}).addTo(heroMap);
+              movers.push({
+                m,
+                latlngs,
+                lensKm,
+                t: Math.random(),
+                speed: 0.12 + Math.random()*0.05,
+                dir: Math.random()<0.5 ? 1 : -1
+              });
+            }
           }
         }
 
         function animate(){
           movers.forEach(o=>{
             o.t += o.speed * o.dir * (1/60);
-            if(o.t>1){ o.t=1; o.dir=-1; }
-            if(o.t<0){ o.t=0; o.dir= 1; }
-            o.m.setLatLng(pointAtFraction(o.latlngs,o.lensKm,o.t));
+            if(o.t > 1) o.t = 0;
+            if(o.t < 0) o.t = 1;
+            const [lat,lng] = pointAtFraction(o.latlngs, o.lensKm, o.t);
+            o.m.setLatLng([lat,lng]);
           });
-          for(const lc of localCars){
+          localCars.forEach(lc=>{
             lc.ang += lc.spd * 0.004;
             const lat = lc.cx + lc.r*Math.sin(lc.ang);
             const lng = lc.cy + lc.r*Math.cos(lc.ang);
             lc.m.setLatLng([lat,lng]);
-          }
+          });
           requestAnimationFrame(animate);
         }
         requestAnimationFrame(animate);
 
-        setTimeout(()=>{
-          try{ heroMap.invalidateSize(); }catch(_){}
-          centerMapHeuristic();
-        },180);
-        window.addEventListener('resize',()=>{
-          try{ heroMap.invalidateSize(); }catch(_){}
+        await centerAndDraw();
+
+        setTimeout(()=>{ try{ heroMap.invalidateSize(); }catch(_){ } }, 150);
+        window.addEventListener('resize', ()=> {
+          try { heroMap.invalidateSize(); } catch(_){}
         });
 
-        // Driver signup
-        formSignup?.addEventListener('submit', async e=>{
+        // Driver signup → drop marker near current depot & WhatsApp admin
+        formSignup?.addEventListener('submit', e=>{
           e.preventDefault();
           const name    = document.getElementById('drvName')?.value.trim();
           const phone   = digits(document.getElementById('drvPhone')?.value.trim());
           const radius  = Math.max(1, Number(document.getElementById('drvRadius')?.value || 10));
-          const vehicle = document.getElementById('drvVehicle')?.value.trim() || 'car';
-          if(!name || !phone){ alert("Please enter name and phone."); return; }
+          const vehicle = document.getElementById('drvVehicle')?.value.trim() || 'Car';
+          if(!name || !phone){
+            alert("Please enter name and phone.");
+            return;
+          }
 
           const jitter = ()=>{
-            const d=(1500)/111111, a=Math.random()*Math.PI*2, r=Math.random()*d;
+            const d=(1500)/111111;
+            const a=Math.random()*Math.PI*2;
+            const r=Math.random()*d;
             return {
               lat: COLLECTION_COORDS.lat + r*Math.cos(a),
               lng: COLLECTION_COORDS.lng + r*Math.sin(a)
             };
           };
           const start = jitter();
-          if(window.L) L.marker([start.lat,start.lng],{icon:carIcon() || undefined}).addTo(heroMap);
+          L.marker([start.lat,start.lng], {icon:carIcon()}).addTo(heroMap);
 
-          try{
-            const payload = {
-              name, phone, vehicle, radius_km: radius,
-              available: true,
-              current_location: { lat: start.lat, lng: start.lng }
-            };
-            const r = await fetch(`${BASE_API}/drivers`, {
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body: JSON.stringify(payload)
-            });
-            const j = await r.json().catch(()=>({}));
-            if(!r.ok || !j.ok){ alert("Driver create failed."); return; }
-          }catch(err){ console.error("driver create failed", err); }
+          const driver_id = `DRV-${Date.now().toString().slice(-6)}`;
+          DEMO_DRIVERS_DB[driver_id] = {
+            driver_id, name, phone, vehicle,
+            stats:{assigned:0,in_transit:0,delivered:0},
+            payout_pending:0, payout_approved:0
+          };
+          saveDriversToLS();
 
           const text = `New driver sign-up
 Name: ${name}
@@ -2589,51 +2490,26 @@ Vehicle: ${vehicle}`;
           window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
 
           closeDriverWindow();
-          await renderDrivers();
-          alert('Driver submitted.');
+          hydrateState();
+          renderDrivers();
+          alert('Driver submitted (demo).');
         });
 
-      } catch (err) {
+      }catch(err){
         console.warn("Map disabled:", err);
       }
     })();
   })();
 
   // === DRIVER LOGIN → DASH ===================================================
-  formLogin?.addEventListener('submit', async (e)=>{
+  formLogin?.addEventListener('submit',e=>{
     e.preventDefault();
-    const phone = digits(drvLoginPhoneEl?.value || '');
-    const pin   = (drvLoginPinEl?.value || '').trim();
-    if(!phone){
-      alert('Enter your WhatsApp number to log in.');
-      return;
-    }
-    try{
-      const res = await fetch(`${BASE_API}/drivers/login`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ phone, pin })
-      });
-      const j = await res.json().catch(()=>({}));
-      if(res.ok && j && (j.ok || j.token || j.driver)){
-        closeDriverWindow();
-        openDriverDash();
-        return;
-      }
-      if(res.status === 404 || (j && j.error === 'not_implemented')){
-        alert('Login endpoint not available yet. Opening dashboard for demo.');
-        closeDriverWindow();
-        openDriverDash();
-        return;
-      }
-      alert(j?.message || 'Login failed. Check your details and try again.');
-    }catch(err){
-      console.error('Driver login error', err);
-      alert('Network error during login. Please try again.');
-    }
+    alert('Logged in (demo). Opening dashboard.');
+    closeDriverWindow();
+    if(driverDashModal){ openDriverDash(); }
   });
 
-  // === ORDER SUBMISSION (CUSTOMER) ==========================================
+  // === ORDER SUBMISSION ======================================================
   confirmBtn2?.addEventListener('click', async ()=>{
     confirmBtn2.disabled = true;
     try{
@@ -2647,10 +2523,6 @@ Vehicle: ${vehicle}`;
         alert('Please fill name, WhatsApp and address.');
         return;
       }
-      if(!zoneSelect?.value){
-        alert('Please select a pickup depot.');
-        return;
-      }
 
       const paymentMethod = selectedPay();
       const eta           = nextETA(Boolean(summary.rush));
@@ -2659,11 +2531,7 @@ Vehicle: ${vehicle}`;
         customer: {
           name: custName,
           phone: custPhone,
-          address: {
-            line1: custAddr,
-            suburb: '—',
-            coords: DELIVERY_COORDS || null
-          }
+          address: { line1: custAddr, suburb: '—', coords: DELIVERY_COORDS || null }
         },
         items: summary.items.map(it => ({
           sku: null, name: it.name, qty: it.qty, price: it.price
@@ -2681,54 +2549,106 @@ Vehicle: ${vehicle}`;
         meta: { rush: !!summary.rush, collection_name: summary.collectionName }
       };
 
-      let data = null;
-      try {
-        const res = await fetch(`${BASE_API}/orders`, {
-          method:"POST",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify(orderPayload)
-        });
-
-        try { data = await res.json(); } catch(_) { data = null; }
-
-        if (res.status === 409 && data && data.error === "no_driver_available") {
-          alert(data.message || `Sorry, no driver currently available near your area.`);
-          return;
-        }
-        if(!res.ok || !data || !data.ok){
-          console.error("Order failed", res.status, data);
-          alert("Order failed on server.");
-          return;
-        }
+      if(DEMO_MODE){
+        const refStub = Date.now().toString().slice(-6);
+        const internalId = "demo-" + refStub.toLowerCase();
+        const driverPay  = clamp(orderPayload.delivery_fee,25,45);
+        const did = pickDriverId();
+        DEMO_ORDERS_DB[internalId] = {
+          _internal_id: internalId,
+          order_id:     ("YI-" + refStub).toUpperCase(),
+          order_public_id: ("DEMO-" + refStub).toUpperCase(),
+          status: "pending",
+          total: orderPayload.total,
+          delivery_fee: orderPayload.delivery_fee,
+          items: orderPayload.items.map(x=>({name:x.name, qty:x.qty})),
+          meta: {
+            collection_name: orderPayload.meta.collection_name,
+            distance_km: orderPayload.route.distance_km
+          },
+          fraud_score: 0.00,
+          driver_id: did,
+          driver_pay_status: 'pending',
+          driver_pay_pending: driverPay,
+          driver_pay_approved: 0
+        };
+        saveOrdersToLS();
+        hydrateState();
+        window.dispatchEvent(new Event('yt-orders-updated'));
 
         latestOrderData = {
-          order_public_id: data.order_public_id || data.order_id,
-          status:         data.status || "pending",
-          total:          summary.total,
-          items:          summary.items,
+          order_public_id: ("DEMO-" + refStub).toUpperCase(),
+          status: "pending",
+          fraud_score: 0.0,
+          total: summary.total,
+          items: summary.items,
           eta,
           payment_method: paymentMethod,
-          wa_message:     `Hi, I need support on my order ${data.order_public_id || '—'}.`
+          wa_message:
+            `Yi Thume, my order is:\n` +
+            `Ref: DEMO-${refStub}\n` +
+            `Deliver to: ${custAddr}\n` +
+            `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
+            `Total: R${summary.total}\n` +
+            `Expected: ${eta}\n` +
+            `Payment: ${paymentMethod}\n` +
+            `Please confirm + send payment link.`
         };
-      } catch(err){
-        console.error("Network/Fetch error", err);
-        alert("Network error creating order.");
-        return;
+      } else {
+        let data = null;
+        try{
+          const res = await fetch(`${BASE_API}/orders`, {
+            method:"POST",
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify(orderPayload)
+          });
+          try { data = await res.json(); } catch(_){ data=null; }
+
+          if (res.status === 409 && data && data.error === "no_driver_available") {
+            alert(data.message || `Sorry, no driver currently available near your area.`);
+            return;
+          }
+          if(!res.ok || !data || !data.ok){
+            console.error("Order failed", res.status, data);
+            alert("Order failed on server.");
+            return;
+          }
+
+          latestOrderData = {
+            order_public_id: data.order_public_id || data.order_id || ("YI-" + Date.now().toString().slice(-6)),
+            status:         data.status || "pending",
+            fraud_score:    data.fraud_score ?? null,
+            total:          summary.total,
+            items:          summary.items,
+            eta,
+            payment_method: paymentMethod,
+            wa_message:     data.wa_message || null
+          };
+        }catch(err){
+          console.error("Network/Fetch error", err);
+          alert("Network error creating order.");
+          return;
+        }
       }
 
-      appendBot(`<b>Order received ✅</b><br/>We'll WhatsApp you the driver details shortly. You can use the button below any time to contact support.`);
       closeOrder();
       openBot();
 
       appendBot(
         `<b>YiThume</b> 🤖<br/>
+         Thanks for your order!<br/>
          <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
          <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
          <b>Total:</b> R${latestOrderData.total}<br/>
          <b>Estimated window:</b> ${eta}`
       );
 
-      appendBot(`Choose your payment method below and tap <b>Pay</b>.`);
+      if(latestOrderData.status === "review_required"){
+        appendBot(`<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`);
+      } else {
+        appendBot(`Choose your payment method below and tap <b>Pay</b>.`);
+      }
+
       if(botPayChoice) botPayChoice.value = latestOrderData.payment_method;
 
     } finally {
@@ -2736,30 +2656,10 @@ Vehicle: ${vehicle}`;
     }
   });
 
-  // === BOT PAY & SUPPORT BUTTON =============================================
-  btnFakePayNow?.addEventListener('click', async ()=>{
-    alert('No money taken. Demo only.');
-    closePayModal();
-    try{
-      if(latestOrderData?.order_public_id){
-        await fetch(`${BASE_API}/simulate_payment`, {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ order_public_id: latestOrderData.order_public_id })
-        }).then(r=>r.json()).catch(()=>({}));
-      }
-    }catch(e){ console.warn('simulate_payment failed', e); }
-
-    botSendWA?.classList.remove('hidden');
-    botNewOrder?.classList.remove('hidden');
-    if(botDemoNote) botDemoNote.hidden = false;
-
-    appendBot(`<b>Payment marked (demo)</b><br/>We’ll send your secure link from our side and message you on WhatsApp.`);
-    botStage = 2;
-  });
-
+  // === BOT PAY & WHATSAPP ====================================================
   botNext?.addEventListener('click', ()=>{
     if(!latestOrderData) return;
+
     const pay = botPayChoice?.value || selectedPay();
     latestOrderData.payment_method = pay;
 
@@ -2767,35 +2667,56 @@ Vehicle: ${vehicle}`;
       if(pay === 'eft'){
         appendBot(
           `<b>Instant EFT (Ozow)</b><br/>
-           We’ll send you a secure link from our side.<br/>
-           Ref <code>${latestOrderData.order_public_id}</code>.`
+           We'll WhatsApp you a secure Ozow link.<br/>
+           Use ref <code>${latestOrderData.order_public_id}</code>.`
         );
       } else if(pay === 'card'){
         appendBot(
-          `We’ll send you a secure <b>card link</b> (Yoco) from our side.<br/>
-           Ref <code>${latestOrderData.order_public_id}</code>.`
+          `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
+           Use ref <code>${latestOrderData.order_public_id}</code>.`
         );
       } else {
         const deposit = Math.ceil(latestOrderData.total*0.5);
         appendBot(
           `<b>50% deposit + COD</b><br/>
-           Deposit now: <b>R${deposit}</b> (we’ll send the link).<br/>
+           Pay deposit now: <b>R${deposit}</b>.<br/>
+           Balance due at delivery.<br/>
            Ref <code>${latestOrderData.order_public_id}</code>.`
         );
       }
+
       appendBot(`This next screen is a demo. No money is taken here.`);
       openPayModal(latestOrderData.order_public_id, latestOrderData.total);
       botStage = 1;
       return;
     }
 
-    appendBot(`Use the button below any time to <b>Contact support</b> on WhatsApp.`);
+    appendBot(`Click "Send to WhatsApp" so we can confirm the order and send the real secure payment link.`);
   });
 
   botSendWA?.addEventListener('click', () => {
-    const msg = latestOrderData?.wa_message || 'Hi, I need support with my order.';
+    if(!latestOrderData){
+      alert("No order data.");
+      return;
+    }
+
+    const msg = latestOrderData.wa_message
+      ? latestOrderData.wa_message
+      : [
+          "Yi Thume, my order is:",
+          `Ref: ${latestOrderData.order_public_id}`,
+          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
+          `Total: R${latestOrderData.total}`,
+          `Expected: ${latestOrderData.eta}`,
+          `Payment: ${latestOrderData.payment_method}`,
+          "Please confirm + send payment link."
+        ].join("\n");
+
     const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}`;
     window.open(wa,'_blank');
+
+    closeBot();
+    alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
   });
 
   botNewOrder?.addEventListener('click', ()=>{
@@ -2803,89 +2724,14 @@ Vehicle: ${vehicle}`;
     openOrder();
   });
 
-  // === WIRING: Open/Close buttons (including top nav) ========================
-  closeBtn?.addEventListener('click', (e)=>{ e.preventDefault(); closeOrder(); });
-  cancelOrderBuilder?.addEventListener('click', (e)=>{ e.preventDefault(); closeOrder(); });
-
-  closeDriver?.addEventListener('click', (e)=>{ e.preventDefault(); closeDriverWindow(); });
-  closeDriverDash?.addEventListener('click', (e)=>{ e.preventDefault(); closeDriverDashWindow(); });
-
-  closePayModalBtn?.addEventListener('click', (e)=>{ e.preventDefault(); closePayModal(); });
-  btnCancelPay?.addEventListener('click', (e)=>{ e.preventDefault(); closePayModal(); });
-
-  function wireOpenTriggers(){
-    // All "Start order" triggers
-    [
-      '#openOrderBuilder',
-      '#startOrderTop',
-      '#startOrderHero',
-      '[data-open-order]',
-      'button[data-role="start-order"]'
-    ].forEach(sel=>{
-      document.querySelectorAll(sel).forEach(btn=>{
-        if(btn.dataset.wiredStartOrder) return;
-        btn.dataset.wiredStartOrder = '1';
-        btn.addEventListener('click', (e)=>{ e.preventDefault(); openOrder(); });
-      });
-    });
-
-    // All "Driver sign-in/up" triggers
-    [
-      '#openDriverModal',
-      '#driverSignTop',
-      '#driverSignInTop',
-      '[data-open-driver]',
-      'button[data-role="driver-signin"]'
-    ].forEach(sel=>{
-      document.querySelectorAll(sel).forEach(btn=>{
-        if(btn.dataset.wiredDriverOpen) return;
-        btn.dataset.wiredDriverOpen = '1';
-        btn.addEventListener('click', (e)=>{ e.preventDefault(); openDriverWindow(); });
-      });
-    });
-
-    // All "Admin" triggers (top + anywhere with data-open-admin)
-    [
-      '#adminLoginBtn',
-      '#adminTopBtn',
-      '[data-open-admin]'
-    ].forEach(sel=>{
-      document.querySelectorAll(sel).forEach(btn=>{
-        if(btn.dataset.wiredAdminOpen) return;
-        btn.dataset.wiredAdminOpen = '1';
-        btn.addEventListener('click', async (e)=>{
-          e.preventDefault();
-          const pin = prompt('Enter admin PIN:');
-          if(pin && pin.trim() !== ""){
-            window.YT_ADMIN_SECRET = pin.trim();
-            alert('Admin mode ON');
-            await openOrders();
-          } else {
-            alert('Invalid PIN');
-          }
-        });
-      });
-    });
-  }
-
-  // === ADMIN ENTRY (legacy main button kept working) ========================
-  adminBtn?.addEventListener('click', async (e)=>{
-    e.preventDefault();
-    const pin = prompt('Enter admin PIN:');
-    if(pin && pin.trim() !== ""){
-      window.YT_ADMIN_SECRET = pin.trim();
-      alert('Admin mode ON');
-      await openOrders();
-    } else {
-      alert('Invalid PIN');
-    }
-  });
-
-  // Bootstrap admin scaffolding & drivers cache
-  ensureWrappers();
+  // === FINAL INIT ===========================================================
+  renderStoreItems();
+  computeDriverTotalsFromDB();
+  if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
+  if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
+  recalcAdminPayoutWidgets();
+  renderDrivers();
   ensureAdminTabs();
-  fetchDrivers();
-  wireOpenTriggers();
 });
 </script>
 
