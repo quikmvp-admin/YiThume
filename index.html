@@ -926,7 +926,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const BASE_API        = "/api/app";
   const WHATSAPP_NUMBER = "270691456201"; // customer support / business inbox
   const ADMIN_WHATSAPP  = "270691456201";
-  const DEMO_MODE       = false; // everything goes to backend
+  const DEMO_MODE       = false; // all writes go to backend
 
   // Delivery math
   const BASE_DELIVERY_FEE = 15; // R
@@ -937,9 +937,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
 
   // Helpers
-  const waText = (str) => encodeURIComponent(str);
-  const digits = (val) => (val || "").replace(/\D+/g, "");
-  const clamp  = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
+  const waText  = (str) => encodeURIComponent(str);
+  const digits  = (val) => (val || "").replace(/\D+/g, "");
+  const clamp   = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
 
   // Haversine fallback (km)
   const kmBetween = (a,b)=>{
@@ -947,7 +947,10 @@ window.addEventListener('DOMContentLoaded', () => {
     const R = 6371;
     const dLat = (b.lat-a.lat)*Math.PI/180;
     const dLng = (b.lng-a.lng)*Math.PI/180;
-    const s1 = Math.sin(dLat/2)**2 + Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2;
+    const s1 = Math.sin(dLat/2)**2 +
+      Math.cos(a.lat*Math.PI/180) *
+      Math.cos(b.lat*Math.PI/180) *
+      Math.sin(dLng/2)**2;
     return 2*R*Math.asin(Math.sqrt(s1));
   };
 
@@ -964,7 +967,10 @@ window.addEventListener('DOMContentLoaded', () => {
     el.classList.remove('hidden');
     el.classList.add('flex');
     lockScroll();
-    setTimeout(()=>{ const ff = firstFocusable(el); if(ff) ff.focus(); }, 0);
+    setTimeout(()=>{
+      const ff = firstFocusable(el);
+      if(ff) ff.focus();
+    }, 0);
   }
   function closeFlex(el){
     if(!el) return;
@@ -988,7 +994,10 @@ window.addEventListener('DOMContentLoaded', () => {
       document.getElementById('orderBuilder')
     ];
     for(const m of modals){
-      if(m && !m.classList.contains('hidden')) { closeFlex(m); break; }
+      if(m && !m.classList.contains('hidden')) {
+        closeFlex(m);
+        break;
+      }
     }
   });
 
@@ -996,16 +1005,8 @@ window.addEventListener('DOMContentLoaded', () => {
   let latestOrderData = null;
   let botStage = 0;
 
-  // Admin tabs:
-  // 'orders'        = all active (non-delivered)
-  // 'pending' etc   = filter by status
-  // 'history'       = delivered
-  // 'drivers'       = driver list
-  // 'stats'         = KPIs
-  // 'payouts'       = approve driver payouts
-  // 'by_driver:<id>'= filtered orders for one driver
+  // Admin tab state
   let ordersTab = 'orders';
-
   const currentOrdersByTab = {};
   let DRIVERS = [];
   let DRIVERS_BY_ID = Object.create(null);
@@ -1066,13 +1067,12 @@ window.addEventListener('DOMContentLoaded', () => {
   const tabLogin            = document.getElementById('tabLogin');
   const formSignup          = document.getElementById('driverFormSignup');
   const formLogin           = document.getElementById('driverFormLogin');
-
   const drvLoginPhoneEl     = document.getElementById('drvLoginPhone');
   const drvLoginPinEl       = document.getElementById('drvLoginPin');
 
   // Driver dash
-  const driverDashModal     = document.getElementById('driverDashModal');
-  const closeDriverDash     = document.getElementById('closeDriverDash');
+  const driverDashModal         = document.getElementById('driverDashModal');
+  const closeDriverDash         = document.getElementById('closeDriverDash');
   const driverPayoutPendingEl   = document.getElementById('driverPayoutPending');
   const driverPayoutApprovedEl  = document.getElementById('driverPayoutApproved');
   const driverNextWindowEl      = document.getElementById('driverNextWindow');
@@ -1085,21 +1085,18 @@ window.addEventListener('DOMContentLoaded', () => {
   const ordersClose         = document.getElementById('closeOrdersPanel');
   const ordersAssign        = document.getElementById('ordersAssign');
   const ordersRefresh       = document.getElementById('ordersRefresh');
-
   const driversList         = document.getElementById('driversList');
   const driversRefresh      = document.getElementById('driversRefresh');
+  const ordersTabsContainer = document.getElementById('ordersTabs');
 
-  // Optional widgets
+  // Optional widgets (auto-created later if missing)
   let adminDriversCountEl = document.getElementById('adminDriversCount');
   let adminPayPendingEl   = document.getElementById('adminPayPending');
   let adminPayApprovedEl  = document.getElementById('adminPayApproved');
-
-  let adminStatsOrdersEl   = document.getElementById('adminStatsOrders');
-  let adminStatsRevenueEl  = document.getElementById('adminStatsRevenue');
-  let adminTopProductsEl   = document.getElementById('adminTopProducts');
-  let adminTopAreasEl      = document.getElementById('adminTopAreas');
-
-  const ordersTabsContainer = document.getElementById('ordersTabs');
+  let adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
+  let adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
+  let adminTopProductsEl  = document.getElementById('adminTopProducts');
+  let adminTopAreasEl     = document.getElementById('adminTopAreas');
 
   // Store modal
   const storeModal          = document.getElementById('storeModal');
@@ -1123,8 +1120,7 @@ window.addEventListener('DOMContentLoaded', () => {
   ];
 
   function ensureCollectionSelectPopulated(){
-    if(!zoneSelect) return;
-    if(zoneSelect.dataset.enhanced === '1') return;
+    if(!zoneSelect || zoneSelect.dataset.enhanced === '1') return;
 
     zoneSelect.innerHTML = '';
     const ph = document.createElement('option');
@@ -1145,7 +1141,7 @@ window.addEventListener('DOMContentLoaded', () => {
     zoneSelect.dataset.enhanced = '1';
   }
 
-  // === CATALOG ===============================================================
+  // === CATALOG (demo) ========================================================
   const CATALOG = [
     {name:'Panado 500mg (24s)',price:35},
     {name:'Allergex 10mg (10s)',price:30},
@@ -1171,11 +1167,14 @@ window.addEventListener('DOMContentLoaded', () => {
     try{
       const r = await fetch(`${BASE_API}/drivers`);
       const j = await r.json().catch(()=>({}));
-      if(!r.ok || !j.ok) { DRIVERS=[]; DRIVERS_BY_ID={}; return; }
+      if(!r.ok || !j.ok){
+        DRIVERS=[]; DRIVERS_BY_ID={}; return;
+      }
       DRIVERS = Array.isArray(j.drivers) ? j.drivers : [];
       DRIVERS_BY_ID = Object.create(null);
       for(const d of DRIVERS){
         if(d && d._internal_id) DRIVERS_BY_ID[d._internal_id] = d;
+        if(d && d.driver_id && !DRIVERS_BY_ID[d.driver_id]) DRIVERS_BY_ID[d.driver_id] = d;
       }
     }catch(e){
       console.error("fetchDrivers", e);
@@ -1203,11 +1202,6 @@ window.addEventListener('DOMContentLoaded', () => {
   // === ADMIN STATS / KPIs ====================================================
   async function renderAdminStats(){
     ensureContentHost();
-
-    adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
-    adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
-    adminTopProductsEl  = document.getElementById('adminTopProducts');
-    adminTopAreasEl     = document.getElementById('adminTopAreas');
 
     if(!document.getElementById('adminStatsWrap')){
       const stats = document.createElement('div');
@@ -1243,14 +1237,15 @@ window.addEventListener('DOMContentLoaded', () => {
         </div>
       `;
       document.getElementById('ordersContent')?.appendChild(stats);
-      adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
-      adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
-      adminTopProductsEl  = document.getElementById('adminTopProducts');
-      adminTopAreasEl     = document.getElementById('adminTopAreas');
-      adminDriversCountEl = document.getElementById('adminDriversCount');
-      adminPayPendingEl   = document.getElementById('adminPayPending');
-      adminPayApprovedEl  = document.getElementById('adminPayApproved');
     }
+
+    adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
+    adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
+    adminTopProductsEl  = document.getElementById('adminTopProducts');
+    adminTopAreasEl     = document.getElementById('adminTopAreas');
+    adminDriversCountEl = document.getElementById('adminDriversCount');
+    adminPayPendingEl   = document.getElementById('adminPayPending');
+    adminPayApprovedEl  = document.getElementById('adminPayApproved');
 
     const orders = await fetchAllOrders();
     const totalOrders = orders.length;
@@ -1263,10 +1258,13 @@ window.addEventListener('DOMContentLoaded', () => {
     const prodMap = new Map();
     orders.forEach(o=>{
       (o.items||[]).forEach(it=>{
-        prodMap.set(it.name, (prodMap.get(it.name)||0) + (it.qty||1));
+        const qty = Number(it.qty || 1);
+        if(!it.name) return;
+        prodMap.set(it.name, (prodMap.get(it.name)||0) + qty);
       });
     });
-    const topProducts = Array.from(prodMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const topProducts = Array.from(prodMap.entries())
+      .sort((a,b)=>b[1]-a[1]).slice(0,5);
     if(adminTopProductsEl){
       adminTopProductsEl.innerHTML = topProducts.length
         ? topProducts.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
@@ -1279,7 +1277,8 @@ window.addEventListener('DOMContentLoaded', () => {
       const k = o.meta?.collection_name || '—';
       areaMap.set(k, (areaMap.get(k)||0)+1);
     });
-    const topAreas = Array.from(areaMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const topAreas = Array.from(areaMap.entries())
+      .sort((a,b)=>b[1]-a[1]).slice(0,5);
     if(adminTopAreasEl){
       adminTopAreasEl.innerHTML = topAreas.length
         ? topAreas.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
@@ -1370,7 +1369,9 @@ window.addEventListener('DOMContentLoaded', () => {
       ? zoneSelect.options[zoneSelect.selectedIndex]
       : null;
 
-    let hubLat = COLLECTION_COORDS.lat, hubLng = COLLECTION_COORDS.lng, collectionName = '';
+    let hubLat = COLLECTION_COORDS.lat,
+        hubLng = COLLECTION_COORDS.lng,
+        collectionName = '';
     if(opt){
       hubLat = Number(opt.dataset.lat);
       hubLng = Number(opt.dataset.lng);
@@ -1391,7 +1392,10 @@ window.addEventListener('DOMContentLoaded', () => {
     const rushFee = rushToggle?.checked ? RUSH_FEE : 0;
     rushNote.textContent = rushFee ? ' + rush' : '';
 
-    const deliveryFee = opt ? Math.round(BASE_DELIVERY_FEE + (PER_KM_PRICE * distanceKm)) : 0;
+    const deliveryFee = opt
+      ? Math.round(BASE_DELIVERY_FEE + (PER_KM_PRICE * distanceKm))
+      : 0;
+
     const total = itemsTotal + deliveryFee + rushFee;
     totalEl.textContent = String(total);
 
@@ -1460,7 +1464,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if(!botNext || !botSendWA || !botNewOrder || !botDemoNote || !botFeed) return;
     botNext.disabled = false;
     botNext.textContent = "Pay";
-    botSendWA.textContent = "Contact support";
     botSendWA.classList.add('hidden');
     botNewOrder.classList.add('hidden');
     botDemoNote.hidden = true;
@@ -1480,7 +1483,6 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   const closePayModal = ()=> closeFlex(payModal);
 
-  // === DRIVER MODAL TABS + OPEN =============================================
   function showDriverTab(which){
     const loginOn  = which === 'login';
     const signupOn = which === 'signup';
@@ -1563,7 +1565,6 @@ window.addEventListener('DOMContentLoaded', () => {
       adminPayApprovedEl  = document.getElementById('adminPayApproved');
     }
 
-    // Payouts wrapper
     if(!document.getElementById('payoutsWrap')){
       const p = document.createElement('div');
       p.id = 'payoutsWrap';
@@ -1572,7 +1573,6 @@ window.addEventListener('DOMContentLoaded', () => {
       document.getElementById('ordersContent')?.appendChild(p);
     }
 
-    // Tabs container
     if(!document.getElementById('ordersTabs')){
       const host = ordersTabsContainer || ordersPanel || document.body;
       const tabs = document.createElement('div');
@@ -1649,20 +1649,24 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{
+  document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', (e)=>{
+    e.preventDefault();
     document.getElementById('openOrderBuilder')?.click();
   });
-  document.getElementById('openDriverModalTopMobile')?.addEventListener('click', ()=>{
+  document.getElementById('openDriverModalTopMobile')?.addEventListener('click', (e)=>{
+    e.preventDefault();
     document.getElementById('openDriverModal')?.click();
   });
-  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{
+  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', (e)=>{
+    e.preventDefault();
     document.getElementById('adminLoginBtn')?.click();
   });
-  document.getElementById('openDriverModalSection')?.addEventListener('click', ()=>{
+  document.getElementById('openDriverModalSection')?.addEventListener('click', (e)=>{
+    e.preventDefault();
     document.getElementById('openDriverModal')?.click();
   });
 
-  // === QUICK NAV TO DRIVERS TAB =============================================
+  // Direct “open drivers tab” links
   function forceOpenDriversTab(e){
     e?.preventDefault?.();
     ordersTab = 'drivers';
@@ -1742,10 +1746,10 @@ window.addEventListener('DOMContentLoaded', () => {
     computeTotal().then(s=>toggleDepositBanner(s.total));
   });
 
-  openStoreFooter?.addEventListener('click', openStore);
-  document.getElementById('openStoreHeader')?.addEventListener('click', openStore);
-  closeStoreModalBtn?.addEventListener('click', closeStore);
-  cancelStoreBtn?.addEventListener('click', closeStore);
+  openStoreFooter?.addEventListener('click', (e)=>{ e.preventDefault(); openStore(); });
+  document.getElementById('openStoreHeader')?.addEventListener('click', (e)=>{ e.preventDefault(); openStore(); });
+  closeStoreModalBtn?.addEventListener('click', (e)=>{ e.preventDefault(); closeStore(); });
+  cancelStoreBtn?.addEventListener('click', (e)=>{ e.preventDefault(); closeStore(); });
 
   submitStoreBtn?.addEventListener('click', async ()=>{
     const storeName  = storeNameEl?.value.trim();
@@ -1796,7 +1800,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   });
 
   // === ADMIN PANEL: TABS =====================================================
-  ordersClose?.addEventListener('click', closeOrders);
+  ordersClose?.addEventListener('click', (e)=>{ e.preventDefault(); closeOrders(); });
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
     if(ordersPanel && !ordersPanel.classList.contains('hidden')) {
@@ -1823,12 +1827,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
 
     const wanted = [
-      ['Orders','orders'],                 // all active
+      ['Orders','orders'],
       ['Pending','pending'],
       ['Assigned','assigned'],
       ['In Transit','in_transit'],
       ['Delivered','delivered'],
-      ['Order History','history'],        // delivered (history)
+      ['Order History','history'],
       ['Drivers','drivers'],
       ['Stats / KPIs','stats'],
       ['Payouts','payouts']
@@ -1842,7 +1846,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
     });
 
-    // Ensure wired once
     document.querySelectorAll('.yt-o-tab').forEach(b=>{
       if(!b.dataset.wired){
         b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
@@ -1893,9 +1896,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   driversRefresh?.addEventListener('click', hardRefresh);
 
   function recalcAdminPayoutWidgets() {
-    const driverCount = DRIVERS.length;
+    const driverCount  = DRIVERS.length;
     const pendingTotal = DRIVERS.reduce((s,d)=> s + Number(d.weekly_payout_due || 0), 0);
-    const approvedTotal = 0; // adjust if backend returns approved totals
+    const approvedTotal = 0; // hook real approved totals when backend supports
 
     driverTotals.pending  = pendingTotal;
     driverTotals.approved = approvedTotal;
@@ -2082,17 +2085,20 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       .map(i=>`${i.name} x${i.qty}`)
       .join(', ');
 
-    const internalId  = o._internal_id || o.internal_id || null;
-    const refDisplay  = o.order_id || o.order_public_id || internalId || "REF?";
-    const kmText      = (o.route && Number.isFinite(o.route.distance_km)) ? ` • ${Number(o.route.distance_km).toFixed(1)} km` : "";
+    const internalId   = o._internal_id || o.internal_id || null;
+    const refDisplay   = o.order_id || o.order_public_id || internalId || "REF?";
+    const kmText       = (o.route && Number.isFinite(o.route.distance_km))
+      ? ` • ${Number(o.route.distance_km).toFixed(1)} km`
+      : "";
     const fraudDisplay = (typeof o.fraud_score === "number")
       ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
       : "";
 
     const assignedDriverId = o.assigned_driver_id || null;
-    const driverName = assignedDriverId && DRIVERS_BY_ID[assignedDriverId]
-      ? DRIVERS_BY_ID[assignedDriverId].name
-      : '—';
+    const driver = assignedDriverId && DRIVERS_BY_ID[assignedDriverId]
+      ? DRIVERS_BY_ID[assignedDriverId]
+      : null;
+    const driverName = driver ? (driver.name || 'Driver') : '—';
 
     let driverPayText = "Driver pay: —";
     if (o.settlement && typeof o.settlement.driver === 'number'){
@@ -2150,11 +2156,16 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   function wireOrderRowButtons(scopeEl){
     scopeEl.querySelectorAll('.btn-assign').forEach(btn=>{
+      if(btn.dataset.wiredAssign) return;
+      btn.dataset.wiredAssign = '1';
       btn.addEventListener('click', ()=> assignOneOrder(btn.getAttribute('data-id')));
     });
     scopeEl.querySelectorAll('.btn-start').forEach(btn=>{
+      if(btn.dataset.wiredStart) return;
+      btn.dataset.wiredStart = '1';
       btn.addEventListener('click', async ()=>{
         const id = btn.getAttribute('data-id');
+        if(!id) return;
         try{
           const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(id)}/status`, {
             method: "POST",
@@ -2167,6 +2178,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       });
     });
     scopeEl.querySelectorAll('.btn-delivered').forEach(btn=>{
+      if(btn.dataset.wiredDelivered) return;
+      btn.dataset.wiredDelivered = '1';
       btn.addEventListener('click', ()=> markDelivered(btn.getAttribute('data-id')));
     });
   }
@@ -2209,7 +2222,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           </div>
           <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
             <button class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-                    data-id="${dr._internal_id}">
+                    data-id="${dr._internal_id || dr.driver_id}">
               View Orders
             </button>
           </div>
@@ -2221,6 +2234,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const did = btn.getAttribute('data-id');
+        if(!did) return;
         ordersTab = `by_driver:${did}`;
         setActiveAdminTab(ordersTab);
       });
@@ -2229,7 +2243,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     recalcAdminPayoutWidgets();
   }
 
-  // === PAYOUTS TAB (Approve payments) =======================================
+  // === PAYOUTS TAB ===========================================================
   async function renderPayouts(){
     const wrap = document.getElementById('payoutsWrap');
     if(!wrap) return;
@@ -2270,7 +2284,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         <div class="flex flex-row gap-2 text-xs sm:justify-end">
           <button
             class="btn-approve-payout px-3 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-            data-id="${dr._internal_id}"
+            data-id="${dr._internal_id || dr.driver_id}"
             data-amt="${due}">
             Approve paid
           </button>
@@ -2314,27 +2328,18 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     recalcAdminPayoutWidgets();
   }
 
-  // === MAP (guarded) =========================================================
-  (function initMapSafely(){
+  // === MAP (closest depot → user route) =====================================
+  ;(function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
     if(!heroEl){ return; }
 
     let heroMap;
     let localCars = [];
+    const movers = [];
 
     const southAfricaBounds = (window.L && L.latLngBounds)
       ? L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]])
       : null;
-
-    async function centerMapHeuristic() {
-      DELIVERY_COORDS = DELIVERY_COORDS || await tryGetCustomerCoords();
-      if(DELIVERY_COORDS){
-        try { heroMap.setView([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], 12, { animate:true }); } catch(_){}
-        spawnLocalTraffic({lat:DELIVERY_COORDS.lat,lng:DELIVERY_COORDS.lng}, 6);
-        return;
-      }
-      try { heroMap.setView([COLLECTION_COORDS.lat, COLLECTION_COORDS.lng], 10, { animate:true }); } catch(_){}
-    }
 
     function carIcon(){
       const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
@@ -2346,7 +2351,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         <circle cx='18' cy='20' r='3' fill='#111827'/>
         <circle cx='46' cy='20' r='3' fill='#111827'/>
       </g></svg>`;
-      return window.L ? L.divIcon({ className:'car-dot', html:svg, iconSize:[28,14], iconAnchor:[14,7] }) : null;
+      return window.L
+        ? L.divIcon({ className:'car-dot', html:svg, iconSize:[28,14], iconAnchor:[14,7] })
+        : null;
     }
 
     const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
@@ -2355,30 +2362,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const pkgIcon = (window.L && L.divIcon)
       ? L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] })
       : null;
-
-    function spawnLocalTraffic(center, count){
-      if(!window.L || !heroMap) return;
-      for(let i=0;i<count;i++){
-        const r    = 0.01 + Math.random()*0.02;
-        const ang0 = Math.random()*Math.PI*2;
-        const spd  = 0.4 + Math.random()*0.6;
-        const m    = L.marker(
-          [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
-          { icon:carIcon() || undefined }
-        ).addTo(heroMap);
-        localCars.push({m, cx:center.lat, cy:center.lng, r, ang:ang0, spd});
-      }
-      const pulse = L.circle([center.lat, center.lng], {
-        radius: 60, color:emerald[500], weight:1, opacity:0.7, fillOpacity:0
-      }).addTo(heroMap);
-      let grow=true;
-      setInterval(()=>{
-        const rr = pulse.getRadius();
-        pulse.setRadius(grow ? rr+10 : rr-10);
-        if(pulse.getRadius()>140) grow=false;
-        if(pulse.getRadius()<60)  grow=true;
-      }, 250);
-    }
 
     async function osrmRoute(a,b){
       try{
@@ -2416,19 +2399,91 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return [lat,lng];
     }
 
+    function spawnLocalTraffic(center, count){
+      if(!window.L || !heroMap) return;
+      for(let i=0;i<count;i++){
+        const r    = 0.01 + Math.random()*0.02;
+        const ang0 = Math.random()*Math.PI*2;
+        const spd  = 0.4 + Math.random()*0.6;
+        const m    = L.marker(
+          [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
+          { icon:carIcon() || undefined }
+        ).addTo(heroMap);
+        localCars.push({m, cx:center.lat, cy:center.lng, r, ang:ang0, spd});
+      }
+    }
+
+    async function centerMapHeuristic() {
+      DELIVERY_COORDS = DELIVERY_COORDS || await tryGetCustomerCoords();
+
+      if(DELIVERY_COORDS){
+        try { heroMap.setView([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], 12, { animate:true }); } catch(_){}
+
+        // Nearest depot
+        let best = null;
+        for(const c of COLLECTIONS){
+          const d = kmBetween({lat:c.lat,lng:c.lng}, DELIVERY_COORDS);
+          if(!best || d < best.d) best = { c, d };
+        }
+
+        if(best){
+          const depot = best.c;
+          let latlngs = await osrmRoute(
+            {lat:depot.lat, lng:depot.lng},
+            {lat:DELIVERY_COORDS.lat, lng:DELIVERY_COORDS.lng}
+          );
+          if(!latlngs){
+            latlngs = buildStraight(
+              {lat:depot.lat, lng:depot.lng},
+              {lat:DELIVERY_COORDS.lat, lng:DELIVERY_COORDS.lng}
+            );
+          }
+
+          L.polyline(latlngs,{weight:3, opacity:.9, color:emerald[600]}).addTo(heroMap);
+
+          const {lensKm} = cumulativeLengths(latlngs);
+          for(let i=0;i<3;i++){
+            const m = L.marker(latlngs[0],{icon:carIcon() || undefined}).addTo(heroMap);
+            const speed = 0.22 + Math.random()*0.08;
+            const start = Math.random()*0.25;
+            movers.push({m, latlngs, lensKm, t:start, speed, dir:1});
+          }
+
+          // small pulse at user location
+          if(window.L){
+            const pulse = L.circle([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], {
+              radius: 40, color:emerald[500], weight:1, opacity:0.7, fillOpacity:0
+            }).addTo(heroMap);
+            let grow=true;
+            setInterval(()=>{
+              const rr = pulse.getRadius();
+              pulse.setRadius(grow ? rr+6 : rr-6);
+              if(pulse.getRadius()>110) grow=false;
+              if(pulse.getRadius()<40)  grow=true;
+            }, 220);
+          }
+        }
+
+        spawnLocalTraffic(DELIVERY_COORDS, 4);
+        return;
+      }
+
+      // Fallback center
+      try { heroMap.setView([COLLECTION_COORDS.lat, COLLECTION_COORDS.lng], 9, { animate:true }); } catch(_){}
+    }
+
     (async function(){
       try {
         if (typeof L === "undefined") throw new Error("Leaflet not loaded");
 
-        const heroMapOpts = {
+        heroMap = L.map(heroEl, {
           zoomControl:false,
           dragging:false,
           scrollWheelZoom:false,
           doubleClickZoom:false,
           boxZoom:false,
           touchZoom:false
-        };
-        heroMap = L.map(heroEl, heroMapOpts).setView([-33.20, 26.55], 8);
+        }).setView([-33.20, 26.55], 8);
 
         L.tileLayer(
           'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
@@ -2437,38 +2492,35 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
         if (southAfricaBounds) heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
 
-        const pairs = [
+        // Background depot-to-depot routes (visual)
+        const depotPairs = [
           [COLLECTIONS[0], COLLECTIONS[1]],
           [COLLECTIONS[1], COLLECTIONS[2]],
           [COLLECTIONS[2], COLLECTIONS[3] || COLLECTIONS[0]]
         ];
-
-        const routes = [];
-        for(const [A,B] of pairs){
-          const rr = await osrmRoute({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng});
-          routes.push(rr || buildStraight({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng}));
-        }
-
-        const movers = [];
-        routes.forEach((latlngs)=>{
-          L.polyline(latlngs,{weight:3, opacity:.55, color:emerald[500]}).addTo(heroMap);
+        for(const [A,B] of depotPairs){
+          let latlngs = await osrmRoute({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng});
+          if(!latlngs){
+            latlngs = buildStraight({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng});
+          }
+          L.polyline(latlngs,{weight:2, opacity:.35, color:emerald[500]}).addTo(heroMap);
           const {lensKm} = cumulativeLengths(latlngs);
 
-          for(let i=0;i<3;i++){
-            const m = L.marker(latlngs[0],{icon:carIcon() || undefined}).addTo(heroMap);
-            const speed = 0.15 + Math.random()*0.1;
-            const dir   = Math.random()<.5 ? 1 : -1;
-            const start = Math.random();
-            movers.push({m, latlngs, lensKm, t:start, speed, dir});
-          }
           for(let i=0;i<2;i++){
-            const m = L.marker(latlngs[0],{icon:pkgIcon || undefined}).addTo(heroMap);
-            const speed = 0.18 + Math.random()*0.1;
+            const m = L.marker(latlngs[0],{icon:carIcon() || undefined}).addTo(heroMap);
+            const speed = 0.12 + Math.random()*0.06;
             const dir   = Math.random()<.5 ? 1 : -1;
             const start = Math.random();
             movers.push({m, latlngs, lensKm, t:start, speed, dir});
           }
-        });
+          for(let i=0;i<1;i++){
+            const m = L.marker(latlngs[0],{icon:pkgIcon || undefined}).addTo(heroMap);
+            const speed = 0.15 + Math.random()*0.06;
+            const dir   = Math.random()<.5 ? 1 : -1;
+            const start = Math.random();
+            movers.push({m, latlngs, lensKm, t:start, speed, dir});
+          }
+        }
 
         function animate(){
           movers.forEach(o=>{
@@ -2487,10 +2539,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         }
         requestAnimationFrame(animate);
 
-        setTimeout(()=>{ try{ heroMap.invalidateSize(); }catch(_){}; centerMapHeuristic(); },180);
-        window.addEventListener('resize',()=>{ try{ heroMap.invalidateSize(); }catch(_){}});
+        setTimeout(()=>{
+          try{ heroMap.invalidateSize(); }catch(_){}
+          centerMapHeuristic();
+        },180);
+        window.addEventListener('resize',()=>{
+          try{ heroMap.invalidateSize(); }catch(_){}
+        });
 
-        // Driver signup → backend + WhatsApp to admin
+        // Driver signup
         formSignup?.addEventListener('submit', async e=>{
           e.preventDefault();
           const name    = document.getElementById('drvName')?.value.trim();
@@ -2501,7 +2558,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
           const jitter = ()=>{
             const d=(1500)/111111, a=Math.random()*Math.PI*2, r=Math.random()*d;
-            return { lat: COLLECTION_COORDS.lat + r*Math.cos(a), lng: COLLECTION_COORDS.lng + r*Math.sin(a) };
+            return {
+              lat: COLLECTION_COORDS.lat + r*Math.cos(a),
+              lng: COLLECTION_COORDS.lng + r*Math.sin(a)
+            };
           };
           const start = jitter();
           if(window.L) L.marker([start.lat,start.lng],{icon:carIcon() || undefined}).addTo(heroMap);
@@ -2743,21 +2803,74 @@ Vehicle: ${vehicle}`;
     openOrder();
   });
 
-  // === WIRING: Open/Close buttons ===========================================
-  document.getElementById('openOrderBuilder')?.addEventListener('click', openOrder);
-  closeBtn?.addEventListener('click', closeOrder);
-  cancelOrderBuilder?.addEventListener('click', closeOrder);
+  // === WIRING: Open/Close buttons (including top nav) ========================
+  closeBtn?.addEventListener('click', (e)=>{ e.preventDefault(); closeOrder(); });
+  cancelOrderBuilder?.addEventListener('click', (e)=>{ e.preventDefault(); closeOrder(); });
 
-  document.getElementById('openDriverModal')?.addEventListener('click', openDriverWindow);
-  closeDriver?.addEventListener('click', closeDriverWindow);
+  closeDriver?.addEventListener('click', (e)=>{ e.preventDefault(); closeDriverWindow(); });
+  closeDriverDash?.addEventListener('click', (e)=>{ e.preventDefault(); closeDriverDashWindow(); });
 
-  closeDriverDash?.addEventListener('click', closeDriverDashWindow);
+  closePayModalBtn?.addEventListener('click', (e)=>{ e.preventDefault(); closePayModal(); });
+  btnCancelPay?.addEventListener('click', (e)=>{ e.preventDefault(); closePayModal(); });
 
-  closePayModalBtn?.addEventListener('click', closePayModal);
-  btnCancelPay?.addEventListener('click', closePayModal);
+  function wireOpenTriggers(){
+    // All "Start order" triggers
+    [
+      '#openOrderBuilder',
+      '#startOrderTop',
+      '#startOrderHero',
+      '[data-open-order]',
+      'button[data-role="start-order"]'
+    ].forEach(sel=>{
+      document.querySelectorAll(sel).forEach(btn=>{
+        if(btn.dataset.wiredStartOrder) return;
+        btn.dataset.wiredStartOrder = '1';
+        btn.addEventListener('click', (e)=>{ e.preventDefault(); openOrder(); });
+      });
+    });
 
-  // === ADMIN ENTRY ===========================================================
-  adminBtn?.addEventListener('click', async ()=>{
+    // All "Driver sign-in/up" triggers
+    [
+      '#openDriverModal',
+      '#driverSignTop',
+      '#driverSignInTop',
+      '[data-open-driver]',
+      'button[data-role="driver-signin"]'
+    ].forEach(sel=>{
+      document.querySelectorAll(sel).forEach(btn=>{
+        if(btn.dataset.wiredDriverOpen) return;
+        btn.dataset.wiredDriverOpen = '1';
+        btn.addEventListener('click', (e)=>{ e.preventDefault(); openDriverWindow(); });
+      });
+    });
+
+    // All "Admin" triggers (top + anywhere with data-open-admin)
+    [
+      '#adminLoginBtn',
+      '#adminTopBtn',
+      '[data-open-admin]'
+    ].forEach(sel=>{
+      document.querySelectorAll(sel).forEach(btn=>{
+        if(btn.dataset.wiredAdminOpen) return;
+        btn.dataset.wiredAdminOpen = '1';
+        btn.addEventListener('click', async (e)=>{
+          e.preventDefault();
+          const pin = prompt('Enter admin PIN:');
+          if(pin && pin.trim() !== ""){
+            window.YT_ADMIN_SECRET = pin.trim();
+            alert('Admin mode ON');
+            await openOrders();
+          } else {
+            alert('Invalid PIN');
+          }
+        });
+      });
+    });
+  }
+
+  // === ADMIN ENTRY (legacy main button kept working) ========================
+  adminBtn?.addEventListener('click', async (e)=>{
+    e.preventDefault();
     const pin = prompt('Enter admin PIN:');
     if(pin && pin.trim() !== ""){
       window.YT_ADMIN_SECRET = pin.trim();
@@ -2772,10 +2885,9 @@ Vehicle: ${vehicle}`;
   ensureWrappers();
   ensureAdminTabs();
   fetchDrivers();
+  wireOpenTriggers();
 });
 </script>
-
-
 
 
 
