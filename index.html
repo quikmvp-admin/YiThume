@@ -920,18 +920,17 @@
     </div>
   </div>
 </div>
-
 <script>
 window.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & GLOBALS ======================================================
   const BASE_API        = "/api/app";
   const WHATSAPP_NUMBER = "270691456201"; // customer support / business inbox
   const ADMIN_WHATSAPP  = "270691456201";
-  const DEMO_MODE       = false; // ← HARD OFF: everything goes to MongoDB via Flask
+  const DEMO_MODE       = false; // everything goes to backend
 
   // Delivery math
   const BASE_DELIVERY_FEE = 15; // R
-  const PER_KM_PRICE      = 8;  // R per km (OSRM distance when available)
+  const PER_KM_PRICE      = 8;  // R per km
   const RUSH_FEE          = 30; // R flat
 
   // UI Colors
@@ -997,22 +996,24 @@ window.addEventListener('DOMContentLoaded', () => {
   let latestOrderData = null;
   let botStage = 0;
 
-  // IMPORTANT: declare ordersTab EARLY to avoid TDZ errors in any handlers
-  let ordersTab = 'pending'; // 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'drivers' | 'by_driver:<id>' | 'stats'
+  // Admin tabs:
+  // 'orders'        = all active (non-delivered)
+  // 'pending' etc   = filter by status
+  // 'history'       = delivered
+  // 'drivers'       = driver list
+  // 'stats'         = KPIs
+  // 'payouts'       = approve driver payouts
+  // 'by_driver:<id>'= filtered orders for one driver
+  let ordersTab = 'orders';
 
-  // caches
   const currentOrdersByTab = {};
-  let DRIVERS = [];                        // full driver docs from API
-  let DRIVERS_BY_ID = Object.create(null); // map by _internal_id
+  let DRIVERS = [];
+  let DRIVERS_BY_ID = Object.create(null);
 
-  // Customer & collection positions
   let DELIVERY_COORDS   = null;
-  let COLLECTION_COORDS = {lat:-33.590, lng:26.890}; // default if none chosen
+  let COLLECTION_COORDS = {lat:-33.590, lng:26.890};
 
-  // Global payout totals for driver dashboard & admin widgets
   const driverTotals = { pending: 0, approved: 0 };
-
-  // Simple product catalog (user can add items via Store flow)
   const storeItems = [];
 
   // === YEAR FOOTER ===========================================================
@@ -1030,7 +1031,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const cancelOrderBuilder  = document.getElementById('cancelOrderBuilder');
   const itemsList           = document.getElementById('itemsList');
 
-  // “Zone” here is actually our COLLECTION selector (no price zones)
   const zoneSelect          = document.getElementById('zoneSelect');
   const rushToggle          = document.getElementById('rushToggle');
   const totalEl             = document.getElementById('orderTotal');
@@ -1060,27 +1060,26 @@ window.addEventListener('DOMContentLoaded', () => {
   const btnCancelPay        = document.getElementById('btnCancelPay');
 
   // Driver modal + forms
-  const driverModal         = document.getElementById('driverModal');       // signup/login modal
+  const driverModal         = document.getElementById('driverModal');
   const closeDriver         = document.getElementById('closeDriverModal');
   const tabSignup           = document.getElementById('tabSignup');
   const tabLogin            = document.getElementById('tabLogin');
   const formSignup          = document.getElementById('driverFormSignup');
   const formLogin           = document.getElementById('driverFormLogin');
 
-  // Fields for login (expected IDs)
   const drvLoginPhoneEl     = document.getElementById('drvLoginPhone');
   const drvLoginPinEl       = document.getElementById('drvLoginPin');
 
   // Driver dash
-  const driverDashModal     = document.getElementById('driverDashModal');   // driver dashboard modal
+  const driverDashModal     = document.getElementById('driverDashModal');
   const closeDriverDash     = document.getElementById('closeDriverDash');
   const driverPayoutPendingEl   = document.getElementById('driverPayoutPending');
   const driverPayoutApprovedEl  = document.getElementById('driverPayoutApproved');
-  const driverNextWindowEl  = document.getElementById('driverNextWindow');   // optional
-  const driverZoneDisplayEl = document.getElementById('driverZoneDisplay');  // optional
-  const driverRadiusDisplayEl = document.getElementById('driverRadiusDisplay'); // optional
+  const driverNextWindowEl      = document.getElementById('driverNextWindow');
+  const driverZoneDisplayEl     = document.getElementById('driverZoneDisplay');
+  const driverRadiusDisplayEl   = document.getElementById('driverRadiusDisplay');
 
-  // Admin: Admin Panel
+  // Admin Panel
   const ordersPanel         = document.getElementById('ordersPanel');
   const ordersList          = document.getElementById('ordersList');
   const ordersClose         = document.getElementById('closeOrdersPanel');
@@ -1090,21 +1089,19 @@ window.addEventListener('DOMContentLoaded', () => {
   const driversList         = document.getElementById('driversList');
   const driversRefresh      = document.getElementById('driversRefresh');
 
-  // Optional aggregate widgets (top of Admin/Stats)
+  // Optional widgets
   let adminDriversCountEl = document.getElementById('adminDriversCount');
   let adminPayPendingEl   = document.getElementById('adminPayPending');
   let adminPayApprovedEl  = document.getElementById('adminPayApproved');
 
-  // Optional stats widgets (if present in your HTML; otherwise we inject)
-  let adminStatsOrdersEl   = document.getElementById('adminStatsOrders');   // total orders
-  let adminStatsRevenueEl  = document.getElementById('adminStatsRevenue');  // R total
-  let adminTopProductsEl   = document.getElementById('adminTopProducts');   // list
-  let adminTopAreasEl      = document.getElementById('adminTopAreas');      // list
+  let adminStatsOrdersEl   = document.getElementById('adminStatsOrders');
+  let adminStatsRevenueEl  = document.getElementById('adminStatsRevenue');
+  let adminTopProductsEl   = document.getElementById('adminTopProducts');
+  let adminTopAreasEl      = document.getElementById('adminTopAreas');
 
-  // Optional container for admin tabs (we’ll inject tabs if missing)
   const ordersTabsContainer = document.getElementById('ordersTabs');
 
-  // Store modal refs (declare early to avoid TDZ in wrappers)
+  // Store modal
   const storeModal          = document.getElementById('storeModal');
   const addStoreItemBtn     = document.getElementById('addStoreItem');
   const storeItemsList      = document.getElementById('storeItemsList');
@@ -1157,7 +1154,7 @@ window.addEventListener('DOMContentLoaded', () => {
     {name:'Bandages (set)',price:25}
   ];
 
-  // === ADMIN STATS (live from API) ==========================================
+  // === ADMIN DATA HELPERS ====================================================
   async function fetchAllOrders(){
     try{
       const r = await fetch(`${BASE_API}/orders`);
@@ -1203,9 +1200,10 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // === ADMIN STATS / KPIs ====================================================
   async function renderAdminStats(){
-    // Ensure stats container exists with correct layout (label over value)
     ensureContentHost();
+
     adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
     adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
     adminTopProductsEl  = document.getElementById('adminTopProducts');
@@ -1214,7 +1212,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if(!document.getElementById('adminStatsWrap')){
       const stats = document.createElement('div');
       stats.id = 'adminStatsWrap';
-      stats.className = 'hidden';
+      stats.className = 'hidden w-full';
       stats.innerHTML = `
         <div class="grid gap-3 sm:grid-cols-3">
           <div class="border rounded-xl p-3 flex flex-col">
@@ -1226,8 +1224,8 @@ window.addEventListener('DOMContentLoaded', () => {
             <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
           </div>
           <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Drivers</div>
-            <div class="text-sm"><b id="adminDriversCount">0</b></div>
+            <div class="text-xs text-slate-500 mb-1">Drivers & Payouts</div>
+            <div class="text-sm"><b id="adminDriversCount">0</b> drivers</div>
             <div class="text-xs text-slate-500 mt-2">Payouts</div>
             <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
             <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
@@ -1239,7 +1237,7 @@ window.addEventListener('DOMContentLoaded', () => {
             <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
           </div>
           <div class="border rounded-xl p-3">
-            <div class="text-sm font-medium mb-2">Top Areas</div>
+            <div class="text-sm font-medium mb-2">Top Areas (by collection)</div>
             <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
           </div>
         </div>
@@ -1254,8 +1252,7 @@ window.addEventListener('DOMContentLoaded', () => {
       adminPayApprovedEl  = document.getElementById('adminPayApproved');
     }
 
-    // Pull fresh data
-    const [orders] = await Promise.all([fetchAllOrders()]);
+    const orders = await fetchAllOrders();
     const totalOrders = orders.length;
     const revenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
 
@@ -1276,7 +1273,7 @@ window.addEventListener('DOMContentLoaded', () => {
         : '<li class="text-slate-500">No data yet</li>';
     }
 
-    // Top areas (by meta.collection_name)
+    // Top areas
     const areaMap = new Map();
     orders.forEach(o=>{
       const k = o.meta?.collection_name || '—';
@@ -1289,12 +1286,11 @@ window.addEventListener('DOMContentLoaded', () => {
         : '<li class="text-slate-500">No data yet</li>';
     }
 
-    // Also refresh driver/payout widgets from live drivers
     await fetchDrivers();
     recalcAdminPayoutWidgets();
   }
 
-  // === UI HELPERS: Items, totals, deposits ==================================
+  // === CUSTOMER UI HELPERS ===================================================
   function renderItems(){
     if(!itemsList) return;
     itemsList.innerHTML = '';
@@ -1352,7 +1348,11 @@ window.addEventListener('DOMContentLoaded', () => {
     ensureCollectionSelectPopulated();
 
     if(!totalEl || !rushNote){
-      return { items:[], itemsTotal:0, fee:0, rush:0, total:0, collectionName:'', hubLat:COLLECTION_COORDS.lat, hubLng:COLLECTION_COORDS.lng, distanceKm:0 };
+      return {
+        items:[], itemsTotal:0, fee:0, rush:0, total:0,
+        collectionName:'', hubLat:COLLECTION_COORDS.lat,
+        hubLng:COLLECTION_COORDS.lng, distanceKm:0
+      };
     }
 
     const items = Array.from(document.querySelectorAll('.itemCheck'))
@@ -1366,7 +1366,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const itemsTotal = items.reduce((sum,it)=> sum + (it.price * it.qty), 0);
 
-    // Require a depot selection
     const opt = (zoneSelect && zoneSelect.value)
       ? zoneSelect.options[zoneSelect.selectedIndex]
       : null;
@@ -1449,7 +1448,11 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // === MODAL WRAPPERS ========================================================
-  const openOrder  = async ()=>{ openFlex(modal); const s = await computeTotal(); toggleDepositBanner(s.total); };
+  const openOrder  = async ()=>{
+    openFlex(modal);
+    const s = await computeTotal();
+    toggleDepositBanner(s.total);
+  };
   const closeOrder = ()=> closeFlex(modal);
 
   const openBot = ()=>{
@@ -1458,13 +1461,16 @@ window.addEventListener('DOMContentLoaded', () => {
     botNext.disabled = false;
     botNext.textContent = "Pay";
     botSendWA.textContent = "Contact support";
-    botSendWA.classList.add('hidden'); // will show after payment modal
+    botSendWA.classList.add('hidden');
     botNewOrder.classList.add('hidden');
     botDemoNote.hidden = true;
     botFeed.innerHTML = "";
     openFlex(botModal);
   };
-  const closeBot    = ()=>{ if(botFeed) botFeed.innerHTML=''; closeFlex(botModal); };
+  const closeBot = ()=>{
+    if(botFeed) botFeed.innerHTML='';
+    closeFlex(botModal);
+  };
 
   const openPayModal  = (orderRef, amount)=>{
     if(!payModal) return;
@@ -1508,6 +1514,7 @@ window.addEventListener('DOMContentLoaded', () => {
       wrap.appendChild(ordersList);
       document.getElementById('ordersContent')?.appendChild(wrap);
     }
+
     if(driversList && !document.getElementById('driversListWrap')){
       const wrap = document.createElement('div');
       wrap.id = 'driversListWrap';
@@ -1516,7 +1523,7 @@ window.addEventListener('DOMContentLoaded', () => {
       wrap.appendChild(driversList);
       document.getElementById('ordersContent')?.appendChild(wrap);
     }
-    // Clean vertical Stats layout (labels ABOVE values)
+
     if(!document.getElementById('adminStatsWrap')){
       const stats = document.createElement('div');
       stats.id = 'adminStatsWrap';
@@ -1532,8 +1539,8 @@ window.addEventListener('DOMContentLoaded', () => {
             <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
           </div>
           <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Drivers</div>
-            <div class="text-sm"><b id="adminDriversCount">0</b></div>
+            <div class="text-xs text-slate-500 mb-1">Drivers & Payouts</div>
+            <div class="text-sm"><b id="adminDriversCount">0</b> drivers</div>
             <div class="text-xs text-slate-500 mt-2">Payouts</div>
             <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
             <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
@@ -1545,7 +1552,7 @@ window.addEventListener('DOMContentLoaded', () => {
             <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
           </div>
           <div class="border rounded-xl p-3">
-            <div class="text-sm font-medium mb-2">Top Areas</div>
+            <div class="text-sm font-medium mb-2">Top Areas (by collection)</div>
             <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
           </div>
         </div>
@@ -1555,6 +1562,17 @@ window.addEventListener('DOMContentLoaded', () => {
       adminPayPendingEl   = document.getElementById('adminPayPending');
       adminPayApprovedEl  = document.getElementById('adminPayApproved');
     }
+
+    // Payouts wrapper
+    if(!document.getElementById('payoutsWrap')){
+      const p = document.createElement('div');
+      p.id = 'payoutsWrap';
+      p.className = 'hidden w-full';
+      p.innerHTML = `<div class="text-sm text-slate-500 p-3">Loading payouts…</div>`;
+      document.getElementById('ordersContent')?.appendChild(p);
+    }
+
+    // Tabs container
     if(!document.getElementById('ordersTabs')){
       const host = ordersTabsContainer || ordersPanel || document.body;
       const tabs = document.createElement('div');
@@ -1563,13 +1581,15 @@ window.addEventListener('DOMContentLoaded', () => {
       host.insertBefore(tabs, host.firstChild);
     }
   }
+
   const getWrapRefs = ()=>({
-    ordersWrap: document.getElementById('ordersListWrap'),
+    ordersWrap:  document.getElementById('ordersListWrap'),
     driversWrap: document.getElementById('driversListWrap'),
-    statsWrap:   document.getElementById('adminStatsWrap')
+    statsWrap:   document.getElementById('adminStatsWrap'),
+    payoutsWrap: document.getElementById('payoutsWrap')
   });
 
-  // Admin open/close
+  // === ADMIN OPEN/CLOSE ======================================================
   const openOrders = async ()=>{
     openFlex(ordersPanel);
     ensureAdminTabs();
@@ -1578,6 +1598,7 @@ window.addEventListener('DOMContentLoaded', () => {
     await renderOrders();
     await renderDrivers();
     await renderAdminStats();
+    await renderPayouts();
   };
   const closeOrders= ()=> closeFlex(ordersPanel);
 
@@ -1641,7 +1662,7 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('openDriverModal')?.click();
   });
 
-  // === “Drivers tab” quick open =============================================
+  // === QUICK NAV TO DRIVERS TAB =============================================
   function forceOpenDriversTab(e){
     e?.preventDefault?.();
     ordersTab = 'drivers';
@@ -1673,8 +1694,8 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Persist ONLY customer form locally (not orders/drivers/stats)
-  ;[custNameEl, custPhoneEl, custAddrEl].forEach((el)=>{
+  // Persist only customer fields
+  [custNameEl, custPhoneEl, custAddrEl].forEach((el)=>{
     if(!el) return;
     const key = 'yt_'+el.id;
     const saved = localStorage.getItem(key);
@@ -1682,7 +1703,7 @@ window.addEventListener('DOMContentLoaded', () => {
     el.addEventListener('input', ()=> localStorage.setItem(key, el.value));
   });
 
-  // === STORE MODAL (optional) ===============================================
+  // === STORE MODAL ===========================================================
   function renderStoreItems(){
     if(!storeItemsList) return;
     storeItemsList.innerHTML = '';
@@ -1714,7 +1735,6 @@ window.addEventListener('DOMContentLoaded', () => {
     const priceVal = prompt('Price (R)');
     const price = Number(priceVal);
     if(!name || !Number.isFinite(price) || price<=0){ return; }
-    // Add to customer-facing catalog AND to the pending store submission list
     CATALOG.push({name,price});
     storeItems.push({name,price});
     renderItems();
@@ -1736,6 +1756,7 @@ window.addEventListener('DOMContentLoaded', () => {
       alert("Please add store name & WhatsApp.");
       return;
     }
+
     const payload = {
       name: storeName,
       owner_name: storeName,
@@ -1774,7 +1795,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     renderStoreItems();
   });
 
-  // === ADMIN PANEL: TABS, RENDERERS, ACTIONS ================================
+  // === ADMIN PANEL: TABS =====================================================
   ordersClose?.addEventListener('click', closeOrders);
   window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
@@ -1782,6 +1803,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       renderOrders();
       renderDrivers();
       renderAdminStats();
+      renderPayouts();
     }
   });
 
@@ -1801,12 +1823,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
 
     const wanted = [
+      ['Orders','orders'],                 // all active
       ['Pending','pending'],
       ['Assigned','assigned'],
       ['In Transit','in_transit'],
       ['Delivered','delivered'],
+      ['Order History','history'],        // delivered (history)
       ['Drivers','drivers'],
-      ['Stats','stats']
+      ['Stats / KPIs','stats'],
+      ['Payouts','payouts']
     ];
 
     const host = document.getElementById('ordersTabs') || ordersTabsContainer || ordersPanel || document.body;
@@ -1817,7 +1842,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
     });
 
-    // Re-wire (idempotent)
+    // Ensure wired once
     document.querySelectorAll('.yt-o-tab').forEach(b=>{
       if(!b.dataset.wired){
         b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
@@ -1838,17 +1863,22 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
     });
 
-    const { ordersWrap, driversWrap, statsWrap } = getWrapRefs();
+    const { ordersWrap, driversWrap, statsWrap, payoutsWrap } = getWrapRefs();
+
     const showDrivers = tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:');
     const showStats   = tabKey === 'stats';
+    const showPayouts = tabKey === 'payouts';
+    const showOrders  = !showDrivers && !showStats && !showPayouts;
 
-    if(ordersWrap) ordersWrap.classList.toggle('hidden', showDrivers || showStats);
+    if(ordersWrap)  ordersWrap.classList.toggle('hidden', !showOrders);
     if(driversWrap) driversWrap.classList.toggle('hidden', !showDrivers);
     if(statsWrap)   statsWrap.classList.toggle('hidden', !showStats);
+    if(payoutsWrap) payoutsWrap.classList.toggle('hidden', !showPayouts);
 
-    if(showDrivers){ renderDrivers(); }
-    else if(showStats){ renderAdminStats(); }
-    else { renderOrders(); }
+    if(showDrivers)      renderDrivers();
+    else if(showStats)   renderAdminStats();
+    else if(showPayouts) renderPayouts();
+    else                 renderOrders();
   }
 
   async function hardRefresh(){
@@ -1856,6 +1886,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     await renderOrders();
     await renderDrivers();
     await renderAdminStats();
+    await renderPayouts();
     setActiveAdminTab(ordersTab);
   }
   ordersRefresh?.addEventListener('click', hardRefresh);
@@ -1864,12 +1895,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   function recalcAdminPayoutWidgets() {
     const driverCount = DRIVERS.length;
     const pendingTotal = DRIVERS.reduce((s,d)=> s + Number(d.weekly_payout_due || 0), 0);
-    const approvedTotal = 0; // requires payouts list endpoint; showing 0 for now
+    const approvedTotal = 0; // adjust if backend returns approved totals
+
     driverTotals.pending  = pendingTotal;
     driverTotals.approved = approvedTotal;
+
     if(adminDriversCountEl) adminDriversCountEl.textContent = String(driverCount);
     if(adminPayPendingEl)   adminPayPendingEl.textContent   = `R${pendingTotal}`;
     if(adminPayApprovedEl)  adminPayApprovedEl.textContent  = `R${approvedTotal}`;
+
     if(driverDashModal && !driverDashModal.classList.contains('hidden')){
       if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent  = String(pendingTotal);
       if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(approvedTotal);
@@ -1878,7 +1912,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   // === API: Orders & actions =================================================
   async function fetchOrdersByStatus(status){
-    if(status === 'drivers' || (status||'').startsWith('by_driver:') || status === 'stats') return [];
+    if(status === 'drivers' || (status||'').startsWith('by_driver:') || status === 'stats' || status === 'payouts') return [];
     try {
       const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
       const data = await res.json().catch(()=>({}));
@@ -1895,7 +1929,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
         method: "POST",
-        headers: {"Content-Type":"application/json", "X-Admin-Secret": (window.YT_ADMIN_SECRET||'changeme-admin')}
+        headers: {
+          "Content-Type":"application/json",
+          "X-Admin-Secret": (window.YT_ADMIN_SECRET||'changeme-admin')
+        }
       });
       const data = await res.json().catch(()=>({}));
 
@@ -1935,7 +1972,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   async function autoAssignForAll(){
-    // fetch all pending from API, then assign
     const pend = await fetchOrdersByStatus('pending');
     const ids = pend.map(o => o._internal_id).filter(Boolean);
     if (ids.length === 0){ alert("No pending orders to assign."); return; }
@@ -1945,7 +1981,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       try {
         const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
           method: "POST",
-          headers: {"Content-Type":"application/json", "X-Admin-Secret": (window.YT_ADMIN_SECRET||'changeme-admin')}
+          headers: {
+            "Content-Type":"application/json",
+            "X-Admin-Secret": (window.YT_ADMIN_SECRET||'changeme-admin')
+          }
         });
         const data = await res.json().catch(()=>({}));
 
@@ -1968,11 +2007,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
-  // === RENDER: Orders ========================================================
+  // === RENDER: Orders / Status / History ====================================
   async function renderOrders(){
     if(!ordersList) return;
 
-    // Driver-filtered view
+    // Per-driver filtered
     if((ordersTab||'').startsWith('by_driver:')){
       const did = ordersTab.split(':',2)[1];
       const all = await fetchAllOrders();
@@ -1981,7 +2020,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
       ordersList.innerHTML = data.length
         ? ''
-        : `<div class="text-sm text-slate-500 p-4">No orders for ${did}.</div>`;
+        : `<div class="text-sm text-slate-500 p-4">No orders for this driver.</div>`;
 
       for(const o of data){
         ordersList.appendChild(buildOrderRow(o));
@@ -1990,7 +2029,41 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
-    // status view
+    // All active orders
+    if(ordersTab === 'orders'){
+      const all = await fetchAllOrders();
+      const data = all.filter(o => o.status !== 'delivered');
+      currentOrdersByTab[ordersTab] = data;
+
+      ordersList.innerHTML = data.length
+        ? ''
+        : `<div class="text-sm text-slate-500 p-4">No active orders.</div>`;
+      for(const o of data){
+        ordersList.appendChild(buildOrderRow(o));
+      }
+      wireOrderRowButtons(ordersList);
+      return;
+    }
+
+    // Order history (delivered)
+    if(ordersTab === 'history'){
+      const all = await fetchAllOrders();
+      const data = all
+        .filter(o => o.status === 'delivered')
+        .sort((a,b)=> (new Date(b.updated_at||b.created_at||0)) - (new Date(a.updated_at||a.created_at||0)));
+      currentOrdersByTab[ordersTab] = data;
+
+      ordersList.innerHTML = data.length
+        ? ''
+        : `<div class="text-sm text-slate-500 p-4">No delivered orders yet.</div>`;
+      for(const o of data){
+        ordersList.appendChild(buildOrderRow(o));
+      }
+      wireOrderRowButtons(ordersList);
+      return;
+    }
+
+    // Single-status view
     const data = await fetchOrdersByStatus(ordersTab);
     currentOrdersByTab[ordersTab] = data;
 
@@ -2021,7 +2094,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ? DRIVERS_BY_ID[assignedDriverId].name
       : '—';
 
-    // Driver pay (from backend settlement if delivered)
     let driverPayText = "Driver pay: —";
     if (o.settlement && typeof o.settlement.driver === 'number'){
       driverPayText = `Driver pay: R${o.settlement.driver}`;
@@ -2083,7 +2155,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     scopeEl.querySelectorAll('.btn-start').forEach(btn=>{
       btn.addEventListener('click', async ()=>{
         const id = btn.getAttribute('data-id');
-        // transition assigned -> in_transit
         try{
           const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(id)}/status`, {
             method: "POST",
@@ -2100,7 +2171,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   }
 
-  // === DRIVERS TAB (live) ====================================================
+  // === DRIVERS TAB ===========================================================
   async function renderDrivers(){
     if(!driversList) return;
     await fetchDrivers();
@@ -2158,6 +2229,91 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     recalcAdminPayoutWidgets();
   }
 
+  // === PAYOUTS TAB (Approve payments) =======================================
+  async function renderPayouts(){
+    const wrap = document.getElementById('payoutsWrap');
+    if(!wrap) return;
+
+    await fetchDrivers();
+    wrap.innerHTML = '';
+
+    if(!DRIVERS.length){
+      wrap.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
+      return;
+    }
+
+    const dueDrivers = DRIVERS.filter(d => Number(d.weekly_payout_due || 0) > 0);
+
+    if(!dueDrivers.length){
+      wrap.innerHTML = `<div class="text-sm text-slate-500 p-4">No pending payouts. 🎉</div>`;
+      recalcAdminPayoutWidgets();
+      return;
+    }
+
+    dueDrivers.forEach(dr=>{
+      const due = Number(dr.weekly_payout_due || 0);
+      const row = document.createElement('div');
+      row.className = 'p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-200';
+      row.innerHTML = `
+        <div class="flex-1 min-w-0">
+          <div class="font-medium flex flex-wrap items-center gap-2">
+            <span>${dr.name || 'Driver'}</span>
+            <span class="text-xs text-slate-500">ID: ${dr.driver_id || dr._internal_id || '-'}</span>
+          </div>
+          <div class="text-xs text-slate-500">
+            WhatsApp: ${dr.phone || '—'} • Vehicle: ${dr.vehicle || 'car'}
+          </div>
+          <div class="text-sm">
+            Pending payout: <b>R${due}</b>
+          </div>
+        </div>
+        <div class="flex flex-row gap-2 text-xs sm:justify-end">
+          <button
+            class="btn-approve-payout px-3 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+            data-id="${dr._internal_id}"
+            data-amt="${due}">
+            Approve paid
+          </button>
+        </div>
+      `;
+      wrap.appendChild(row);
+    });
+
+    wrap.querySelectorAll('.btn-approve-payout').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const id  = btn.getAttribute('data-id');
+        const amt = Number(btn.getAttribute('data-amt') || 0);
+        if(!id || !amt) return;
+
+        try{
+          const res = await fetch(`${BASE_API}/drivers/${encodeURIComponent(id)}/payouts/approve`, {
+            method:'POST',
+            headers:{
+              'Content-Type':'application/json',
+              'X-Admin-Secret': (window.YT_ADMIN_SECRET || 'changeme-admin')
+            },
+            body: JSON.stringify({ amount: amt })
+          });
+          const j = await res.json().catch(()=>({}));
+          if(res.ok && j && j.ok){
+            alert('Payout approved.');
+            const d = DRIVERS_BY_ID[id];
+            if(d){ d.weekly_payout_due = 0; }
+            recalcAdminPayoutWidgets();
+            renderPayouts();
+          } else {
+            alert(j.message || 'Failed to approve payout.');
+          }
+        }catch(err){
+          console.error('approve payout error', err);
+          alert('Network error approving payout.');
+        }
+      });
+    });
+
+    recalcAdminPayoutWidgets();
+  }
+
   // === MAP (guarded) =========================================================
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
@@ -2166,7 +2322,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     let heroMap;
     let localCars = [];
 
-    const southAfricaBounds = (window.L && L.latLngBounds) ? L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]) : null;
+    const southAfricaBounds = (window.L && L.latLngBounds)
+      ? L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]])
+      : null;
 
     async function centerMapHeuristic() {
       DELIVERY_COORDS = DELIVERY_COORDS || await tryGetCustomerCoords();
@@ -2194,7 +2352,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
       <path fill='${emerald[600]}' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
     </svg>`;
-    const pkgIcon = (window.L && L.divIcon) ? L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] }) : null;
+    const pkgIcon = (window.L && L.divIcon)
+      ? L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] })
+      : null;
 
     function spawnLocalTraffic(center, count){
       if(!window.L || !heroMap) return;
@@ -2258,9 +2418,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     (async function(){
       try {
-        if (typeof L === "undefined") {
-          throw new Error("Leaflet not loaded");
-        }
+        if (typeof L === "undefined") throw new Error("Leaflet not loaded");
 
         const heroMapOpts = {
           zoomControl:false,
@@ -2294,21 +2452,21 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         const movers = [];
         routes.forEach((latlngs)=>{
           L.polyline(latlngs,{weight:3, opacity:.55, color:emerald[500]}).addTo(heroMap);
-          const {lensKm,totalKm} = cumulativeLengths(latlngs);
+          const {lensKm} = cumulativeLengths(latlngs);
 
           for(let i=0;i<3;i++){
             const m = L.marker(latlngs[0],{icon:carIcon() || undefined}).addTo(heroMap);
             const speed = 0.15 + Math.random()*0.1;
             const dir   = Math.random()<.5 ? 1 : -1;
             const start = Math.random();
-            movers.push({m, latlngs, lensKm, totalKm, t:start, speed, dir});
+            movers.push({m, latlngs, lensKm, t:start, speed, dir});
           }
           for(let i=0;i<2;i++){
             const m = L.marker(latlngs[0],{icon:pkgIcon || undefined}).addTo(heroMap);
             const speed = 0.18 + Math.random()*0.1;
             const dir   = Math.random()<.5 ? 1 : -1;
             const start = Math.random();
-            movers.push({m, latlngs, lensKm, totalKm, t:start, speed, dir});
+            movers.push({m, latlngs, lensKm, t:start, speed, dir});
           }
         });
 
@@ -2332,7 +2490,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         setTimeout(()=>{ try{ heroMap.invalidateSize(); }catch(_){}; centerMapHeuristic(); },180);
         window.addEventListener('resize',()=>{ try{ heroMap.invalidateSize(); }catch(_){}});
 
-        // Driver signup -> POST to API + WhatsApp to admin
+        // Driver signup → backend + WhatsApp to admin
         formSignup?.addEventListener('submit', async e=>{
           e.preventDefault();
           const name    = document.getElementById('drvName')?.value.trim();
@@ -2341,7 +2499,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           const vehicle = document.getElementById('drvVehicle')?.value.trim() || 'car';
           if(!name || !phone){ alert("Please enter name and phone."); return; }
 
-          // simple jittered start near current collection for marker only
           const jitter = ()=>{
             const d=(1500)/111111, a=Math.random()*Math.PI*2, r=Math.random()*d;
             return { lat: COLLECTION_COORDS.lat + r*Math.cos(a), lng: COLLECTION_COORDS.lng + r*Math.sin(a) };
@@ -2382,7 +2539,7 @@ Vehicle: ${vehicle}`;
     })();
   })();
 
-  // === DRIVER LOGIN → SERVER AUTH + DASH ====================================
+  // === DRIVER LOGIN → DASH ===================================================
   formLogin?.addEventListener('submit', async (e)=>{
     e.preventDefault();
     const phone = digits(drvLoginPhoneEl?.value || '');
@@ -2392,7 +2549,6 @@ Vehicle: ${vehicle}`;
       return;
     }
     try{
-      // Attempt backend login if available
       const res = await fetch(`${BASE_API}/drivers/login`,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
@@ -2400,12 +2556,10 @@ Vehicle: ${vehicle}`;
       });
       const j = await res.json().catch(()=>({}));
       if(res.ok && j && (j.ok || j.token || j.driver)){
-        // success path
         closeDriverWindow();
         openDriverDash();
         return;
       }
-      // Fallback UX if API not implemented
       if(res.status === 404 || (j && j.error === 'not_implemented')){
         alert('Login endpoint not available yet. Opening dashboard for demo.');
         closeDriverWindow();
@@ -2419,7 +2573,7 @@ Vehicle: ${vehicle}`;
     }
   });
 
-  // === ORDER SUBMISSION (customer) ==========================================
+  // === ORDER SUBMISSION (CUSTOMER) ==========================================
   confirmBtn2?.addEventListener('click', async ()=>{
     confirmBtn2.disabled = true;
     try{
@@ -2459,11 +2613,14 @@ Vehicle: ${vehicle}`;
         total: summary.total,
         payment: { method: paymentMethod, status: "pending", provider_ref: null },
         created_by: "web",
-        route: { eta_minutes: null, distance_km: Number(summary.distanceKm.toFixed(2)), eta_text: eta },
+        route: {
+          eta_minutes: null,
+          distance_km: Number(summary.distanceKm.toFixed(2)),
+          eta_text: eta
+        },
         meta: { rush: !!summary.rush, collection_name: summary.collectionName }
       };
 
-      // Create order on backend
       let data = null;
       try {
         const res = await fetch(`${BASE_API}/orders`, {
@@ -2523,7 +2680,6 @@ Vehicle: ${vehicle}`;
   btnFakePayNow?.addEventListener('click', async ()=>{
     alert('No money taken. Demo only.');
     closePayModal();
-    // Mark paid in backend so ops sees it
     try{
       if(latestOrderData?.order_public_id){
         await fetch(`${BASE_API}/simulate_payment`, {
@@ -2534,7 +2690,7 @@ Vehicle: ${vehicle}`;
       }
     }catch(e){ console.warn('simulate_payment failed', e); }
 
-    botSendWA?.classList.remove('hidden'); // now acts as "Contact support"
+    botSendWA?.classList.remove('hidden');
     botNewOrder?.classList.remove('hidden');
     if(botDemoNote) botDemoNote.hidden = false;
 
@@ -2604,7 +2760,7 @@ Vehicle: ${vehicle}`;
   adminBtn?.addEventListener('click', async ()=>{
     const pin = prompt('Enter admin PIN:');
     if(pin && pin.trim() !== ""){
-      window.YT_ADMIN_SECRET = pin.trim(); // used for X-Admin-Secret where needed
+      window.YT_ADMIN_SECRET = pin.trim();
       alert('Admin mode ON');
       await openOrders();
     } else {
@@ -2612,10 +2768,9 @@ Vehicle: ${vehicle}`;
     }
   });
 
-  // Ensure wrappers exist early so toggles never blank the panel
+  // Bootstrap admin scaffolding & drivers cache
   ensureWrappers();
-
-  // Preload drivers so order rows can show names
+  ensureAdminTabs();
   fetchDrivers();
 });
 </script>
