@@ -1714,8 +1714,11 @@ window.addEventListener('DOMContentLoaded', () => {
     const priceVal = prompt('Price (R)');
     const price = Number(priceVal);
     if(!name || !Number.isFinite(price) || price<=0){ return; }
+    // Add to customer-facing catalog AND to the pending store submission list
     CATALOG.push({name,price});
+    storeItems.push({name,price});
     renderItems();
+    renderStoreItems();
     computeTotal().then(s=>toggleDepositBanner(s.total));
   });
 
@@ -1738,7 +1741,8 @@ window.addEventListener('DOMContentLoaded', () => {
       owner_name: storeName,
       phone: storePhone,
       zone,
-      address: {}
+      address: {},
+      items: storeItems.map(i=>({ name:i.name, price:i.price }))
     };
 
     try{
@@ -2347,7 +2351,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
           try{
             const payload = {
-              name, phone, vehicle,
+              name, phone, vehicle, radius_km: radius,
               available: true,
               current_location: { lat: start.lat, lng: start.lng }
             };
@@ -2615,6 +2619,7 @@ Vehicle: ${vehicle}`;
   fetchDrivers();
 });
 </script>
+
 
 
 
