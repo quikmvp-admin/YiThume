@@ -927,6 +927,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const BASE_API        = "/api/app";
   const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
+  const ADMIN_PASS      = "1234"; // 🔐 simple admin password
 
   // Flip this to true for local/demo mode (uses localStorage instead of your API)
   const DEMO_MODE       = false;
@@ -1010,6 +1011,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const currentOrdersByTab = {};
   let ALL_ORDERS_MAP = {};   // LIVE: aggregate across statuses
   let API_DRIVERS_MAP = {};  // LIVE: driver cache
+  let REMOTE_STATS = null;   // LIVE: stats from backend
 
   // Positions
   let DELIVERY_COORDS   = null;
@@ -1112,7 +1114,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const storePhoneEl        = document.getElementById('storePhone');
   const storeZoneEl         = document.getElementById('storeZone');
 
-  // === COLLECTION POINTS (EC start, nationwide expansion) ====================
+  // === COLLECTION POINTS =====================================================
   const COLLECTIONS = [
     { id:'DEPOT-PA',   name:'Port Alfred Depot',         lat:-33.590, lng:26.890 },
     { id:'DEPOT-KENT', name:'Kenton-on-Sea Depot',       lat:-33.686, lng:26.668 },
@@ -1395,7 +1397,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // === MODAL WRAPPERS ========================================================
+  // === MODAL / ADMIN BTN WIRING ==============================================
   const openOrder  = async ()=>{
     openFlex(modal);
     const s = await computeTotal();
@@ -1414,7 +1416,7 @@ window.addEventListener('DOMContentLoaded', () => {
     botFeed.innerHTML = "";
     openFlex(botModal);
   };
-  const closeBot    = ()=>{ if(botFeed) botFeed.innerHTML=''; closeFlex(botModal); };
+  const closeBot = ()=>{ if(botFeed) botFeed.innerHTML=''; closeFlex(botModal); };
 
   const openPayModal  = (orderRef, amount)=>{
     if(!payModal) return;
@@ -1544,7 +1546,7 @@ window.addEventListener('DOMContentLoaded', () => {
     computeTotal().then(s=>toggleDepositBanner(s.total));
   });
 
-  // === MODAL / ADMIN BTN WIRING ==============================================
+  // === MODAL / ADMIN BTN WIRING (WITH PASSWORD) ==============================
   document.getElementById('closeBot')?.addEventListener('click', closeBot);
   closeBtn?.addEventListener('click', closeOrder);
   cancelOrderBuilder?.addEventListener('click', closeOrder);
@@ -1554,10 +1556,16 @@ window.addEventListener('DOMContentLoaded', () => {
   closeDriverDash?.addEventListener('click', closeDriverDashWindow);
   ordersClose?.addEventListener('click', closeOrders);
 
-  // 🔐 ADMIN BUTTON → OPEN ADMIN PANEL
+  // 🔐 ADMIN BUTTON → PASSWORD 1234 → OPEN ADMIN PANEL
   adminBtn?.addEventListener('click', (e)=>{
     e.preventDefault();
-    openOrders();
+    const pw = prompt("Enter admin PIN:");
+    if (pw === null) return;
+    if (pw === ADMIN_PASS) {
+      openOrders();
+    } else {
+      alert("Incorrect PIN");
+    }
   });
 
   // Also handle custom event triggers
@@ -1694,7 +1702,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   });
 
-  // === LIVE FETCH HELPERS ====================================================
+  // === LIVE FETCH HELPERS (MONGO-BACKED VIA FLASK) ===========================
   async function fetchOrdersByStatus(status){
     if(status === 'drivers' || status === 'stats' || (status||'').startsWith('by_driver:')) return [];
     if(DEMO_MODE){
@@ -1743,11 +1751,28 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   }
 
+  // 🔢 NEW: fetch pre-aggregated stats from Flask/Mongo
+  async function fetchStatsLive(){
+    if(DEMO_MODE){ return; }
+    try{
+      const res = await fetch(`${BASE_API}/stats`);
+      const data = await res.json().catch(()=>({}));
+      if(res.ok && data && data.ok && data.stats){
+        REMOTE_STATS = data.stats;
+      } else {
+        REMOTE_STATS = null;
+      }
+    }catch(err){
+      console.error("fetch stats err", err);
+      REMOTE_STATS = null;
+    }
+  }
+
   async function refreshAllData(){
     if(DEMO_MODE){
       hydrateState();
     } else {
-      await Promise.all([fetchAllOrdersLive(), fetchDriversLive()]);
+      await Promise.all([fetchAllOrdersLive(), fetchDriversLive(), fetchStatsLive()]);
     }
     renderOrders();
     renderDrivers();
@@ -1772,6 +1797,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   function computeStats(){
+    // If backend provides stats, use those directly
+    if(!DEMO_MODE && REMOTE_STATS){
+      return REMOTE_STATS;
+    }
+
+    // Fallback: compute from loaded orders/drivers (demo or if stats API missing)
     computeDriverTotalsFromDB();
 
     const orders  = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
@@ -1840,44 +1871,44 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[11px]">
         <div class="border rounded-lg p-2">
           <div class="text-slate-500">Total revenue</div>
-          <div class="text-base font-semibold">R${s.totalRevenue}</div>
-          <div class="text-[10px] text-slate-500">Delivered: R${s.deliveredRevenue}</div>
+          <div class="text-base font-semibold">R${s.totalRevenue || 0}</div>
+          <div class="text-[10px] text-slate-500">Delivered: R${s.deliveredRevenue || 0}</div>
         </div>
         <div class="border rounded-lg p-2">
           <div class="text-slate-500">Orders</div>
-          <div class="text-base font-semibold">${s.totalOrders}</div>
+          <div class="text-base font-semibold">${s.totalOrders || 0}</div>
           <div class="text-[10px] text-slate-500">
-            ✅ ${s.deliveredOrders} • 🚚 ${s.inTransitOrders} • 📦 ${s.assignedOrders} • ⏳ ${s.pendingOrders}
+            ✅ ${s.deliveredOrders || 0} • 🚚 ${s.inTransitOrders || 0} • 📦 ${s.assignedOrders || 0} • ⏳ ${s.pendingOrders || 0}
           </div>
         </div>
         <div class="border rounded-lg p-2">
           <div class="text-slate-500">Averages</div>
           <div class="text-[10px] text-slate-500">
-            AOV: <span class="font-semibold">R${s.avgOrderValue}</span>
+            AOV: <span class="font-semibold">R${s.avgOrderValue || 0}</span>
           </div>
           <div class="text-[10px] text-slate-500">
-            Avg delivery fee: <span class="font-semibold">R${s.avgDeliveryFee}</span>
+            Avg delivery fee: <span class="font-semibold">R${s.avgDeliveryFee || 0}</span>
           </div>
         </div>
         <div class="border rounded-lg p-2">
           <div class="text-slate-500">Drivers</div>
-          <div class="text-base font-semibold">${s.activeDrivers}</div>
-          <div class="text-[10px] text-slate-500">Orders with driver: ${s.driverAttachRate}%</div>
+          <div class="text-base font-semibold">${s.activeDrivers || 0}</div>
+          <div class="text-[10px] text-slate-500">Orders with driver: ${s.driverAttachRate || 0}%</div>
         </div>
         <div class="border rounded-lg p-2">
           <div class="text-slate-500">Driver payouts</div>
-          <div class="text-[10px] text-slate-500">Pending: <span class="font-semibold">R${s.driverPayoutPending}</span></div>
-          <div class="text-[10px] text-slate-500">Approved: <span class="font-semibold">R${s.driverPayoutApproved}</span></div>
+          <div class="text-[10px] text-slate-500">Pending: <span class="font-semibold">R${s.driverPayoutPending || 0}</span></div>
+          <div class="text-[10px] text-slate-500">Approved: <span class="font-semibold">R${s.driverPayoutApproved || 0}</span></div>
         </div>
         <div class="border rounded-lg p-2">
           <div class="text-slate-500">Popular item</div>
-          <div class="text-base font-semibold">${s.popularItem}</div>
+          <div class="text-base font-semibold">${s.popularItem || '—'}</div>
           <div class="text-[10px] text-slate-500">Qty sold: ${s.popularItemQty || 0}</div>
         </div>
         <div class="border rounded-lg p-2">
           <div class="text-slate-500">Rush &amp; Risk</div>
-          <div class="text-[10px] text-slate-500">Rush orders: <span class="font-semibold">${s.rushOrders}</span></div>
-          <div class="text-[10px] text-slate-500">High fraud (&gt;0.5): <span class="font-semibold">${s.fraudFlagged}</span></div>
+          <div class="text-[10px] text-slate-500">Rush orders: <span class="font-semibold">${s.rushOrders || 0}</span></div>
+          <div class="text-[10px] text-slate-500">High fraud (&gt;0.5): <span class="font-semibold">${s.fraudFlagged || 0}</span></div>
         </div>
       </div>
     `;
@@ -2364,7 +2395,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   }
 
-  // === MAP (road-snapped cars, EC start, nationwide) ========================
+  // === MAP (slower cars) =====================================================
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
     if(!heroEl) return;
@@ -2435,7 +2466,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       for(let i=0;i<count;i++){
         const r    = 0.01 + Math.random()*0.02;
         const ang0 = Math.random()*Math.PI*2;
-        const spd  = 0.4 + Math.random()*0.6;
+        const spd  = 0.10 + Math.random()*0.15; // 🐢 slower
         const m    = L.marker(
           [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
           { icon:carIcon() }
@@ -2486,7 +2517,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       const { lensKm } = cumulativeLengths(latlngs);
       for(let i=0;i<3;i++){
         const m = L.marker(latlngs[0], {icon:carIcon()}).addTo(heroMap);
-        movers.push({ m, latlngs, lensKm, t: Math.random(), speed: 0.22 + Math.random()*0.08, dir: 1 });
+        movers.push({ m, latlngs, lensKm, t: Math.random(), speed: 0.05 + Math.random()*0.03, dir: 1 }); // 🐢 slower
       }
 
       spawnLocalTraffic(DELIVERY_COORDS, 3);
@@ -2552,7 +2583,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
                 latlngs,
                 lensKm,
                 t: Math.random(),
-                speed: 0.12 + Math.random()*0.05,
+                speed: 0.03 + Math.random()*0.02, // 🐢 slower background cars
                 dir: Math.random()<0.5 ? 1 : -1
               });
             }
@@ -2568,7 +2599,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             o.m.setLatLng([lat,lng]);
           });
           localCars.forEach(lc=>{
-            lc.ang += lc.spd * 0.004;
+            lc.ang += lc.spd * 0.0015; // 🐢 slower orbit
             const lat = lc.cx + lc.r*Math.sin(lc.ang);
             const lng = lc.cy + lc.r*Math.cos(lc.ang);
             lc.m.setLatLng([lat,lng]);
@@ -2646,7 +2677,7 @@ Vehicle: ${vehicle}`;
     })();
   })();
 
-  // === DRIVER LOGIN → DASH ===================================================
+  // === DRIVER LOGIN → DASH (still demo) =====================================
   formLogin?.addEventListener('submit',e=>{
     e.preventDefault();
     alert('Logged in (demo). Opening dashboard.');
@@ -2888,7 +2919,6 @@ Vehicle: ${vehicle}`;
   renderStats();
 });
 </script>
-
 
 </body>
 </html>
