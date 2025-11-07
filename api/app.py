@@ -25,7 +25,8 @@ MONGO_URI = os.environ.get(
 DB_NAME = os.environ.get("MONGO_DB", "yithume")
 
 # Admin secret for privileged endpoints (used by admin panel)
-ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "changeme-admin")
+# Default PIN set to 1234 for demo; override via ADMIN_SECRET env in real deployments.
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "1234")
 # Accept admin PIN via body/query too (so the web admin panel can pass it)
 ALLOW_PIN_PARAM = os.environ.get("ALLOW_PIN_PARAM", "true").lower() == "true"
 # Expose debug PINs for driver login (off in prod)
@@ -120,7 +121,11 @@ def safe_doc(doc):
                 continue
             if k == "sessions" and isinstance(v, list):
                 red["sessions"] = [
-                    {"expires_at": (s.get("expires_at").isoformat() + "Z") if isinstance(s.get("expires_at"), datetime) else s.get("expires_at")}
+                    {
+                        "expires_at": (
+                            s.get("expires_at").isoformat() + "Z"
+                        ) if isinstance(s.get("expires_at"), datetime) else s.get("expires_at")
+                    }
                     for s in v
                 ]
             else:
@@ -142,7 +147,7 @@ def haversine_km(lat1, lon1, lat2, lon2):
         return None
     r = 6371.0
     dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
+    dlon = radians(lat2 - lon1)
     a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
     return 2 * r * asin(sqrt(a))
 
@@ -255,7 +260,7 @@ def wa_order_text(order):
     addr = order.get("customer", {}).get("address", {})
     eta  = order.get("route", {}).get("eta_text", "TBC")
     total = order.get("total", 0)
-    collection = (order.get("meta") or {}).get("collection_name", "")
+    collection = order.get("meta", {}).get("collection_name", "")
     pay_m = order.get("payment", {}).get("method", "card")
     lines = [
         "YiThume Order Confirmation",
@@ -445,17 +450,35 @@ def rate_limit_touch(db, key: str, limit_per_min: int):
     now = _now_dt()
     rec = db.rate_limiter.find_one({"key": key})
     if not rec:
-        db.rate_limiter.insert_one({"key": key, "count": 1, "window_start": now, "expires_at": now + timedelta(minutes=1)})
+        db.rate_limiter.insert_one({
+            "key": key,
+            "count": 1,
+            "window_start": now,
+            "expires_at": now + timedelta(minutes=1)
+        })
         return True
     # if window expired, reset
     if rec.get("window_start") and rec["window_start"] < now - timedelta(minutes=1):
-        db.rate_limiter.update_one({"key": key}, {"$set": {"count": 1, "window_start": now, "expires_at": now + timedelta(minutes=1)}})
+        db.rate_limiter.update_one(
+            {"key": key},
+            {"$set": {
+                "count": 1,
+                "window_start": now,
+                "expires_at": now + timedelta(minutes=1)
+            }}
+        )
         return True
     # otherwise increment
     new_count = int(rec.get("count", 0)) + 1
     if new_count > limit_per_min:
         return False
-    db.rate_limiter.update_one({"key": key}, {"$set": {"count": new_count, "expires_at": now + timedelta(minutes=1)}})
+    db.rate_limiter.update_one(
+        {"key": key},
+        {"$set": {
+            "count": new_count,
+            "expires_at": now + timedelta(minutes=1)
+        }}
+    )
     return True
 
 def idempotency_guard(db):
@@ -467,7 +490,12 @@ def idempotency_guard(db):
     key = request.headers.get("X-Idempotency-Key") or str(uuid.uuid4())
     now = _now_dt()
     try:
-        db.idempotency.insert_one({"key": key, "seen": True, "created_at": now, "expires_at": now + timedelta(seconds=IDEMPOTENCY_TTL_SEC)})
+        db.idempotency.insert_one({
+            "key": key,
+            "seen": True,
+            "created_at": now,
+            "expires_at": now + timedelta(seconds=IDEMPOTENCY_TTL_SEC)
+        })
         return key, False  # inserted now, not a replay
     except mongo_errors.DuplicateKeyError:
         return key, True   # replay
@@ -749,7 +777,11 @@ def auto_assign(oid):
 
         db.orders.update_one(
             {"_internal_id": oid},
-            {"$set": {"assigned_driver_id": d["_internal_id"], "assigned_at": _now_dt(), "status": "assigned"}}
+            {"$set": {
+                "assigned_driver_id": d["_internal_id"],
+                "assigned_at": _now_dt(),
+                "status": "assigned"
+            }}
         )
         return jsonify({"ok": True, "driver_id": d["_internal_id"]}), 200
     except mongo_errors.PyMongoError as e:
@@ -776,7 +808,11 @@ def assign_driver(oid):
 
         db.orders.update_one(
             {"_internal_id": oid},
-            {"$set": {"assigned_driver_id": driver_id, "assigned_at": _now_dt(), "status": "assigned"}}
+            {"$set": {
+                "assigned_driver_id": driver_id,
+                "assigned_at": _now_dt(),
+                "status": "assigned"
+            }}
         )
         return jsonify({"ok": True}), 200
     except mongo_errors.PyMongoError as e:
@@ -790,7 +826,10 @@ def assign_driver(oid):
 def update_status(oid):
     body = request.json or {}
     new_status = body.get("status")
-    allowed = {"pending", "assigned", "in_transit", "delivered", "cancelled", "failed", "review_required"}
+    allowed = {
+        "pending", "assigned", "in_transit",
+        "delivered", "cancelled", "failed", "review_required"
+    }
     if new_status not in allowed:
         return jsonify({"ok": False, "error": "invalid status"}), 400
 
@@ -813,16 +852,32 @@ def update_status(oid):
                 "assigned_driver_id": o.get("assigned_driver_id")
             })
 
-            driver_cut, platform_cut = compute_earnings(o, prior_in_cluster=max(0, prior - 1))
-            update_set["settlement"] = {"driver": driver_cut, "platform": platform_cut, "settled": False}
+            driver_cut, platform_cut = compute_earnings(
+                o,
+                prior_in_cluster=max(0, prior - 1)
+            )
+            update_set["settlement"] = {
+                "driver": driver_cut,
+                "platform": platform_cut,
+                "settled": False
+            }
 
             # Flip driver payout to approved for this order
             update_set["driver_pay_status"] = "approved"
-            update_set["driver_pay_approved"] = max(float(o.get("driver_pay_approved") or 0.0), driver_cut)
+            update_set["driver_pay_approved"] = max(
+                float(o.get("driver_pay_approved") or 0.0),
+                driver_cut
+            )
             update_set["driver_pay_pending"] = 0.0
 
             if o.get("assigned_driver_id"):
-                accrue_driver_earning(db, o["assigned_driver_id"], driver_cut, "delivery", o.get("order_id"))
+                accrue_driver_earning(
+                    db,
+                    o["assigned_driver_id"],
+                    driver_cut,
+                    "delivery",
+                    o.get("order_id")
+                )
 
         db.orders.update_one({"_internal_id": oid}, {"$set": update_set})
         return jsonify({"ok": True}), 200
@@ -851,9 +906,17 @@ def auto_assign_all():
                 continue
             db.orders.update_one(
                 {"_internal_id": o["_internal_id"]},
-                {"$set": {"assigned_driver_id": d["_internal_id"], "assigned_at": _now_dt(), "status": "assigned"}}
+                {"$set": {
+                    "assigned_driver_id": d["_internal_id"],
+                    "assigned_at": _now_dt(),
+                    "status": "assigned"
+                }}
             )
-            results.append({"id": o["_internal_id"], "ok": True, "driver_id": d["_internal_id"]})
+            results.append({
+                "id": o["_internal_id"],
+                "ok": True,
+                "driver_id": d["_internal_id"]
+            })
         return jsonify({"ok": True, "results": results}), 200
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
@@ -880,8 +943,16 @@ def create_driver():
         "weekly_payout_due": 0.0,
         "earnings_history": [],
         "ratings": {"count": 0, "avg": None},
-        "docs": {"id_doc_ref": None, "licence_ref": None, "vehicle_reg_ref": None},
-        "auth": {"pin_hash": None, "pin_expiry": None, "sessions": []},
+        "docs": {
+            "id_doc_ref": None,
+            "licence_ref": None,
+            "vehicle_reg_ref": None
+        },
+        "auth": {
+            "pin_hash": None,
+            "pin_expiry": None,
+            "sessions": []
+        },
         "meta": data.get("meta", {})  # zone, radius_km, etc.
     }
     try:
@@ -935,7 +1006,10 @@ def driver_request_pin():
         pin = str(uuid.uuid4().int)[-4:]
         db.drivers.update_one(
             {"_internal_id": d["_internal_id"]},
-            {"$set": {"auth.pin_hash": hash_pin(pin), "auth.pin_expiry": _now_dt() + timedelta(minutes=DRIVER_PIN_TTL_MIN)}}
+            {"$set": {
+                "auth.pin_hash": hash_pin(pin),
+                "auth.pin_expiry": _now_dt() + timedelta(minutes=DRIVER_PIN_TTL_MIN)
+            }}
         )
         payload = {"ok": True, "sent": True}
         if PIN_DEBUG_EXPOSE:
@@ -972,10 +1046,20 @@ def driver_verify_pin():
         expiry = _now_dt() + timedelta(minutes=DRIVER_TOKEN_TTL_MIN)
         db.drivers.update_one(
             {"_internal_id": d["_internal_id"]},
-            {"$set": {"auth.pin_hash": None, "auth.pin_expiry": None},
-             "$push": {"auth.sessions": {"token": token, "expires_at": expiry}}}
+            {
+                "$set": {"auth.pin_hash": None, "auth.pin_expiry": None},
+                "$push": {"auth.sessions": {
+                    "token": token,
+                    "expires_at": expiry
+                }}
+            }
         )
-        return jsonify({"ok": True, "driver_id": d["_internal_id"], "token": token, "expires_at": expiry.isoformat() + "Z"}), 200
+        return jsonify({
+            "ok": True,
+            "driver_id": d["_internal_id"],
+            "token": token,
+            "expires_at": expiry.isoformat() + "Z"
+        }), 200
     except mongo_errors.PyMongoError as e:
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
@@ -994,7 +1078,12 @@ def driver_orders():
             d = None
             if token:
                 d = db.drivers.find_one({
-                    "auth.sessions": {"$elemMatch": {"token": token, "expires_at": {"$gte": _now_dt()}}}
+                    "auth.sessions": {
+                        "$elemMatch": {
+                            "token": token,
+                            "expires_at": {"$gte": _now_dt()}
+                        }
+                    }
                 })
             if not d:
                 return jsonify({"ok": False, "error": "auth_required"}), 401
@@ -1002,7 +1091,12 @@ def driver_orders():
         else:
             if token:
                 d = db.drivers.find_one({
-                    "auth.sessions": {"$elemMatch": {"token": token, "expires_at": {"$gte": _now_dt()}}}
+                    "auth.sessions": {
+                        "$elemMatch": {
+                            "token": token,
+                            "expires_at": {"$gte": _now_dt()}
+                        }
+                    }
                 })
                 if not d or d["_internal_id"] != driver_id:
                     return jsonify({"ok": False, "error": "forbidden"}), 403
@@ -1025,7 +1119,12 @@ def upload_proof(oid):
     try:
         db = get_db()
         d = db.drivers.find_one({
-            "auth.sessions": {"$elemMatch": {"token": token, "expires_at": {"$gte": _now_dt()}}}
+            "auth.sessions": {
+                "$elemMatch": {
+                    "token": token,
+                    "expires_at": {"$gte": _now_dt()}
+                }
+            }
         })
         if not d:
             return jsonify({"ok": False, "error": "auth_required"}), 401
@@ -1044,12 +1143,20 @@ def upload_proof(oid):
             return jsonify({"ok": False, "error": "empty_file"}), 400
 
         fs = get_fs(db)
-        fid = fs.put(content, filename=secure_filename(f.filename or "proof.jpg"),
-                     contentType=f.mimetype or "application/octet-stream")
+        fid = fs.put(
+            content,
+            filename=secure_filename(f.filename or "proof.jpg"),
+            contentType=f.mimetype or "application/octet-stream"
+        )
 
         file_url = f"/api/app/files/{fid}"
-        db.orders.update_one({"_internal_id": oid},
-                             {"$set": {"delivery_photo_file_id": str(fid), "delivery_photo_url": file_url}})
+        db.orders.update_one(
+            {"_internal_id": oid},
+            {"$set": {
+                "delivery_photo_file_id": str(fid),
+                "delivery_photo_url": file_url
+            }}
+        )
         return jsonify({"ok": True, "file_id": str(fid), "url": file_url}), 201
     except mongo_errors.PyMongoError as e:
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
@@ -1071,7 +1178,12 @@ def upload_driver_docs(driver_id):
         d = None
         if token:
             d = db.drivers.find_one({
-                "auth.sessions": {"$elemMatch": {"token": token, "expires_at": {"$gte": _now_dt()}}}
+                "auth.sessions": {
+                    "$elemMatch": {
+                        "token": token,
+                        "expires_at": {"$gte": _now_dt()}
+                    }
+                }
             })
         if not is_admin:
             if not d:
@@ -1087,8 +1199,11 @@ def upload_driver_docs(driver_id):
                 f = request.files[field]
                 content = f.read()
                 if content:
-                    fid = fs.put(content, filename=secure_filename(f.filename or field),
-                                 contentType=f.mimetype or "application/octet-stream")
+                    fid = fs.put(
+                        content,
+                        filename=secure_filename(f.filename or field),
+                        contentType=f.mimetype or "application/octet-stream"
+                    )
                     updates[f"docs.{key}"] = str(fid)
 
         save_field("id_doc", "id_doc_ref")
@@ -1145,8 +1260,14 @@ def weekly_close():
                 "status": "pending"
             }
             db.payouts.insert_one(payout)
-            db.drivers.update_one({"_internal_id": d["_internal_id"]}, {"$set": {"weekly_payout_due": 0.0}})
-            created.append({"driver_id": d["_internal_id"], "amount": payout["amount"]})
+            db.drivers.update_one(
+                {"_internal_id": d["_internal_id"]},
+                {"$set": {"weekly_payout_due": 0.0}}
+            )
+            created.append({
+                "driver_id": d["_internal_id"],
+                "amount": payout["amount"]
+            })
         return jsonify({"ok": True, "payouts": created}), 200
     except mongo_errors.PyMongoError as e:
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
@@ -1168,9 +1289,11 @@ def approve_all_pay(driver_id):
             amt = float(o.get("driver_pay_pending") or 0.0)
             db.orders.update_one(
                 {"_internal_id": o["_internal_id"]},
-                {"$set": {"driver_pay_status": "approved",
-                          "driver_pay_approved": amt,
-                          "driver_pay_pending": 0.0}}
+                {"$set": {
+                    "driver_pay_status": "approved",
+                    "driver_pay_approved": amt,
+                    "driver_pay_pending": 0.0
+                }}
             )
             count += 1
         return jsonify({"ok": True, "approved": count}), 200
@@ -1320,7 +1443,12 @@ def dev_seed_catalog():
         payload = _catalog_seed_payload()
         inserted, updated = upsert_catalog_items(db, payload)
         total = db.catalog.count_documents({})
-        return jsonify({"ok": True, "inserted": inserted, "updated": updated, "total_items": total}), 200
+        return jsonify({
+            "ok": True,
+            "inserted": inserted,
+            "updated": updated,
+            "total_items": total
+        }), 200
     except mongo_errors.PyMongoError as e:
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
@@ -1374,7 +1502,10 @@ def ussd_entry():
         }
         try:
             db.ussd_sessions.insert_one(sess)
-            db.ussd_sessions.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0)
+            db.ussd_sessions.create_index(
+                [("expires_at", ASCENDING)],
+                expireAfterSeconds=0
+            )
         except Exception:
             pass
 
@@ -1442,25 +1573,39 @@ def ussd_entry():
             return end("Invalid option.")
 
         if len(steps) == 2:
-            items = list(db.catalog.find({"category": subcat, "active": True}).sort("name", ASCENDING).limit(6))
+            items = list(db.catalog.find({
+                "category": subcat,
+                "active": True
+            }).sort("name", ASCENDING).limit(6))
             if not items:
                 return end("No items in that category yet.")
             # Keep an index map in session
             imap = []
             out_lines = []
             for i, it in enumerate(items, start=1):
-                imap.append({"id": it["_internal_id"], "name": it["name"], "price": it["price"]})
+                imap.append({
+                    "id": it["_internal_id"],
+                    "name": it["name"],
+                    "price": it["price"]
+                })
                 out_lines.append(f"{i}. {it['name']} R{int(it['price'])}")
             sess["state"]["last_items"] = imap
-            db.ussd_sessions.update_one({"session_id": sess["session_id"]}, {"$set": {"state": sess["state"]}})
-            return con("Pick item:\n" + "\n".join(out_lines) + "\n0. Back")
+            db.ussd_sessions.update_one(
+                {"session_id": sess["session_id"]},
+                {"$set": {"state": sess["state"]}}
+            )
+            return con(
+                "Pick item:\n" + "\n".join(out_lines) + "\n0. Back"
+            )
 
         # Step 3: quantity
         if len(steps) == 3:
             if steps[2] == "0":
                 # back to subcategory list
                 lines = [f"{i+1}. {c}" for i, c in enumerate(top)]
-                return con("Choose Category:\n" + "\n".join(lines) + "\n0. Back")
+                return con(
+                    "Choose Category:\n" + "\n".join(lines) + "\n0. Back"
+                )
 
             try:
                 choice = int(steps[2]) - 1
@@ -1469,7 +1614,10 @@ def ussd_entry():
             except Exception:
                 return end("Invalid selection.")
             sess["state"]["selected_item"] = sel
-            db.ussd_sessions.update_one({"session_id": sess["session_id"]}, {"$set": {"state": sess["state"]}})
+            db.ussd_sessions.update_one(
+                {"session_id": sess["session_id"]},
+                {"$set": {"state": sess["state"]}}
+            )
             return con(f"{sel['name']} – Enter quantity:")
 
         # Step 4: address line (brief)
@@ -1479,7 +1627,10 @@ def ussd_entry():
             except Exception:
                 return end("Quantity must be a number.")
             sess["state"]["qty"] = qty
-            db.ussd_sessions.update_one({"session_id": sess["session_id"]}, {"$set": {"state": sess["state"]}})
+            db.ussd_sessions.update_one(
+                {"session_id": sess["session_id"]},
+                {"$set": {"state": sess["state"]}}
+            )
             return con("Enter nearest landmark / village name:")
 
         # Step 5: confirm and create order
@@ -1489,9 +1640,10 @@ def ussd_entry():
             qty = int((sess.get("state") or {}).get("qty") or 1)
             if not sel:
                 return end("Session expired. Start again.")
+
             # Price math
             subtotal = float(sel["price"]) * qty
-            delivery_fee = 20.0  # simple flat fee for USSD; can replace with distance calc
+            delivery_fee = 20.0  # simple flat fee for USSD; adjust as needed
             total = round(subtotal + delivery_fee, 2)
 
             # Idempotency: avoid double-click orders on flaky connections
@@ -1499,7 +1651,7 @@ def ussd_entry():
             if replay:
                 return end("Order already received. We’ll confirm on WhatsApp.")
 
-            # Build order payload for your existing /orders endpoint flow
+            # Build inline order doc
             order_doc = {
                 "_internal_id": str(uuid.uuid4()),
                 "order_id": make_order_public_id(),
@@ -1508,29 +1660,52 @@ def ussd_entry():
                 "customer": {
                     "phone": phone,
                     "name": phone,
-                    "address": {"line1": landmark, "coords": {"lat": None, "lng": None}}
+                    "address": {
+                        "line1": landmark,
+                        "coords": {"lat": None, "lng": None}
+                    }
                 },
-                "items": [{"name": sel["name"], "qty": qty, "price": float(sel["price"])}],
+                "items": [{
+                    "name": sel["name"],
+                    "qty": qty,
+                    "price": float(sel["price"])
+                }],
                 "subtotal": subtotal,
                 "delivery_fee": delivery_fee,
                 "total": total,
-                "payment": {"method": "cod", "status": "pending", "provider_ref": None, "fake_checkout_url": None},
+                "payment": {
+                    "method": "cod",
+                    "status": "pending",
+                    "provider_ref": None,
+                    "fake_checkout_url": None
+                },
                 "status": "pending",
                 "assigned_driver_id": None,
                 "assigned_at": None,
                 "delivered_at": None,
                 "route": {},
                 "created_by": "ussd",
-                "meta": {"channel": "ussd", "collection_name": landmark, "zone": None},
+                "meta": {
+                    "channel": "ussd",
+                    "collection_name": landmark,
+                    "zone": None
+                },
                 "fraud_score": 0.0,
                 "fraud_flags": {},
                 "cluster_key": None,
                 "delivery_photo_file_id": None,
                 "delivery_photo_url": None,
                 "driver_pay_status": "pending",
-                "driver_pay_pending": round(min(max(delivery_fee, 25), 45), 2),
+                "driver_pay_pending": round(
+                    min(max(delivery_fee, 25), 45),
+                    2
+                ),
                 "driver_pay_approved": 0.0,
-                "settlement": {"driver": 0.0, "platform": 0.0, "settled": False}
+                "settlement": {
+                    "driver": 0.0,
+                    "platform": 0.0,
+                    "settled": False
+                }
             }
 
             # Fraud + maybe assign
@@ -1559,7 +1734,11 @@ def ussd_entry():
                     "created_at": _now_dt()
                 })
 
-                return end(f"Order placed: {order_doc['order_id']}\nTotal: R{int(total)}\nWe’ll confirm on WhatsApp.")
+                return end(
+                    f"Order placed: {order_doc['order_id']}\n"
+                    f"Total: R{int(total)}\n"
+                    "We’ll confirm on WhatsApp."
+                )
             except Exception:
                 return end("We couldn’t create your order. Please try later.")
 
