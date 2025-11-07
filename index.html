@@ -1010,7 +1010,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const currentOrdersByTab = {};
   let ALL_ORDERS_MAP = {};   // LIVE: aggregate across statuses
-  let API_DRIVERS_MAP = {};  // LIVE: driver cache
+  let API_DRIVERS_MAP = {};  // LIVE: drivers keyed by internal key
   let REMOTE_STATS = null;   // LIVE: stats from backend
 
   // Positions
@@ -1655,11 +1655,11 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     const payload = {
-      store_id: `STORE-${Date.now().toString().slice(-6)}`,
       name: storeName,
+      owner_name: storeName,
       phone: storePhone,
       zone,
-      items: storeItems.map(it=>({ name: it.name, price: it.price }))
+      address: {}
     };
 
     if(!DEMO_MODE){
@@ -1702,7 +1702,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   });
 
-  // === LIVE FETCH HELPERS (MONGO-BACKED VIA FLASK) ===========================
+  // === LIVE FETCH HELPERS ====================================================
   async function fetchOrdersByStatus(status){
     if(status === 'drivers' || status === 'stats' || (status||'').startsWith('by_driver:')) return [];
     if(DEMO_MODE){
@@ -1740,7 +1740,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       if(res.ok && data && Array.isArray(data.drivers)){
         API_DRIVERS_MAP = {};
         data.drivers.forEach(d=>{
-          API_DRIVERS_MAP[d.driver_id] = d;
+          const key = d._internal_id || d.driver_id;
+          if(!key) return;
+          API_DRIVERS_MAP[key] = d;
         });
       } else {
         API_DRIVERS_MAP = {};
@@ -1751,14 +1753,14 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   }
 
-  // 🔢 NEW: fetch pre-aggregated stats from Flask/Mongo
+  // 🔢 STATS: /stats/overview (LIVE)
   async function fetchStatsLive(){
     if(DEMO_MODE){ return; }
     try{
-      const res = await fetch(`${BASE_API}/stats`);
+      const res = await fetch(`${BASE_API}/stats/overview`);
       const data = await res.json().catch(()=>({}));
-      if(res.ok && data && data.ok && data.stats){
-        REMOTE_STATS = data.stats;
+      if(res.ok && data && data.ok){
+        REMOTE_STATS = data;
       } else {
         REMOTE_STATS = null;
       }
@@ -1797,32 +1799,39 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   function computeStats(){
-    // If backend provides stats, use those directly
-    if(!DEMO_MODE && REMOTE_STATS){
-      return REMOTE_STATS;
-    }
-
-    // Fallback: compute from loaded orders/drivers (demo or if stats API missing)
     computeDriverTotalsFromDB();
 
     const orders  = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
     const drivers = DEMO_MODE ? Object.values(DEMO_DRIVERS_DB) : Object.values(API_DRIVERS_MAP);
 
-    const totalOrders      = orders.length;
-    const deliveredOrders  = orders.filter(o=>o.status === 'delivered').length;
-    const pendingOrders    = orders.filter(o=>o.status === 'pending').length;
-    const inTransitOrders  = orders.filter(o=>o.status === 'in_transit').length;
-    const assignedOrders   = orders.filter(o=>o.status === 'assigned').length;
+    // Base from local/live orders
+    let totalOrders      = orders.length;
+    let totalRevenue     = orders.reduce((s,o)=> s + (o.total || 0), 0);
+    let deliveredOrders  = orders.filter(o=>o.status === 'delivered').length;
+    let pendingOrders    = orders.filter(o=>o.status === 'pending').length;
+    let inTransitOrders  = orders.filter(o=>o.status === 'in_transit').length;
+    let assignedOrders   = orders.filter(o=>o.status === 'assigned').length;
+    let deliveredRevenue = orders.filter(o=>o.status === 'delivered').reduce((s,o)=> s + (o.total || 0), 0);
+    let totalDeliveryFees= orders.reduce((s,o)=> s + (o.delivery_fee || 0), 0);
+    let activeDrivers    = drivers.length;
 
-    const totalRevenue     = orders.reduce((s,o)=> s + (o.total || 0), 0);
-    const deliveredRevenue = orders.filter(o=>o.status === 'delivered').reduce((s,o)=> s + (o.total || 0), 0);
-    const totalDeliveryFees= orders.reduce((s,o)=> s + (o.delivery_fee || 0), 0);
+    // Merge in remote overview if present
+    if(!DEMO_MODE && REMOTE_STATS){
+      if(Number.isFinite(REMOTE_STATS.total_orders)) totalOrders = REMOTE_STATS.total_orders;
+      if(Number.isFinite(REMOTE_STATS.revenue))      totalRevenue = REMOTE_STATS.revenue;
+      if(Number.isFinite(REMOTE_STATS.delivered_orders)) deliveredOrders = REMOTE_STATS.delivered_orders;
+      if(Number.isFinite(REMOTE_STATS.pending_orders))   pendingOrders = REMOTE_STATS.pending_orders;
+      if(Number.isFinite(REMOTE_STATS.in_transit_orders)) inTransitOrders = REMOTE_STATS.in_transit_orders;
+      if(Number.isFinite(REMOTE_STATS.assigned_orders))   assignedOrders = REMOTE_STATS.assigned_orders;
+      if(Number.isFinite(REMOTE_STATS.delivered_revenue)) deliveredRevenue = REMOTE_STATS.delivered_revenue;
+      if(Number.isFinite(REMOTE_STATS.delivery_fees))     totalDeliveryFees = REMOTE_STATS.delivery_fees;
+      if(Number.isFinite(REMOTE_STATS.drivers))           activeDrivers = REMOTE_STATS.drivers;
+    }
 
     const avgOrderValue  = totalOrders ? Math.round(totalRevenue / totalOrders) : 0;
     const avgDeliveryFee = totalOrders ? Math.round(totalDeliveryFees / totalOrders) : 0;
 
-    const activeDrivers    = drivers.length;
-    const ordersWithDriver = orders.filter(o=>o.driver_id).length;
+    const ordersWithDriver = orders.filter(o => o.driver_id || o.assigned_driver_id).length;
     const driverAttachRate = totalOrders ? Math.round((ordersWithDriver / totalOrders) * 100) : 0;
 
     const rushOrders   = orders.filter(o=>o.meta && o.meta.rush).length;
@@ -2137,19 +2146,30 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
-  // === RENDER ORDERS =========================================================
+  // === ORDER ROW RENDERING ===================================================
+  function salesSafe(str){
+    return (str || '').toString().replace(/[<>&]/g, c => (
+      c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'
+    ));
+  }
+
   async function renderOrders(){
     if(!ordersList) return;
 
+    // by driver tab: ordersTab = "by_driver:<driverKey>"
     if((ordersTab||'').startsWith('by_driver:')){
       const did = ordersTab.split(':',2)[1];
-      const data = (DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP))
-        .filter(o => o.driver_id === did);
+      const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
+      const data = src.filter(o => {
+        const assigned = o.assigned_driver_id || o.driver_id;
+        return assigned === did;
+      });
+
       currentOrdersByTab[ordersTab] = data;
 
       ordersList.innerHTML = data.length
         ? ''
-        : `<div class="text-sm text-slate-500 p-4">No orders for ${did}.</div>`;
+        : `<div class="text-sm text-slate-500 p-4">No orders for that driver.</div>`;
 
       for(const o of data){
         ordersList.appendChild(buildOrderRow(o));
@@ -2185,10 +2205,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ? ` • Fraud: ${Number(o.fraud_score).toFixed(2)}`
       : "";
 
-    const driverMaps = DEMO_MODE ? DEMO_DRIVERS_DB : API_DRIVERS_MAP;
-    const driverName = (o.driver_id && driverMaps[o.driver_id])
-      ? driverMaps[o.driver_id].name
-      : '—';
+    const driverMaps = DEMO_MODE ? DEMO_DRIVERS_MAP : API_DRIVERS_MAP;
+    const driverKey  = o.assigned_driver_id || o.driver_id || null;
+    let driverName   = '—';
+
+    if(driverKey && driverMaps[driverKey]){
+      driverName = driverMaps[driverKey].name || driverMaps[driverKey].driver_id || driverKey;
+    } else if(o.driver_id && driverMaps[o.driver_id]){
+      driverName = driverMaps[o.driver_id].name || o.driver_id;
+    }
 
     let driverPayText = "Driver pay: R0";
     let driverPayStatusText = "Status: –";
@@ -2212,13 +2237,13 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     row.innerHTML = `
       <div class="flex-1 min-w-0">
         <div class="font-medium flex flex-wrap items-center gap-1">
-          <span>Ref ${refDisplay}</span>
+          <span>Ref ${salesSafe(refDisplay)}</span>
           <span>• Total R${o.total}</span>
           ${kmText}
         </div>
-        <div class="text-xs text-slate-500 break-words">${itemsText}</div>
+        <div class="text-xs text-slate-500 break-words">${salesSafe(itemsText)}</div>
         <div class="text-xs text-slate-500">
-          Status: <b>${o.status}</b> • Driver: ${driverName}${fraudDisplay}
+          Status: <b>${salesSafe(o.status || '')}</b> • Driver: ${salesSafe(driverName)}${fraudDisplay}
         </div>
         <div class="text-[11px] leading-snug text-slate-500 mt-1">
           ${driverPayText} • ${driverPayStatusText}
@@ -2270,33 +2295,67 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   }
 
-  function computeDriverDerived(driverId){
+  // === DRIVER METRICS & RENDERING ===========================================
+  function computeDriverDerived(driverKey){
     const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
-    const mine = Object.values(source).filter(o => o.driver_id === driverId);
-    const delivered = mine.filter(o => o.status === 'delivered');
-    const deliveredRevenue = delivered.reduce((s,o)=> s + (o.total||0), 0);
-    const avgFee = delivered.length
-      ? Math.round(delivered.reduce((s,o)=> s + (o.delivery_fee||0), 0) / delivered.length)
-      : 0;
-    const lastDeliveries = delivered
-      .slice(-3)
-      .map(o => o.order_public_id || o.order_id || o._internal_id || '—');
-    return { deliveredRevenue: Math.round(deliveredRevenue), avgFee, lastDeliveries };
+    const mine = Object.values(source).filter(o => {
+      const assigned = o.assigned_driver_id || o.driver_id;
+      return assigned === driverKey;
+    });
+
+    let assigned = 0, in_transit = 0, delivered = 0;
+    let pendingPay = 0, approvedPay = 0;
+    let deliveredRevenue = 0;
+    let totalFee = 0, feeCount = 0;
+    const deliveredRefs = [];
+
+    mine.forEach(o=>{
+      if(o.status === 'assigned')   assigned++;
+      if(o.status === 'in_transit') in_transit++;
+      if(o.status === 'delivered'){
+        delivered++;
+        deliveredRevenue += (o.total || 0);
+        deliveredRefs.push(o.order_public_id || o.order_id || o._internal_id || '—');
+      }
+      if(Number.isFinite(o.delivery_fee)){
+        totalFee += o.delivery_fee;
+        feeCount++;
+      }
+      if(o.driver_pay_status === 'pending')  pendingPay  += (o.driver_pay_pending  || 0);
+      if(o.driver_pay_status === 'approved') approvedPay += (o.driver_pay_approved || 0);
+    });
+
+    const avgFee = feeCount ? Math.round(totalFee / feeCount) : 0;
+    const lastDeliveries = deliveredRefs.slice(-3);
+
+    return {
+      assigned,
+      in_transit,
+      delivered,
+      pendingPay: Math.round(pendingPay),
+      approvedPay: Math.round(approvedPay),
+      deliveredRevenue: Math.round(deliveredRevenue),
+      avgFee,
+      lastDeliveries
+    };
   }
 
   function renderDrivers(){
     if(!driversList) return;
 
-    const drivers = DEMO_MODE ? Object.values(DEMO_DRIVERS_DB) : Object.values(API_DRIVERS_MAP);
+    const pairs = DEMO_MODE
+      ? Object.entries(DEMO_DRIVERS_DB)
+      : Object.entries(API_DRIVERS_MAP);
 
     driversList.innerHTML = '';
-    if(drivers.length===0){
+    if(pairs.length===0){
       driversList.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
       return;
     }
 
-    for(const dr of drivers){
-      const computed = computeDriverDerived(dr.driver_id);
+    for(const [driverKey, dr] of pairs){
+      const stats = computeDriverDerived(driverKey);
+      const labelId = dr.driver_id || driverKey;
       const row = document.createElement('div');
       row.className = 'p-3 flex flex-col gap-2';
 
@@ -2304,26 +2363,26 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         <div class="yt-driver-card">
           <div class="min-w-0">
             <div class="font-medium flex flex-wrap items-center gap-2">
-              <span>#${dr.driver_id}</span>
-              <span>• ${dr.name}</span>
-              <span class="text-slate-500">(${dr.vehicle || 'Vehicle'})</span>
-              <span class="text-[11px] text-slate-500">WhatsApp: ${dr.phone || '—'}</span>
+              <span>#${salesSafe(labelId)}</span>
+              <span>• ${salesSafe(dr.name || '')}</span>
+              <span class="text-slate-500">(${salesSafe(dr.vehicle || 'Vehicle')})</span>
+              <span class="text-[11px] text-slate-500">WhatsApp: ${salesSafe(dr.phone || '—')}</span>
             </div>
             <div class="text-xs text-slate-500">
-              Assigned: <b>${dr.stats?.assigned || 0}</b> • In transit: <b>${dr.stats?.in_transit || 0}</b> • Delivered: <b>${dr.stats?.delivered || 0}</b>
+              Assigned: <b>${stats.assigned}</b> • In transit: <b>${stats.in_transit}</b> • Delivered: <b>${stats.delivered}</b>
             </div>
             <div class="text-xs text-slate-500">
-              Pending pay: <b>R${dr.payout_pending || 0}</b> • Approved pay: <b>R${dr.payout_approved || 0}</b> •
-              Delivered total (R): <b>${computed.deliveredRevenue}</b> • Avg fee: <b>R${computed.avgFee}</b>
+              Pending pay: <b>R${stats.pendingPay}</b> • Approved pay: <b>R${stats.approvedPay}</b> •
+              Delivered total (R): <b>${stats.deliveredRevenue}</b> • Avg fee: <b>R${stats.avgFee}</b>
             </div>
           </div>
           <div class="yt-actions">
             <button class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-                    data-id="${dr.driver_id}">
+                    data-id="${salesSafe(driverKey)}">
               View Orders
             </button>
             <button class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-                    data-id="${dr.driver_id}">
+                    data-id="${salesSafe(driverKey)}">
               Approve All Pay
             </button>
             <a class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
@@ -2333,9 +2392,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           </div>
         </div>
         ${
-          computed.lastDeliveries.length
+          stats.lastDeliveries.length
             ? `<div class="text-[11px] text-slate-500 leading-snug">
-                 Recent delivered refs: ${computed.lastDeliveries.map(x=>`<code>${x}</code>`).join(', ')}
+                 Recent delivered refs: ${stats.lastDeliveries.map(x=>`<code>${salesSafe(x)}</code>`).join(', ')}
                </div>`
             : ''
         }
@@ -2351,7 +2410,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         if (DEMO_MODE){
           let count = 0;
           Object.values(DEMO_ORDERS_DB).forEach(o=>{
-            if(o.driver_id===did && o.driver_pay_status==='pending'){
+            const assigned = o.assigned_driver_id || o.driver_id;
+            if(assigned===did && o.driver_pay_status==='pending'){
               const amount = o.driver_pay_pending || 0;
               o.driver_pay_status = 'approved';
               o.driver_pay_approved = amount;
@@ -2362,20 +2422,20 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           saveOrdersToLS();
           hydrateState();
           renderDrivers(); renderOrders(); renderStats();
-          alert(count ? `Approved ${count} payout(s) for ${did}.` : `No pending payouts for ${did}.`);
+          alert(count ? `Approved ${count} payout(s) for driver.` : `No pending payouts.`);
           return;
         }
 
         try{
-          const res = await fetch(`${BASE_API}/drivers/${encodeURIComponent(did)}/approve-payouts`, {
+          const res = await fetch(`${BASE_API}/drivers/${encodeURIComponent(did)}/approve-all-pay`, {
             method: 'POST',
             headers: {'Content-Type':'application/json'}
           });
           const data = await res.json().catch(()=>({}));
           if(res.ok && data && data.ok){
-            alert(`Approved payouts for ${did}`);
+            alert(`Approved payouts for driver.`);
           } else {
-            alert('Server did not approve payouts (implement /drivers/:id/approve-payouts on API).');
+            alert('Server did not approve payouts.');
           }
         }catch(err){
           console.error('approve payouts err', err);
@@ -2466,7 +2526,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       for(let i=0;i<count;i++){
         const r    = 0.01 + Math.random()*0.02;
         const ang0 = Math.random()*Math.PI*2;
-        const spd  = 0.10 + Math.random()*0.15; // 🐢 slower
+        const spd  = 0.10 + Math.random()*0.15; // slower
         const m    = L.marker(
           [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
           { icon:carIcon() }
@@ -2517,7 +2577,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       const { lensKm } = cumulativeLengths(latlngs);
       for(let i=0;i<3;i++){
         const m = L.marker(latlngs[0], {icon:carIcon()}).addTo(heroMap);
-        movers.push({ m, latlngs, lensKm, t: Math.random(), speed: 0.05 + Math.random()*0.03, dir: 1 }); // 🐢 slower
+        movers.push({ m, latlngs, lensKm, t: Math.random(), speed: 0.05 + Math.random()*0.03, dir: 1 });
       }
 
       spawnLocalTraffic(DELIVERY_COORDS, 3);
@@ -2583,7 +2643,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
                 latlngs,
                 lensKm,
                 t: Math.random(),
-                speed: 0.03 + Math.random()*0.02, // 🐢 slower background cars
+                speed: 0.03 + Math.random()*0.02,
                 dir: Math.random()<0.5 ? 1 : -1
               });
             }
@@ -2599,7 +2659,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             o.m.setLatLng([lat,lng]);
           });
           localCars.forEach(lc=>{
-            lc.ang += lc.spd * 0.0015; // 🐢 slower orbit
+            lc.ang += lc.spd * 0.0015;
             const lat = lc.cx + lc.r*Math.sin(lc.ang);
             const lng = lc.cy + lc.r*Math.cos(lc.ang);
             lc.m.setLatLng([lat,lng]);
@@ -2615,7 +2675,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           try { heroMap.invalidateSize(); } catch(_){}
         });
 
-        // Driver signup → drop car near depot
+        // Driver signup → drop car near depot and send to API
         formSignup?.addEventListener('submit', async e=>{
           e.preventDefault();
           const name    = document.getElementById('drvName')?.value.trim();
@@ -2677,7 +2737,7 @@ Vehicle: ${vehicle}`;
     })();
   })();
 
-  // === DRIVER LOGIN → DASH (still demo) =====================================
+  // === DRIVER LOGIN → DASH (demo-ish) =======================================
   formLogin?.addEventListener('submit',e=>{
     e.preventDefault();
     alert('Logged in (demo). Opening dashboard.');
@@ -2912,13 +2972,21 @@ Vehicle: ${vehicle}`;
 
   // === FINAL INIT ===========================================================
   renderStoreItems();
-  computeDriverTotalsFromDB();
-  renderDrivers();
-  ensureAdminTabs();
-  setActiveAdminTab(ordersTab);
-  renderStats();
+  if (DEMO_MODE) {
+    computeDriverTotalsFromDB();
+    renderDrivers();
+    ensureAdminTabs();
+    setActiveAdminTab(ordersTab);
+    renderStats();
+  } else {
+    refreshAllData().then(()=>{
+      ensureAdminTabs();
+      setActiveAdminTab(ordersTab);
+    });
+  }
 });
 </script>
+
 
 </body>
 </html>
