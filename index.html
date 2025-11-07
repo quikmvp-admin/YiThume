@@ -928,7 +928,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
 
-  // Flip this to false to use your Flask API (LIVE)
+  // Flip this to true for local/demo mode (uses localStorage instead of your API)
   const DEMO_MODE       = false;
 
   // Delivery math
@@ -1008,8 +1008,8 @@ window.addEventListener('DOMContentLoaded', () => {
   let botStage = 0;
 
   const currentOrdersByTab = {};
-  let ALL_ORDERS_MAP = {};   // in LIVE, aggregate across statuses
-  let API_DRIVERS_MAP = {};  // LIVE driver cache
+  let ALL_ORDERS_MAP = {};   // LIVE: aggregate across statuses
+  let API_DRIVERS_MAP = {};  // LIVE: driver cache
 
   // Positions
   let DELIVERY_COORDS   = null;
@@ -1430,7 +1430,10 @@ window.addEventListener('DOMContentLoaded', () => {
   const openStore = ()=> openFlex(storeModal);
   const closeStore= ()=> closeFlex(storeModal);
 
+  let ordersTab = 'pending';
+
   const openOrders = ()=>{
+    if(!ordersPanel) return;
     openFlex(ordersPanel);
     ensureAdminTabs();
     setActiveAdminTab(ordersTab);
@@ -1492,7 +1495,7 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('openDriverModal')?.click();
   });
   document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{
-    document.getElementById('adminLoginBtn')?.click();
+    adminBtn?.click();
   });
   document.getElementById('openDriverModalSection')?.addEventListener('click', ()=>{
     document.getElementById('openDriverModal')?.click();
@@ -1541,7 +1544,7 @@ window.addEventListener('DOMContentLoaded', () => {
     computeTotal().then(s=>toggleDepositBanner(s.total));
   });
 
-  // === MODAL CLOSE WIRING ====================================================
+  // === MODAL / ADMIN BTN WIRING ==============================================
   document.getElementById('closeBot')?.addEventListener('click', closeBot);
   closeBtn?.addEventListener('click', closeOrder);
   cancelOrderBuilder?.addEventListener('click', closeOrder);
@@ -1549,6 +1552,16 @@ window.addEventListener('DOMContentLoaded', () => {
   btnCancelPay?.addEventListener('click', closePayModal);
   closeDriver?.addEventListener('click', closeDriverWindow);
   closeDriverDash?.addEventListener('click', closeDriverDashWindow);
+  ordersClose?.addEventListener('click', closeOrders);
+
+  // 🔐 ADMIN BUTTON → OPEN ADMIN PANEL
+  adminBtn?.addEventListener('click', (e)=>{
+    e.preventDefault();
+    openOrders();
+  });
+
+  // Also handle custom event triggers
+  window.addEventListener('yt-open-orders', openOrders);
 
   // Demo “payment”
   btnFakePayNow?.addEventListener('click', ()=>{
@@ -1672,11 +1685,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     renderStoreItems();
   });
 
-  // === ADMIN PANEL: EVENTS ===================================================
-  ordersClose?.addEventListener('click', closeOrders);
-  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', () => { adminBtn?.click(); });
-
-  window.addEventListener('yt-open-orders', openOrders);
+  // === ADMIN PANEL LISTENERS =================================================
   window.addEventListener('yt-orders-updated', ()=>{
     if(ordersPanel && !ordersPanel.classList.contains('hidden')) {
       renderOrders();
@@ -1684,8 +1693,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       renderStats();
     }
   });
-
-  let ordersTab = 'pending';
 
   // === LIVE FETCH HELPERS ====================================================
   async function fetchOrdersByStatus(status){
@@ -2120,9 +2127,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
-    // Normal statuses
-    const data = DEMO_MODE ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status===ordersTab)
-                           : await fetchOrdersByStatus(ordersTab);
+    const data = DEMO_MODE
+      ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status===ordersTab)
+      : await fetchOrdersByStatus(ordersTab);
+
     currentOrdersByTab[ordersTab] = data;
 
     ordersList.innerHTML = data.length
@@ -2137,7 +2145,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   function buildOrderRow(o){
     const itemsText = (o.items || []).map(i=>`${i.name} x${i.qty}`).join(', ');
-
     const internalId  = o._internal_id || o.internal_id || null;
     const refDisplay  = o.order_public_id || o.order_id || internalId || "REF?";
     const kmText      = (o.meta && Number.isFinite(o.meta.distance_km))
@@ -2881,6 +2888,7 @@ Vehicle: ${vehicle}`;
   renderStats();
 });
 </script>
+
 
 </body>
 </html>
