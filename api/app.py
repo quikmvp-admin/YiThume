@@ -45,7 +45,7 @@ WEBHOOK_HMAC_SECRET = os.environ.get("WEBHOOK_HMAC_SECRET", "").strip()
 
 # Basic rate limits (tune as needed)
 RATE_LIMIT_PER_PHONE_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_PHONE_PER_MIN", "12"))   # 12 requests/min
-RATE_LIMIT_PER_IP_PER_MIN    = int(os.environ.get("RATE_LIMIT_PER_IP_PER_MIN", "60"))     # 60 requests/min
+RATE_LIMIT_PER_IP_PER_MIN    = int(os.environ.get("RATE_LIMIT_PER_IP_PER_MIN", "60"))      # 60 requests/min
 
 # Idempotency TTL for POST writes (seconds)
 IDEMPOTENCY_TTL_SEC = int(os.environ.get("IDEMPOTENCY_TTL_SEC", "3600"))
@@ -55,13 +55,16 @@ USSD_SERVICE_LABEL = os.environ.get("USSD_SERVICE_LABEL", "YiThume-USSD")
 
 mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
 
+
 def get_db():
     mongo_client.admin.command("ping")
     return mongo_client[DB_NAME]
 
+
 def get_fs(db=None) -> GridFS:
     db = db or get_db()
     return GridFS(db)
+
 
 # -------------------------------------------------
 # CONFIG / CONSTANTS
@@ -94,12 +97,15 @@ CORS(app)
 def _now_dt():
     return datetime.utcnow()
 
+
 def _now_iso():
     return _now_dt().isoformat() + "Z"
+
 
 def make_order_public_id():
     ts = datetime.utcnow().strftime("%Y%m%d")
     return f"YI-{ts}-{str(uuid.uuid4())[:6].upper()}"
+
 
 def safe_doc(doc):
     if not doc:
@@ -133,8 +139,10 @@ def safe_doc(doc):
         out["auth"] = red
     return out
 
+
 def phone_ok(p):
     return bool(re.fullmatch(r"\d{10,15}", str(p or "").strip()))
+
 
 def inside_service_area(lat, lng):
     if lat is None or lng is None:
@@ -142,14 +150,16 @@ def inside_service_area(lat, lng):
     bb = SERVICE_BBOX
     return (bb["min_lat"] <= lat <= bb["max_lat"] and bb["min_lng"] <= lng <= bb["max_lng"])
 
+
 def haversine_km(lat1, lon1, lat2, lon2):
     if None in (lat1, lon1, lat2, lon2):
         return None
     r = 6371.0
     dlat = radians(lat2 - lat1)
-    dlon = radians(lat2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
     return 2 * r * asin(sqrt(a))
+
 
 def ensure_indexes(db):
     db.orders.create_index([("created_at", DESCENDING)])
@@ -182,52 +192,51 @@ def ensure_indexes(db):
     db.catalog.create_index([("active", ASCENDING), ("name", ASCENDING)])
     db.catalog.create_index([("category", ASCENDING), ("active", ASCENDING)])
 
+
 # --------- CATALOG SEEDER HELPERS (inline) ----------
 AUTO_SEED_CATALOG_ON_START = os.environ.get("AUTO_SEED_CATALOG_ON_START", "false").lower() == "true"
 
+
 def _catalog_seed_payload():
-    # Minimal sensible OTC mix for USSD menus: Pain Relief, Cold & Flu, Digestive, Vitamins, Hygiene, Baby Care, Women’s Health
+    # Minimal sensible OTC mix for USSD menus
     return [
         # Pain Relief
-        {"name":"Panado Tablets 500mg (24)","category":"Pain Relief","price":34.99,"sku":"PAN500-24"},
-        {"name":"Grand-Pa Powders (6)","category":"Pain Relief","price":39.99,"sku":"GPA-P6"},
-        {"name":"Nurofen 200mg (24)","category":"Pain Relief","price":79.99,"sku":"NUR-200-24"},
-        {"name":"Voltarin Gel 50g","category":"Pain Relief","price":109.99,"sku":"VLT-G50"},
+        {"name": "Panado Tablets 500mg (24)", "category": "Pain Relief", "price": 34.99, "sku": "PAN500-24"},
+        {"name": "Grand-Pa Powders (6)", "category": "Pain Relief", "price": 39.99, "sku": "GPA-P6"},
+        {"name": "Nurofen 200mg (24)", "category": "Pain Relief", "price": 79.99, "sku": "NUR-200-24"},
+        {"name": "Voltarin Gel 50g", "category": "Pain Relief", "price": 109.99, "sku": "VLT-G50"},
         # Cold & Flu
-        {"name":"Med-Lemon (6)","category":"Cold & Flu","price":39.99,"sku":"MDL-6"},
-        {"name":"ACC 200 Effervescent (10)","category":"Cold & Flu","price":89.99,"sku":"ACC-200-10"},
-        {"name":"Strepsils Honey & Lemon (16)","category":"Cold & Flu","price":54.99,"sku":"STR-HL-16"},
-        {"name":"Sinutab (10)","category":"Cold & Flu","price":94.99,"sku":"SNT-10"},
+        {"name": "Med-Lemon (6)", "category": "Cold & Flu", "price": 39.99, "sku": "MDL-6"},
+        {"name": "ACC 200 Effervescent (10)", "category": "Cold & Flu", "price": 89.99, "sku": "ACC-200-10"},
+        {"name": "Strepsils Honey & Lemon (16)", "category": "Cold & Flu", "price": 54.99, "sku": "STR-HL-16"},
+        {"name": "Sinutab (10)", "category": "Cold & Flu", "price": 94.99, "sku": "SNT-10"},
         # Digestive
-        {"name":"Gaviscon Liquid 150ml","category":"Digestive","price":84.99,"sku":"GAV-L150"},
-        {"name":"Buscopan (20)","category":"Digestive","price":79.99,"sku":"BUS-20"},
-        {"name":"Imodium (6)","category":"Digestive","price":64.99,"sku":"IMO-6"},
-        {"name":"Eno Sachets (6)","category":"Digestive","price":29.99,"sku":"ENO-6"},
+        {"name": "Gaviscon Liquid 150ml", "category": "Digestive", "price": 84.99, "sku": "GAV-L150"},
+        {"name": "Buscopan (20)", "category": "Digestive", "price": 79.99, "sku": "BUS-20"},
+        {"name": "Imodium (6)", "category": "Digestive", "price": 64.99, "sku": "IMO-6"},
+        {"name": "Eno Sachets (6)", "category": "Digestive", "price": 29.99, "sku": "ENO-6"},
         # Vitamins
-        {"name":"Vitamin C 1000mg (30)","category":"Vitamins","price":79.99,"sku":"VTC1000-30"},
-        {"name":"Multivitamin Adult (30)","category":"Vitamins","price":99.99,"sku":"MVA-30"},
-        {"name":"Zinc 15mg (30)","category":"Vitamins","price":69.99,"sku":"ZN15-30"},
+        {"name": "Vitamin C 1000mg (30)", "category": "Vitamins", "price": 79.99, "sku": "VTC1000-30"},
+        {"name": "Multivitamin Adult (30)", "category": "Vitamins", "price": 99.99, "sku": "MVA-30"},
+        {"name": "Zinc 15mg (30)", "category": "Vitamins", "price": 69.99, "sku": "ZN15-30"},
         # Hygiene
-        {"name":"Lifebuoy Soap 175g","category":"Hygiene","price":16.99,"sku":"LFB-175"},
-        {"name":"Colgate 100ml","category":"Hygiene","price":24.99,"sku":"COL-100"},
-        {"name":"Always Pads (8)","category":"Hygiene","price":29.99,"sku":"ALW-8"},
-        {"name":"Dove Roll-On 50ml","category":"Hygiene","price":29.99,"sku":"DOV-RO50"},
+        {"name": "Lifebuoy Soap 175g", "category": "Hygiene", "price": 16.99, "sku": "LFB-175"},
+        {"name": "Colgate 100ml", "category": "Hygiene", "price": 24.99, "sku": "COL-100"},
+        {"name": "Always Pads (8)", "category": "Hygiene", "price": 29.99, "sku": "ALW-8"},
+        {"name": "Dove Roll-On 50ml", "category": "Hygiene", "price": 29.99, "sku": "DOV-RO50"},
         # Baby Care
-        {"name":"Pampers Size 3 (21)","category":"Baby Care","price":129.99,"sku":"PMP-S3-21"},
-        {"name":"Baby Wipes (80)","category":"Baby Care","price":34.99,"sku":"BWP-80"},
-        {"name":"Barrier Cream 100g","category":"Baby Care","price":39.99,"sku":"BAR-100"},
-        {"name":"Panado Syrup 100ml","category":"Baby Care","price":39.99,"sku":"PAN-SYR-100"},
+        {"name": "Pampers Size 3 (21)", "category": "Baby Care", "price": 129.99, "sku": "PMP-S3-21"},
+        {"name": "Baby Wipes (80)", "category": "Baby Care", "price": 34.99, "sku": "BWP-80"},
+        {"name": "Barrier Cream 100g", "category": "Baby Care", "price": 39.99, "sku": "BAR-100"},
+        {"name": "Panado Syrup 100ml", "category": "Baby Care", "price": 39.99, "sku": "PAN-SYR-100"},
         # Women’s Health
-        {"name":"Canesten Cream 20g","category":"Women’s Health","price":119.99,"sku":"CAN-20"},
-        {"name":"UTI Test Strips (3)","category":"Women’s Health","price":59.99,"sku":"UTI-3"},
-        {"name":"Ibusor 400mg (20)","category":"Women’s Health","price":84.99,"sku":"IBU400-20"},
+        {"name": "Canesten Cream 20g", "category": "Women’s Health", "price": 119.99, "sku": "CAN-20"},
+        {"name": "UTI Test Strips (3)", "category": "Women’s Health", "price": 59.99, "sku": "UTI-3"},
+        {"name": "Ibusor 400mg (20)", "category": "Women’s Health", "price": 84.99, "sku": "IBU400-20"},
     ]
 
+
 def upsert_catalog_items(db, items):
-    """
-    Idempotent-ish: if name+category exists, update price/sku/active; else insert.
-    Returns counts.
-    """
     inserted = 0
     updated = 0
     for it in items:
@@ -255,10 +264,11 @@ def upsert_catalog_items(db, items):
             inserted += 1
     return inserted, updated
 
+
 def wa_order_text(order):
     items_list = ", ".join([f"{i.get('name')} x{i.get('qty')}" for i in order.get("items", [])])
     addr = order.get("customer", {}).get("address", {})
-    eta  = order.get("route", {}).get("eta_text", "TBC")
+    eta = order.get("route", {}).get("eta_text", "TBC")
     total = order.get("total", 0)
     collection = order.get("meta", {}).get("collection_name", "")
     pay_m = order.get("payment", {}).get("method", "card")
@@ -268,12 +278,13 @@ def wa_order_text(order):
         f"Items: {items_list}",
         f"Total: R{total}",
         f"Pickup: {collection}",
-        f"Address: {addr.get('line1','')}",
-        f"Status: Awaiting driver pickup.",
+        f"Address: {addr.get('line1', '')}",
+        "Status: Awaiting driver pickup.",
         f"Payment: {pay_m}",
         f"ETA: {eta}"
     ]
     return "\n".join(lines)
+
 
 def rule_based_fraud_score(db, order_doc):
     score = 0.0
@@ -316,6 +327,7 @@ def rule_based_fraud_score(db, order_doc):
 
     return min(score, 1.0), flags
 
+
 def find_available_driver(db, zone, drop_lat=None, drop_lng=None):
     q = {"active": True, "available": True}
     if zone:
@@ -339,9 +351,10 @@ def find_available_driver(db, zone, drop_lat=None, drop_lng=None):
             best_d = km
     return best or candidates[0]
 
+
 def cluster_key(order_doc):
-    addr  = ((order_doc.get("customer") or {}).get("address") or {})
-    zone  = (order_doc.get("meta") or {}).get("zone", "")
+    addr = ((order_doc.get("customer") or {}).get("address") or {})
+    zone = (order_doc.get("meta") or {}).get("zone", "")
     line1 = (addr.get("line1") or "").strip().lower()
     coarse = re.split(r"[,\s]+", line1)[0] if line1 else "unknown"
     now = _now_dt()
@@ -350,10 +363,11 @@ def cluster_key(order_doc):
     bucket_str = window_start.strftime("%Y%m%d%H%M")
     return f"{zone}:{coarse}:{bucket_str}"
 
+
 def compute_earnings(order_doc, prior_in_cluster=0):
     fee = float(order_doc.get("delivery_fee", 0))
     platform_cut = fee * PLATFORM_FEE_RATE
-    driver_cut   = fee - platform_cut
+    driver_cut = fee - platform_cut
 
     if prior_in_cluster > 0:
         bonus_pct = min(prior_in_cluster * BATCH_BONUS_PER_EXTRA, BATCH_BONUS_CAP)
@@ -365,8 +379,8 @@ def compute_earnings(order_doc, prior_in_cluster=0):
     margin = 0.0
     for it in items:
         price = float(it.get("price", 0))
-        qty   = int(it.get("qty", 1))
-        cost  = it.get("cost")
+        qty = int(it.get("qty", 1))
+        cost = it.get("cost")
         if cost is not None:
             margin += max(0.0, price - float(cost)) * qty
         else:
@@ -374,6 +388,7 @@ def compute_earnings(order_doc, prior_in_cluster=0):
 
     platform_total = platform_cut + margin
     return round(driver_cut, 2), round(platform_total, 2)
+
 
 def accrue_driver_earning(db, driver_internal_id, amount, reason, order_id):
     db.drivers.update_one(
@@ -389,6 +404,7 @@ def accrue_driver_earning(db, driver_internal_id, amount, reason, order_id):
         }
     )
 
+
 def log_zone_demand(db, zone, coords, phone):
     db.zone_demand.insert_one({
         "zone": zone,
@@ -396,6 +412,7 @@ def log_zone_demand(db, zone, coords, phone):
         "phone": phone,
         "coords": coords
     })
+
 
 def recent_zone_demand_snapshot(db):
     since = _now_dt() - timedelta(hours=24)
@@ -409,8 +426,10 @@ def recent_zone_demand_snapshot(db):
         out[z] = {"misses": row["count"]}
     return out
 
+
 def hash_pin(pin: str) -> str:
     return hashlib.sha256(str(pin).encode("utf-8")).hexdigest()
+
 
 def _pin_or_header_ok():
     # Header takes precedence
@@ -421,18 +440,22 @@ def _pin_or_header_ok():
     pin = request.args.get("admin_pin") or (request.json or {}).get("admin_pin")
     return bool(pin) and (pin == ADMIN_SECRET)
 
+
 def require_admin():
     return _pin_or_header_ok()
+
 
 # -------- NEW: Security helpers (IP/HMAC, rate limit, idempotency) --------
 def client_ip():
     # Works behind most proxies
     return (request.headers.get("X-Forwarded-For", request.remote_addr or "")).split(",")[0].strip()
 
+
 def ip_allowed():
     if not WEBHOOK_IP_ALLOWLIST:
         return True
     return client_ip() in WEBHOOK_IP_ALLOWLIST
+
 
 def verify_hmac_signature(raw_body: bytes) -> bool:
     if not WEBHOOK_HMAC_SECRET:
@@ -444,6 +467,7 @@ def verify_hmac_signature(raw_body: bytes) -> bool:
         return _hmac.compare_digest(mac, sig)
     except Exception:
         return False
+
 
 def rate_limit_touch(db, key: str, limit_per_min: int):
     # rolling 60s window
@@ -481,6 +505,7 @@ def rate_limit_touch(db, key: str, limit_per_min: int):
     )
     return True
 
+
 def idempotency_guard(db):
     """
     Prevents duplicate writes when the client retries.
@@ -500,64 +525,66 @@ def idempotency_guard(db):
     except mongo_errors.DuplicateKeyError:
         return key, True   # replay
 
-# --------- STATS HELPER FOR DASHBOARD / JS ----------
-def compute_stats_overview(db, days=90):
-    since = _now_dt() - timedelta(days=days)
+
+# -------- DASHBOARD STATS HELPER (for JS) -------------
+def compute_stats_overview(db, days: int = 90):
+    since = _now_dt() - timedelta(days=max(1, days))
+
     orders = list(db.orders.find({"created_at": {"$gte": since}}))
-
     total_orders = len(orders)
-    delivered_orders = 0
-    revenue = 0.0
-    status_counts = {}
-    top_products_map = {}
-    top_areas_map = {}
-    driver_earnings_total = 0.0
-    platform_earnings_total = 0.0
-    fraud_high_risk = 0
+    revenue = sum(float(o.get("total", 0)) for o in orders)
 
+    # top products
+    prod = {}
     for o in orders:
-        t = float(o.get("total") or 0.0)
-        revenue += t
-
-        st = o.get("status", "pending")
-        status_counts[st] = status_counts.get(st, 0) + 1
-        if st == "delivered":
-            delivered_orders += 1
-
-        if float(o.get("fraud_score") or 0.0) >= 0.75:
-            fraud_high_risk += 1
-
         for it in (o.get("items") or []):
             name = it.get("name")
             if not name:
                 continue
-            qty = int(it.get("qty") or 1)
-            top_products_map[name] = top_products_map.get(name, 0) + qty
+            qty = int(it.get("qty", 1))
+            prod[name] = prod.get(name, 0) + qty
+    top_products = sorted(prod.items(), key=lambda x: x[1], reverse=True)[:5]
 
-        area = (o.get("meta") or {}).get("collection_name") or "—"
-        top_areas_map[area] = top_areas_map.get(area, 0) + 1
+    # top areas by collection_name
+    areas = {}
+    for o in orders:
+        k = (o.get("meta") or {}).get("collection_name") or "—"
+        areas[k] = areas.get(k, 0) + 1
+    top_areas = sorted(areas.items(), key=lambda x: x[1], reverse=True)[:5]
 
-        stl = o.get("settlement") or {}
-        driver_earnings_total += float(stl.get("driver") or 0.0)
-        platform_earnings_total += float(stl.get("platform") or 0.0)
+    # driver aggregates
+    active_drivers = db.drivers.count_documents({"active": True})
+    total_drivers = db.drivers.estimated_document_count()
 
-    top_products = sorted(top_products_map.items(), key=lambda x: x[1], reverse=True)[:5]
-    top_areas = sorted(top_areas_map.items(), key=lambda x: x[1], reverse=True)[:5]
+    # delivered per driver
+    pipeline = [
+        {"$match": {"status": "delivered", "assigned_driver_id": {"$ne": None}}},
+        {"$group": {
+            "_id": "$assigned_driver_id",
+            "deliveries": {"$sum": 1},
+            "total_driver_pay": {"$sum": {"$ifNull": ["$settlement.driver", 0]}}
+        }},
+        {"$sort": {"deliveries": -1}}
+    ]
+    per_driver = list(db.orders.aggregate(pipeline))
 
     return {
         "total_orders": total_orders,
-        "delivered_orders": delivered_orders,
         "revenue": round(revenue, 2),
-        "order_status_breakdown": [
-            {"status": k, "count": v} for k, v in sorted(status_counts.items(), key=lambda x: x[0])
-        ],
         "top_products": [{"name": k, "count": v} for k, v in top_products],
         "top_areas": [{"name": k, "count": v} for k, v in top_areas],
-        "driver_earnings_total": round(driver_earnings_total, 2),
-        "platform_earnings_total": round(platform_earnings_total, 2),
-        "fraud_high_risk_orders": fraud_high_risk,
-        "zone_demand_snapshot": recent_zone_demand_snapshot(db),
+        "drivers_active": active_drivers,
+        "drivers_total": total_drivers,
+        "drivers_ranked": [
+            {
+                "driver_internal_id": row["_id"],
+                "deliveries": row["deliveries"],
+                "total_driver_pay": round(row["total_driver_pay"], 2)
+            }
+            for row in per_driver
+        ]
     }
+
 
 # init indexes once per cold start (and optional auto-seed)
 try:
@@ -585,9 +612,7 @@ def health():
             "build_info": {"built_at": BUILD_TS},
             "now_utc": _now_iso(),
             "orders_count": db.orders.estimated_document_count(),
-            "drivers_count": db.drivers.count_documents({}),
-            "drivers_active": db.drivers.count_documents({"active": True}),
-            "drivers_available": db.drivers.count_documents({"active": True, "available": True}),
+            "drivers_count": db.drivers.count_documents({"active": True}),
             "stores_count": db.stores.estimated_document_count()
         }), 200
     except Exception as e:
@@ -599,6 +624,7 @@ def health():
             "error": str(e)
         }), 200
 
+
 # ---------------- CREATE ORDER -------------------
 @app.route("/orders", methods=["POST"])
 @app.route("/api/app/orders", methods=["POST"])
@@ -606,7 +632,7 @@ def create_order():
     data = request.json or {}
 
     internal_id = str(uuid.uuid4())
-    public_id   = make_order_public_id()
+    public_id = make_order_public_id()
 
     order_doc = {
         "_internal_id": internal_id,
@@ -658,7 +684,7 @@ def create_order():
 
     try:
         db = get_db()
-        zone   = (order_doc["meta"] or {}).get("zone")
+        zone = (order_doc["meta"] or {}).get("zone")
         coords = (((order_doc.get("customer") or {}).get("address") or {}).get("coords") or {})
         candidate_driver = find_available_driver(
             db, zone, coords.get("lat"), coords.get("lng")
@@ -682,7 +708,7 @@ def create_order():
 
         # pre-compute initial driver payout baseline (will be finalized on delivery)
         order_doc["driver_pay_pending"] = round(min(max(order_doc["delivery_fee"], 25), 45), 2)
-        order_doc["driver_pay_status"]  = "pending"
+        order_doc["driver_pay_status"] = "pending"
 
         db.orders.insert_one(order_doc)
 
@@ -706,12 +732,13 @@ def create_order():
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
+
 # ---------------- LIST ORDERS (ADMIN/OP) -------
 @app.route("/orders", methods=["GET"])
 @app.route("/api/app/orders", methods=["GET"])
 def list_orders():
     status = request.args.get("status")
-    limit  = max(1, min(int(request.args.get("limit", "100")), 500))
+    limit = max(1, min(int(request.args.get("limit", "100")), 500))
     q = {"status": status} if status else {}
 
     try:
@@ -725,75 +752,58 @@ def list_orders():
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e), "orders": []}), 500
 
-# ---------------- ADMIN STATS (for dashboard / JS) ---
+
+# ---------------- ADMIN STATS (for dashboard) ---
 @app.route("/stats/overview", methods=["GET"])
 @app.route("/api/app/stats/overview", methods=["GET"])
+@app.route("/api/stats", methods=["GET"])  # alias for JS frontends
 def stats_overview():
     try:
         db = get_db()
         days = int(request.args.get("days", "90"))
-        data = compute_stats_overview(db, days)
-        data["drivers_total"] = db.drivers.estimated_document_count()
-        data["drivers_active"] = db.drivers.count_documents({"active": True})
-        data["drivers_available"] = db.drivers.count_documents({"active": True, "available": True})
-        return jsonify({"ok": True, **data}), 200
+        stats = compute_stats_overview(db, days)
+        return jsonify({"ok": True, **stats}), 200
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
-# -------- COMBINED DASHBOARD: STATS + DRIVERS (for JS) ----
+
+# ---------------- DASHBOARD COMBINED (stats + drivers) ---
 @app.route("/dashboard", methods=["GET"])
 @app.route("/api/app/dashboard", methods=["GET"])
+@app.route("/api/dashboard", methods=["GET"])
 def dashboard():
     """
-    Returns full stats + all drivers (with per-driver stats) for frontend dashboards.
+    Combined endpoint intended for your JS admin dashboard.
+    Returns stats plus active driver list and per-driver metrics.
     """
     try:
         db = get_db()
         days = int(request.args.get("days", "90"))
         stats = compute_stats_overview(db, days)
-        stats["drivers_total"] = db.drivers.estimated_document_count()
-        stats["drivers_active"] = db.drivers.count_documents({"active": True})
-        stats["drivers_available"] = db.drivers.count_documents({"active": True, "available": True})
 
-        drivers = list(db.drivers.find({}))
-        driver_ids = [d["_internal_id"] for d in drivers]
+        # active drivers list
+        drivers_cur = db.drivers.find({"active": True})
+        drivers = [safe_doc(d) for d in drivers_cur]
 
-        agg_map = {}
-        if driver_ids:
-            pipe = [
-                {"$match": {"assigned_driver_id": {"$in": driver_ids}}},
-                {"$group": {
-                    "_id": "$assigned_driver_id",
-                    "orders_total": {"$sum": 1},
-                    "orders_delivered": {
-                        "$sum": {
-                            "$cond": [{"$eq": ["$status", "delivered"]}, 1, 0]
-                        }
-                    },
-                    "earnings_total": {
-                        "$sum": {"$ifNull": ["$settlement.driver", 0]}
-                    }
-                }}
-            ]
-            for row in db.orders.aggregate(pipe):
-                agg_map[row["_id"]] = row
+        # attach simple aggregate metrics to each driver (deliveries + earnings)
+        aggregates = {d["driver_internal_id"]: d for d in stats["drivers_ranked"]}
+        # but drivers_ranked uses driver_internal_id = assigned_driver_id (_internal_id)
+        agg_map = {row["driver_internal_id"]: row for row in stats["drivers_ranked"]}
 
-        drivers_out = []
         for d in drivers:
-            base = safe_doc(d)
-            s = agg_map.get(d["_internal_id"], {})
-            base["stats"] = {
-                "orders_total": int(s.get("orders_total", 0)),
-                "orders_delivered": int(s.get("orders_delivered", 0)),
-                "earnings_total": round(float(s.get("earnings_total", 0.0)), 2),
-            }
-            drivers_out.append(base)
+            did = d.get("_internal_id") or d.get("driver_id") or d.get("id")
+            row = agg_map.get(did, {})
+            d["deliveries"] = row.get("deliveries", 0)
+            d["total_driver_pay"] = row.get("total_driver_pay", 0.0)
 
-        return jsonify({"ok": True, "stats": stats, "drivers": drivers_out}), 200
-    except mongo_errors.PyMongoError as e:
-        return jsonify({"ok": False, "error": "db_read_failed", "details": str(e)}), 500
+        return jsonify({
+            "ok": True,
+            "stats": stats,
+            "drivers": drivers
+        }), 200
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 # ---------------- MARK PAID (ADMIN) ------------
 @app.route("/orders/<oid>/mark-paid", methods=["POST"])
@@ -814,6 +824,7 @@ def mark_paid(oid):
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 # ---------------- SIMULATE PAYMENT -------------
 @app.route("/simulate_payment", methods=["POST"])
@@ -836,7 +847,6 @@ def simulate_payment():
         o["payment"]["status"] = "paid"
         db.orders.update_one(q, {"$set": {"payment": o["payment"]}})
 
-        # Simulate outbound WA
         msg = wa_order_text(o)
         db.whatsapp_log.insert_one({
             "direction": "outbound",
@@ -851,6 +861,7 @@ def simulate_payment():
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 # ---------------- AUTO-ASSIGN DRIVER ----------
 @app.route("/orders/<oid>/auto-assign", methods=["POST"])
@@ -884,6 +895,7 @@ def auto_assign(oid):
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
+
 # ---------------- MANUAL ASSIGN DRIVER --------
 @app.route("/orders/<oid>/assign", methods=["POST"])
 @app.route("/api/app/orders/<oid>/assign", methods=["POST"])
@@ -914,6 +926,7 @@ def assign_driver(oid):
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 # ---------------- UPDATE ORDER STATUS ---------
 @app.route("/orders/<oid>/status", methods=["POST"])
@@ -982,6 +995,7 @@ def update_status(oid):
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
+
 # ---------------- BULK AUTO-ASSIGN (ADMIN) ----
 @app.route("/orders/auto-assign-all", methods=["POST"])
 @app.route("/api/app/orders/auto-assign-all", methods=["POST"])
@@ -1015,6 +1029,7 @@ def auto_assign_all():
         return jsonify({"ok": True, "results": results}), 200
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 # ---------------- DRIVERS ----------------------
 @app.route("/drivers", methods=["POST"])
@@ -1059,63 +1074,20 @@ def create_driver():
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
+
 @app.route("/drivers", methods=["GET"])
 @app.route("/api/app/drivers", methods=["GET"])
+@app.route("/api/drivers", methods=["GET"])  # alias for JS
 def list_drivers():
-    """
-    List drivers. For JS dashboards:
-      - ?active=true   -> only active drivers
-      - ?with_stats=false -> skip per-driver stats
-    Default: all drivers with per-driver stats.
-    """
-    active_only = request.args.get("active", "false").lower() == "true"
-    with_stats = request.args.get("with_stats", "true").lower() == "true"
-
     try:
         db = get_db()
-        q = {"active": True} if active_only else {}
-        drivers = list(db.drivers.find(q))
-
-        if not with_stats or not drivers:
-            return jsonify({"ok": True, "drivers": [safe_doc(d) for d in drivers]}), 200
-
-        driver_ids = [d["_internal_id"] for d in drivers]
-        agg_map = {}
-        if driver_ids:
-            pipe = [
-                {"$match": {"assigned_driver_id": {"$in": driver_ids}}},
-                {"$group": {
-                    "_id": "$assigned_driver_id",
-                    "orders_total": {"$sum": 1},
-                    "orders_delivered": {
-                        "$sum": {
-                            "$cond": [{"$eq": ["$status", "delivered"]}, 1, 0]
-                        }
-                    },
-                    "earnings_total": {
-                        "$sum": {"$ifNull": ["$settlement.driver", 0]}
-                    }
-                }}
-            ]
-            for row in db.orders.aggregate(pipe):
-                agg_map[row["_id"]] = row
-
-        drivers_out = []
-        for d in drivers:
-            base = safe_doc(d)
-            s = agg_map.get(d["_internal_id"], {})
-            base["stats"] = {
-                "orders_total": int(s.get("orders_total", 0)),
-                "orders_delivered": int(s.get("orders_delivered", 0)),
-                "earnings_total": round(float(s.get("earnings_total", 0.0)), 2),
-            }
-            drivers_out.append(base)
-
-        return jsonify({"ok": True, "drivers": drivers_out}), 200
+        cur = db.drivers.find({"active": True})
+        return jsonify({"ok": True, "drivers": [safe_doc(d) for d in cur]}), 200
     except mongo_errors.PyMongoError as e:
         return jsonify({"ok": False, "error": "db_read_failed", "details": str(e), "drivers": []}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e), "drivers": []}), 500
+
 
 @app.route("/drivers/<driver_id>", methods=["GET"])
 @app.route("/api/app/drivers/<driver_id>", methods=["GET"])
@@ -1125,35 +1097,12 @@ def get_driver(driver_id):
         d = db.drivers.find_one({"_internal_id": driver_id})
         if not d:
             return jsonify({"ok": False, "error": "driver_not_found"}), 404
-
-        # attach stats for this driver for frontend
-        pipe = [
-            {"$match": {"assigned_driver_id": driver_id}},
-            {"$group": {
-                "_id": "$assigned_driver_id",
-                "orders_total": {"$sum": 1},
-                "orders_delivered": {
-                    "$sum": {
-                        "$cond": [{"$eq": ["$status", "delivered"]}, 1, 0]
-                    }
-                },
-                "earnings_total": {
-                    "$sum": {"$ifNull": ["$settlement.driver", 0]}
-                }
-            }}
-        ]
-        stats_row = next(iter(db.orders.aggregate(pipe)), None)
-        out = safe_doc(d)
-        out["stats"] = {
-            "orders_total": int((stats_row or {}).get("orders_total", 0)),
-            "orders_delivered": int((stats_row or {}).get("orders_delivered", 0)),
-            "earnings_total": round(float((stats_row or {}).get("earnings_total", 0.0)), 2),
-        }
-        return jsonify({"ok": True, "driver": out}), 200
+        return jsonify({"ok": True, "driver": safe_doc(d)}), 200
     except mongo_errors.PyMongoError as e:
         return jsonify({"ok": False, "error": "db_read_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 # ----- Driver login: request PIN -----
 @app.route("/drivers/request-pin", methods=["POST"])
@@ -1185,13 +1134,14 @@ def driver_request_pin():
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
+
 # ----- Driver login: verify PIN -----
 @app.route("/drivers/verify-pin", methods=["POST"])
 @app.route("/api/app/drivers/verify-pin", methods=["POST"])
 def driver_verify_pin():
     body = request.json or {}
     phone = (body.get("phone") or "").strip()
-    pin   = (body.get("pin") or "").strip()
+    pin = (body.get("pin") or "").strip()
     if not phone_ok(phone) or not pin:
         return jsonify({"ok": False, "error": "bad_input"}), 400
     try:
@@ -1230,13 +1180,14 @@ def driver_verify_pin():
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
+
 # ----- Driver Orders (requires driver_id or token) -----
 @app.route("/driver-orders", methods=["GET"])
 @app.route("/api/app/driver-orders", methods=["GET"])
 def driver_orders():
     driver_id = request.args.get("driver_id")
-    status    = request.args.get("status")
-    token     = request.headers.get("X-Driver-Token")
+    status = request.args.get("status")
+    token = request.headers.get("X-Driver-Token")
     try:
         db = get_db()
         if not driver_id:
@@ -1275,6 +1226,7 @@ def driver_orders():
         return jsonify({"ok": False, "error": "db_read_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 # ----- Proof of Delivery (driver) -----
 @app.route("/orders/<oid>/proof", methods=["POST"])
@@ -1327,6 +1279,7 @@ def upload_proof(oid):
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 # ----- Driver docs upload (GridFS) -----
 @app.route("/drivers/<driver_id>/docs-upload", methods=["POST"])
@@ -1385,6 +1338,7 @@ def upload_driver_docs(driver_id):
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
+
 # ----- Stream files (GridFS) -----
 @app.route("/files/<fid>", methods=["GET"])
 @app.route("/api/app/files/<fid>", methods=["GET"])
@@ -1400,6 +1354,7 @@ def stream_file(fid):
         )
     except Exception:
         abort(404)
+
 
 # ---------------- WEEKLY CLOSE / PAYOUTS ------
 @app.route("/settlements/weekly-close", methods=["POST"])
@@ -1439,6 +1394,7 @@ def weekly_close():
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
+
 # ----- Approve all driver pay (admin one-click) -----
 @app.route("/drivers/<driver_id>/approve-all-pay", methods=["POST"])
 @app.route("/api/app/drivers/<driver_id>/approve-all-pay", methods=["POST"])
@@ -1467,6 +1423,7 @@ def approve_all_pay(driver_id):
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
+
 # ---------------- STORES / ITEMS --------------
 @app.route("/stores", methods=["POST"])
 @app.route("/api/app/stores", methods=["POST"])
@@ -1490,6 +1447,7 @@ def create_store():
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 @app.route("/stores/<store_id>/items", methods=["POST"])
 @app.route("/api/app/stores/<store_id>/items", methods=["POST"])
@@ -1515,6 +1473,7 @@ def add_store_item(store_id):
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 # ---------------- WHATSAPP SIM (OUTBOUND) -----
 @app.route("/send_whatsapp_confirmation", methods=["POST"])
@@ -1544,6 +1503,7 @@ def send_whatsapp_confirmation():
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
+
 
 # ---------------- CATALOG (NEW) -----------------------
 @app.route("/api/app/catalog", methods=["GET", "POST"])
@@ -1581,6 +1541,7 @@ def catalog():
         it.pop("_id", None)
     return jsonify({"ok": True, "items": items}), 200
 
+
 @app.route("/api/app/catalog/search", methods=["GET"])
 def catalog_search():
     db = get_db()
@@ -1594,13 +1555,10 @@ def catalog_search():
         it.pop("_id", None)
     return jsonify({"ok": True, "items": items}), 200
 
+
 # ---------------- CATALOG SEEDER (ADMIN) ----------------
 @app.route("/api/app/dev/seed-catalog", methods=["POST"])
 def dev_seed_catalog():
-    """
-    Admin-only endpoint to (upsert) seed the OTC catalog you need for USSD tests.
-    Safe to call multiple times; existing items are updated, new ones inserted.
-    """
     if not require_admin():
         return jsonify({"ok": False, "error": "forbidden"}), 403
     try:
@@ -1619,21 +1577,15 @@ def dev_seed_catalog():
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
+
 # ---------------- USSD (NEW, Lean Flow) -------------------
 @app.route("/api/app/ussd", methods=["POST"])
 def ussd_entry():
-    """
-    Compatible with Africa's Talking style parameters:
-      sessionId, serviceCode, phoneNumber, text
-    And Infobip-style: same fields or variations – we only rely on these four.
-    Response must start with "CON " (continue) or "END " (finish).
-    """
     if not USSD_ENABLE:
         return "END Service unavailable.", 200, {"Content-Type": "text/plain; charset=utf-8"}
 
     raw = request.get_data() or b""
     if not ip_allowed() or not verify_hmac_signature(raw):
-        # Keep generic to avoid leaking security details
         return "END Service temporarily unavailable.", 200, {"Content-Type": "text/plain; charset=utf-8"}
 
     db = get_db()
@@ -1643,10 +1595,10 @@ def ussd_entry():
     if not rate_limit_touch(db, ip_key, RATE_LIMIT_PER_IP_PER_MIN):
         return "END Too many requests. Try again in a minute.", 200, {"Content-Type": "text/plain; charset=utf-8"}
 
-    session_id  = (request.values.get("sessionId") or "").strip()
+    session_id = (request.values.get("sessionId") or "").strip()
     serviceCode = (request.values.get("serviceCode") or "").strip()
-    phone       = (request.values.get("phoneNumber") or "").strip()
-    text        = (request.values.get("text") or "").strip()
+    phone = (request.values.get("phoneNumber") or "").strip()
+    text = (request.values.get("text") or "").strip()
 
     # Rate limit per phone when present
     if phone:
@@ -1655,7 +1607,6 @@ def ussd_entry():
 
     steps = [s for s in text.split("*") if s] if text else []
 
-    # Minimal session doc (temporary state)
     sess = db.ussd_sessions.find_one({"session_id": session_id}) if session_id else None
     if not sess:
         sess = {
@@ -1674,16 +1625,13 @@ def ussd_entry():
         except Exception:
             pass
 
-    # === Menu helpers ===
     def con(msg: str):
         return f"CON {msg}", 200, {"Content-Type": "text/plain; charset=utf-8"}
 
     def end(msg: str):
         return f"END {msg}", 200, {"Content-Type": "text/plain; charset=utf-8"}
 
-    # === Menu steps ===
     if len(steps) == 0:
-        # Home
         return con(
             "YiThume – Health Shop\n"
             "1. Order Medicine\n"
@@ -1692,14 +1640,12 @@ def ussd_entry():
             "0. Exit"
         )
 
-    # Exit
     if steps[0] == "0":
         return end("Goodbye.")
 
-    # 3. Track order
+    # Track order
     if steps[0] == "3":
         if len(steps) == 1:
-            # Example uses today's date pattern so users see a realistic format
             return con("Enter Order ID (e.g. YI-20251106-ABC123):")
         if len(steps) >= 2:
             oid = steps[1].strip().upper()
@@ -1709,7 +1655,6 @@ def ussd_entry():
             st = o.get("status", "pending").replace("_", " ").title()
             return end(f"Order {oid}: {st}")
 
-    # 1 or 2 → Category flows
     cat_map = {
         "1": ["Pain Relief", "Cold & Flu", "Digestive", "Vitamins"],
         "2": ["Hygiene", "Baby Care", "Women’s Health"]
@@ -1717,11 +1662,11 @@ def ussd_entry():
 
     if steps[0] in ("1", "2"):
         top = cat_map[steps[0]]
-        # Step 1: show subcategories
+
         if len(steps) == 1:
-            lines = [f"{i+1}. {c}" for i, c in enumerate(top)]
+            lines = [f"{i + 1}. {c}" for i, c in enumerate(top)]
             return con("Choose Category:\n" + "\n".join(lines) + "\n0. Back")
-        # Back
+
         if steps[1] == "0":
             return con(
                 "YiThume – Health Shop\n"
@@ -1730,7 +1675,7 @@ def ussd_entry():
                 "3. Track Order\n"
                 "0. Exit"
             )
-        # Step 2: show items from selected subcategory
+
         try:
             idx = int(steps[1]) - 1
             subcat = top[idx]
@@ -1744,7 +1689,6 @@ def ussd_entry():
             }).sort("name", ASCENDING).limit(6))
             if not items:
                 return end("No items in that category yet.")
-            # Keep an index map in session
             imap = []
             out_lines = []
             for i, it in enumerate(items, start=1):
@@ -1759,19 +1703,12 @@ def ussd_entry():
                 {"session_id": sess["session_id"]},
                 {"$set": {"state": sess["state"]}}
             )
-            return con(
-                "Pick item:\n" + "\n".join(out_lines) + "\n0. Back"
-            )
+            return con("Pick item:\n" + "\n".join(out_lines) + "\n0. Back")
 
-        # Step 3: quantity
         if len(steps) == 3:
             if steps[2] == "0":
-                # back to subcategory list
-                lines = [f"{i+1}. {c}" for i, c in enumerate(top)]
-                return con(
-                    "Choose Category:\n" + "\n".join(lines) + "\n0. Back"
-                )
-
+                lines = [f"{i + 1}. {c}" for i, c in enumerate(top)]
+                return con("Choose Category:\n" + "\n".join(lines) + "\n0. Back")
             try:
                 choice = int(steps[2]) - 1
                 imap = sess.get("state", {}).get("last_items", [])
@@ -1785,7 +1722,6 @@ def ussd_entry():
             )
             return con(f"{sel['name']} – Enter quantity:")
 
-        # Step 4: address line (brief)
         if len(steps) == 4:
             try:
                 qty = max(1, int(steps[3]))
@@ -1798,7 +1734,6 @@ def ussd_entry():
             )
             return con("Enter nearest landmark / village name:")
 
-        # Step 5: confirm and create order
         if len(steps) >= 5:
             landmark = steps[4][:60]
             sel = (sess.get("state") or {}).get("selected_item")
@@ -1806,17 +1741,14 @@ def ussd_entry():
             if not sel:
                 return end("Session expired. Start again.")
 
-            # Price math
             subtotal = float(sel["price"]) * qty
-            delivery_fee = 20.0  # simple flat fee for USSD; adjust as needed
+            delivery_fee = 20.0
             total = round(subtotal + delivery_fee, 2)
 
-            # Idempotency: avoid double-click orders on flaky connections
             _, replay = idempotency_guard(db)
             if replay:
                 return end("Order already received. We’ll confirm on WhatsApp.")
 
-            # Build inline order doc
             order_doc = {
                 "_internal_id": str(uuid.uuid4()),
                 "order_id": make_order_public_id(),
@@ -1861,10 +1793,7 @@ def ussd_entry():
                 "delivery_photo_file_id": None,
                 "delivery_photo_url": None,
                 "driver_pay_status": "pending",
-                "driver_pay_pending": round(
-                    min(max(delivery_fee, 25), 45),
-                    2
-                ),
+                "driver_pay_pending": round(min(max(delivery_fee, 25), 45), 2),
                 "driver_pay_approved": 0.0,
                 "settlement": {
                     "driver": 0.0,
@@ -1873,7 +1802,6 @@ def ussd_entry():
                 }
             }
 
-            # Fraud + maybe assign
             try:
                 fs, ff = rule_based_fraud_score(db, order_doc)
                 order_doc["fraud_score"], order_doc["fraud_flags"] = fs, ff
@@ -1890,7 +1818,6 @@ def ussd_entry():
 
                 db.orders.insert_one(order_doc)
 
-                # tiny WhatsApp log
                 db.whatsapp_log.insert_one({
                     "direction": "outbound",
                     "to": phone or "UNKNOWN",
@@ -1909,4 +1836,4 @@ def ussd_entry():
 
     return end("Invalid option.")
 
-# NOTE: no app.run(); importable for serverless (Vercel/Render/Gunicorn)
+# NOTE: no app.run(); importable for serverless / gunicorn
