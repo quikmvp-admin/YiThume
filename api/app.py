@@ -439,9 +439,9 @@ def verify_hmac_signature(raw_body: bytes) -> bool:
         return True
     sig = request.headers.get("X-Signature") or request.headers.get("X-AT-Signature") or ""
     try:
-        import hmac, hashlib as _hashlib
-        mac = hmac.new(WEBHOOK_HMAC_SECRET.encode("utf-8"), raw_body, _hashlib.sha256).hexdigest()
-        return hmac.compare_digest(mac, sig)
+        import hmac as _hmac, hashlib as _hashlib
+        mac = _hmac.new(WEBHOOK_HMAC_SECRET.encode("utf-8"), raw_body, _hashlib.sha256).hexdigest()
+        return _hmac.compare_digest(mac, sig)
     except Exception:
         return False
 
@@ -500,6 +500,65 @@ def idempotency_guard(db):
     except mongo_errors.DuplicateKeyError:
         return key, True   # replay
 
+# --------- STATS HELPER FOR DASHBOARD / JS ----------
+def compute_stats_overview(db, days=90):
+    since = _now_dt() - timedelta(days=days)
+    orders = list(db.orders.find({"created_at": {"$gte": since}}))
+
+    total_orders = len(orders)
+    delivered_orders = 0
+    revenue = 0.0
+    status_counts = {}
+    top_products_map = {}
+    top_areas_map = {}
+    driver_earnings_total = 0.0
+    platform_earnings_total = 0.0
+    fraud_high_risk = 0
+
+    for o in orders:
+        t = float(o.get("total") or 0.0)
+        revenue += t
+
+        st = o.get("status", "pending")
+        status_counts[st] = status_counts.get(st, 0) + 1
+        if st == "delivered":
+            delivered_orders += 1
+
+        if float(o.get("fraud_score") or 0.0) >= 0.75:
+            fraud_high_risk += 1
+
+        for it in (o.get("items") or []):
+            name = it.get("name")
+            if not name:
+                continue
+            qty = int(it.get("qty") or 1)
+            top_products_map[name] = top_products_map.get(name, 0) + qty
+
+        area = (o.get("meta") or {}).get("collection_name") or "—"
+        top_areas_map[area] = top_areas_map.get(area, 0) + 1
+
+        stl = o.get("settlement") or {}
+        driver_earnings_total += float(stl.get("driver") or 0.0)
+        platform_earnings_total += float(stl.get("platform") or 0.0)
+
+    top_products = sorted(top_products_map.items(), key=lambda x: x[1], reverse=True)[:5]
+    top_areas = sorted(top_areas_map.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    return {
+        "total_orders": total_orders,
+        "delivered_orders": delivered_orders,
+        "revenue": round(revenue, 2),
+        "order_status_breakdown": [
+            {"status": k, "count": v} for k, v in sorted(status_counts.items(), key=lambda x: x[0])
+        ],
+        "top_products": [{"name": k, "count": v} for k, v in top_products],
+        "top_areas": [{"name": k, "count": v} for k, v in top_areas],
+        "driver_earnings_total": round(driver_earnings_total, 2),
+        "platform_earnings_total": round(platform_earnings_total, 2),
+        "fraud_high_risk_orders": fraud_high_risk,
+        "zone_demand_snapshot": recent_zone_demand_snapshot(db),
+    }
+
 # init indexes once per cold start (and optional auto-seed)
 try:
     _db_boot = get_db()
@@ -526,7 +585,9 @@ def health():
             "build_info": {"built_at": BUILD_TS},
             "now_utc": _now_iso(),
             "orders_count": db.orders.estimated_document_count(),
-            "drivers_count": db.drivers.count_documents({"active": True}),
+            "drivers_count": db.drivers.count_documents({}),
+            "drivers_active": db.drivers.count_documents({"active": True}),
+            "drivers_available": db.drivers.count_documents({"active": True, "available": True}),
             "stores_count": db.stores.estimated_document_count()
         }), 200
     except Exception as e:
@@ -664,39 +725,73 @@ def list_orders():
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e), "orders": []}), 500
 
-# ---------------- ADMIN STATS (for dashboard) ---
+# ---------------- ADMIN STATS (for dashboard / JS) ---
 @app.route("/stats/overview", methods=["GET"])
 @app.route("/api/app/stats/overview", methods=["GET"])
 def stats_overview():
     try:
         db = get_db()
-        since = _now_dt() - timedelta(days=int(request.args.get("days", "90")))
-        orders = list(db.orders.find({"created_at": {"$gte": since}}))
-        total_orders = len(orders)
-        revenue = sum(float(o.get("total", 0)) for o in orders)
+        days = int(request.args.get("days", "90"))
+        data = compute_stats_overview(db, days)
+        data["drivers_total"] = db.drivers.estimated_document_count()
+        data["drivers_active"] = db.drivers.count_documents({"active": True})
+        data["drivers_available"] = db.drivers.count_documents({"active": True, "available": True})
+        return jsonify({"ok": True, **data}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
-        # top products
-        prod = {}
-        for o in orders:
-            for it in (o.get("items") or []):
-                prod[it.get("name")] = prod.get(it.get("name"), 0) + int(it.get("qty", 1))
-        top_products = sorted(prod.items(), key=lambda x: x[1], reverse=True)[:5]
+# -------- COMBINED DASHBOARD: STATS + DRIVERS (for JS) ----
+@app.route("/dashboard", methods=["GET"])
+@app.route("/api/app/dashboard", methods=["GET"])
+def dashboard():
+    """
+    Returns full stats + all drivers (with per-driver stats) for frontend dashboards.
+    """
+    try:
+        db = get_db()
+        days = int(request.args.get("days", "90"))
+        stats = compute_stats_overview(db, days)
+        stats["drivers_total"] = db.drivers.estimated_document_count()
+        stats["drivers_active"] = db.drivers.count_documents({"active": True})
+        stats["drivers_available"] = db.drivers.count_documents({"active": True, "available": True})
 
-        # top areas by collection_name
-        areas = {}
-        for o in orders:
-            k = (o.get("meta") or {}).get("collection_name") or "—"
-            areas[k] = areas.get(k, 0) + 1
-        top_areas = sorted(areas.items(), key=lambda x: x[1], reverse=True)[:5]
+        drivers = list(db.drivers.find({}))
+        driver_ids = [d["_internal_id"] for d in drivers]
 
-        return jsonify({
-            "ok": True,
-            "total_orders": total_orders,
-            "revenue": round(revenue, 2),
-            "top_products": [{"name": k, "count": v} for k, v in top_products],
-            "top_areas": [{"name": k, "count": v} for k, v in top_areas],
-            "drivers": db.drivers.count_documents({"active": True})
-        }), 200
+        agg_map = {}
+        if driver_ids:
+            pipe = [
+                {"$match": {"assigned_driver_id": {"$in": driver_ids}}},
+                {"$group": {
+                    "_id": "$assigned_driver_id",
+                    "orders_total": {"$sum": 1},
+                    "orders_delivered": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$status", "delivered"]}, 1, 0]
+                        }
+                    },
+                    "earnings_total": {
+                        "$sum": {"$ifNull": ["$settlement.driver", 0]}
+                    }
+                }}
+            ]
+            for row in db.orders.aggregate(pipe):
+                agg_map[row["_id"]] = row
+
+        drivers_out = []
+        for d in drivers:
+            base = safe_doc(d)
+            s = agg_map.get(d["_internal_id"], {})
+            base["stats"] = {
+                "orders_total": int(s.get("orders_total", 0)),
+                "orders_delivered": int(s.get("orders_delivered", 0)),
+                "earnings_total": round(float(s.get("earnings_total", 0.0)), 2),
+            }
+            drivers_out.append(base)
+
+        return jsonify({"ok": True, "stats": stats, "drivers": drivers_out}), 200
+    except mongo_errors.PyMongoError as e:
+        return jsonify({"ok": False, "error": "db_read_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
 
@@ -967,10 +1062,56 @@ def create_driver():
 @app.route("/drivers", methods=["GET"])
 @app.route("/api/app/drivers", methods=["GET"])
 def list_drivers():
+    """
+    List drivers. For JS dashboards:
+      - ?active=true   -> only active drivers
+      - ?with_stats=false -> skip per-driver stats
+    Default: all drivers with per-driver stats.
+    """
+    active_only = request.args.get("active", "false").lower() == "true"
+    with_stats = request.args.get("with_stats", "true").lower() == "true"
+
     try:
         db = get_db()
-        cur = db.drivers.find({"active": True})
-        return jsonify({"ok": True, "drivers": [safe_doc(d) for d in cur]}), 200
+        q = {"active": True} if active_only else {}
+        drivers = list(db.drivers.find(q))
+
+        if not with_stats or not drivers:
+            return jsonify({"ok": True, "drivers": [safe_doc(d) for d in drivers]}), 200
+
+        driver_ids = [d["_internal_id"] for d in drivers]
+        agg_map = {}
+        if driver_ids:
+            pipe = [
+                {"$match": {"assigned_driver_id": {"$in": driver_ids}}},
+                {"$group": {
+                    "_id": "$assigned_driver_id",
+                    "orders_total": {"$sum": 1},
+                    "orders_delivered": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$status", "delivered"]}, 1, 0]
+                        }
+                    },
+                    "earnings_total": {
+                        "$sum": {"$ifNull": ["$settlement.driver", 0]}
+                    }
+                }}
+            ]
+            for row in db.orders.aggregate(pipe):
+                agg_map[row["_id"]] = row
+
+        drivers_out = []
+        for d in drivers:
+            base = safe_doc(d)
+            s = agg_map.get(d["_internal_id"], {})
+            base["stats"] = {
+                "orders_total": int(s.get("orders_total", 0)),
+                "orders_delivered": int(s.get("orders_delivered", 0)),
+                "earnings_total": round(float(s.get("earnings_total", 0.0)), 2),
+            }
+            drivers_out.append(base)
+
+        return jsonify({"ok": True, "drivers": drivers_out}), 200
     except mongo_errors.PyMongoError as e:
         return jsonify({"ok": False, "error": "db_read_failed", "details": str(e), "drivers": []}), 500
     except Exception as e:
@@ -984,7 +1125,31 @@ def get_driver(driver_id):
         d = db.drivers.find_one({"_internal_id": driver_id})
         if not d:
             return jsonify({"ok": False, "error": "driver_not_found"}), 404
-        return jsonify({"ok": True, "driver": safe_doc(d)}), 200
+
+        # attach stats for this driver for frontend
+        pipe = [
+            {"$match": {"assigned_driver_id": driver_id}},
+            {"$group": {
+                "_id": "$assigned_driver_id",
+                "orders_total": {"$sum": 1},
+                "orders_delivered": {
+                    "$sum": {
+                        "$cond": [{"$eq": ["$status", "delivered"]}, 1, 0]
+                    }
+                },
+                "earnings_total": {
+                    "$sum": {"$ifNull": ["$settlement.driver", 0]}
+                }
+            }}
+        ]
+        stats_row = next(iter(db.orders.aggregate(pipe)), None)
+        out = safe_doc(d)
+        out["stats"] = {
+            "orders_total": int((stats_row or {}).get("orders_total", 0)),
+            "orders_delivered": int((stats_row or {}).get("orders_delivered", 0)),
+            "earnings_total": round(float((stats_row or {}).get("earnings_total", 0.0)), 2),
+        }
+        return jsonify({"ok": True, "driver": out}), 200
     except mongo_errors.PyMongoError as e:
         return jsonify({"ok": False, "error": "db_read_failed", "details": str(e)}), 500
     except Exception as e:
