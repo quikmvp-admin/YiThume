@@ -1017,15 +1017,14 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const currentOrdersByTab = {};
   let ALL_ORDERS_MAP   = {};   // _internal_id -> order
-  let HISTORY_ORDERS   = [];   // optional future use
   let DEMO_ORDERS_DB   = {};
   let DEMO_DRIVERS_DB  = {};
 
   let API_DRIVERS_MAP  = {};   // driver_id/_internal_id -> driver
-  let DRIVERS          = [];   // for admin stats compatibility
-  let DRIVERS_BY_ID    = {};   // for admin stats compatibility
+  let DRIVERS          = [];   // for stats & drivers cards
+  let DRIVERS_BY_ID    = {};
 
-  let REMOTE_STATS     = null;
+  let REMOTE_STATS     = null; // (not required, but kept if you add /stats/overview)
 
   const driverTotals   = { pending: 0, approved: 0 };
 
@@ -1034,7 +1033,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const storeItems = [];
 
-  // Admin stats DOM refs (for stats card layout)
+  // Admin stats DOM refs (inside admin panel)
   let adminStatsOrdersEl,
       adminStatsRevenueEl,
       adminTopProductsEl,
@@ -1115,7 +1114,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const driversRefresh      = document.getElementById('driversRefresh');
 
   const ordersTabsContainer = document.getElementById('ordersTabs');
-  let   statsContainer      = document.getElementById('statsContainer'); // will create if missing
+  let   statsContainer      = document.getElementById('statsContainer'); // created if missing
 
   const storeModal          = document.getElementById('storeModal');
   const openStoreFooter     = document.getElementById('openStoreModalFooter');
@@ -1732,234 +1731,100 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   });
 
   // ========================================================================
-  // LIVE FETCH HELPERS
+  // ADMIN STATS (LIVE FROM API) - USED TO POPULATE STATS & DRIVERS
   // ========================================================================
-  async function fetchOrdersByStatus(status){
-    if(status === 'drivers' || status === 'stats' || (status||'').startsWith('by_driver:')) return [];
-    if(DEMO_MODE){
-      return Object.values(DEMO_ORDERS_DB).filter(o => o.status === status);
-    }
-    try {
-      const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
-      const data = await res.json().catch(()=>({}));
-      if(!res.ok || data.ok === false){ return []; }
-      return Array.isArray(data.orders) ? data.orders : [];
-    } catch(err){
-      console.error("fetchOrdersByStatus error",err);
-      return [];
-    }
-  }
-
-  async function fetchAllOrdersLive(){
-    if(DEMO_MODE){
-      ALL_ORDERS_MAP = {...DEMO_ORDERS_DB};
-      return;
+  async function fetchAllOrders(){
+    if (DEMO_MODE){
+      return Object.values(DEMO_ORDERS_DB);
     }
     try{
       const r = await fetch(`${BASE_API}/orders`);
       const j = await r.json().catch(()=>({}));
-      if(!r.ok || j.ok === false){
-        ALL_ORDERS_MAP = {};
-        return;
-      }
-      const list =
-        Array.isArray(j.orders) ? j.orders :
-        Array.isArray(j.data)   ? j.data   :
-        Array.isArray(j)        ? j        : [];
-      const map = {};
-      list.forEach(o=>{
-        const key =
-          o._internal_id || o.internal_id ||
-          o.order_public_id || o.order_id ||
-          Math.random().toString(36).slice(2);
-        map[key] = o;
-      });
-      ALL_ORDERS_MAP = map;
-      HISTORY_ORDERS = list.slice().sort((a,b)=>{
-        const aa = new Date(a.created_at_iso || a.created_at || 0).getTime();
-        const bb = new Date(b.created_at_iso || b.created_at || 0).getTime();
-        return bb-aa;
-      });
+      if(!r.ok || j.ok === false) return [];
+      return Array.isArray(j.orders)
+        ? j.orders
+        : Array.isArray(j.data)
+        ? j.data
+        : Array.isArray(j)
+        ? j
+        : [];
     }catch(e){
-      console.error("fetchAllOrdersLive", e);
-      ALL_ORDERS_MAP = {};
+      console.error("fetchAllOrders", e);
+      return [];
     }
   }
 
-  async function fetchDriversLive(){
+  async function fetchDrivers(){
     if(DEMO_MODE){
-      API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
       DRIVERS = Object.values(DEMO_DRIVERS_DB);
-      DRIVERS_BY_ID = {...DEMO_DRIVERS_DB};
+      DRIVERS_BY_ID = Object.create(null);
+      API_DRIVERS_MAP = {};
+      for(const d of DRIVERS){
+        const key = d._internal_id || d.driver_id;
+        if(key){
+          DRIVERS_BY_ID[key] = d;
+          API_DRIVERS_MAP[key] = d;
+        }
+      }
       return;
     }
+
     try{
-      const res = await fetch(`${BASE_API}/drivers`);
-      const j = await res.json().catch(()=>({}));
-      if(!res.ok || j.ok === false){
-        API_DRIVERS_MAP = {};
+      const r = await fetch(`${BASE_API}/drivers`);
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok || j.ok === false){
         DRIVERS = [];
         DRIVERS_BY_ID = {};
+        API_DRIVERS_MAP = {};
         return;
       }
-      const list =
-        Array.isArray(j.drivers) ? j.drivers :
-        Array.isArray(j.data)    ? j.data    :
-        Array.isArray(j)         ? j         : [];
+      DRIVERS = Array.isArray(j.drivers)
+        ? j.drivers
+        : Array.isArray(j.data)
+        ? j.data
+        : Array.isArray(j)
+        ? j
+        : [];
+      DRIVERS_BY_ID = Object.create(null);
       API_DRIVERS_MAP = {};
-      DRIVERS_BY_ID = {};
-      DRIVERS = list;
-      for(const d of list){
+      for(const d of DRIVERS){
         const key = d._internal_id || d.driver_id || d.id;
-        if(!key) continue;
-        API_DRIVERS_MAP[key] = d;
-        DRIVERS_BY_ID[key]   = d;
+        if(key){
+          DRIVERS_BY_ID[key] = d;
+          API_DRIVERS_MAP[key] = d;
+        }
       }
-    }catch(err){
-      console.error("fetchDriversLive err", err);
-      API_DRIVERS_MAP = {};
+    }catch(e){
+      console.error("fetchDrivers", e);
       DRIVERS = [];
       DRIVERS_BY_ID = {};
+      API_DRIVERS_MAP = {};
     }
   }
 
-  async function fetchStatsLive(){
-    if(DEMO_MODE){ REMOTE_STATS = null; return; }
-    try{
-      const res = await fetch(`${BASE_API}/stats/overview`);
-      const data = await res.json().catch(()=>({}));
-      if(res.ok && data && data.ok){
-        REMOTE_STATS = data;
-      } else {
-        REMOTE_STATS = null;
-      }
-    }catch(err){
-      console.error("fetch stats err", err);
-      REMOTE_STATS = null;
-    }
-  }
+  function recalcAdminPayoutWidgets(){
+    if(!adminDriversCountEl || !adminPayPendingEl || !adminPayApprovedEl) return;
 
-  async function refreshAllData(){
-    if(DEMO_MODE){
-      hydrateState();
-    } else {
-      await Promise.all([
-        fetchAllOrdersLive(),
-        fetchDriversLive(),
-        fetchStatsLive()
-      ]);
-    }
-    renderOrders();
-    renderDrivers();
-    renderStats();
-  }
+    adminDriversCountEl.textContent = String(DRIVERS.length || 0);
 
-  // ========================================================================
-  // STATS / KPIs  (Admin Stats Card INSIDE Admin Panel)
-  // ========================================================================
-  function computeDriverTotalsFromDB() {
-    let pendingTotal = 0;
-    let approvedTotal = 0;
+    let pending = 0;
+    let approved = 0;
     const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
+
     Object.values(source).forEach(o=>{
       if(o.driver_pay_status === 'pending'){
-        pendingTotal += Number(o.driver_pay_pending || 0);
+        pending += Number(o.driver_pay_pending || 0);
       }
       if(o.driver_pay_status === 'approved'){
-        approvedTotal += Number(o.driver_pay_approved || 0);
+        approved += Number(o.driver_pay_approved || 0);
       }
     });
-    driverTotals.pending  = Math.round(pendingTotal);
-    driverTotals.approved = Math.round(approvedTotal);
+
+    adminPayPendingEl.textContent  = `R${Math.round(pending)}`;
+    adminPayApprovedEl.textContent = `R${Math.round(approved)}`;
   }
 
-  function computeStats(){
-    computeDriverTotalsFromDB();
-
-    const orders  = DEMO_MODE ? Object.values(DEMO_ORDERS_DB)  : Object.values(ALL_ORDERS_MAP);
-    const drivers = DEMO_MODE ? Object.values(DEMO_DRIVERS_DB) : Object.values(API_DRIVERS_MAP);
-
-    let totalOrders      = orders.length;
-    let totalRevenue     = orders.reduce((s,o)=> s + Number(o.total || 0), 0);
-    let deliveredOrders  = orders.filter(o=>o.status === 'delivered').length;
-    let pendingOrders    = orders.filter(o=>o.status === 'pending').length;
-    let inTransitOrders  = orders.filter(o=>o.status === 'in_transit').length;
-    let assignedOrders   = orders.filter(o=>o.status === 'assigned').length;
-    let deliveredRevenue = orders
-      .filter(o=>o.status === 'delivered')
-      .reduce((s,o)=> s + Number(o.total || 0), 0);
-    let totalDeliveryFees= orders.reduce((s,o)=> s + Number(o.delivery_fee || 0), 0);
-    let activeDrivers    = drivers.length;
-
-    if(!DEMO_MODE && REMOTE_STATS){
-      if(Number.isFinite(REMOTE_STATS.total_orders))       totalOrders      = REMOTE_STATS.total_orders;
-      if(Number.isFinite(REMOTE_STATS.revenue))            totalRevenue     = REMOTE_STATS.revenue;
-      if(Number.isFinite(REMOTE_STATS.delivered_orders))   deliveredOrders  = REMOTE_STATS.delivered_orders;
-      if(Number.isFinite(REMOTE_STATS.pending_orders))     pendingOrders    = REMOTE_STATS.pending_orders;
-      if(Number.isFinite(REMOTE_STATS.in_transit_orders))  inTransitOrders  = REMOTE_STATS.in_transit_orders;
-      if(Number.isFinite(REMOTE_STATS.assigned_orders))    assignedOrders   = REMOTE_STATS.assigned_orders;
-      if(Number.isFinite(REMOTE_STATS.delivered_revenue))  deliveredRevenue = REMOTE_STATS.delivered_revenue;
-      if(Number.isFinite(REMOTE_STATS.delivery_fees))      totalDeliveryFees= REMOTE_STATS.delivery_fees;
-      if(Number.isFinite(REMOTE_STATS.drivers))            activeDrivers    = REMOTE_STATS.drivers;
-    }
-
-    const avgOrderValue  = totalOrders ? Math.round(totalRevenue / totalOrders) : 0;
-    const avgDeliveryFee = totalOrders ? Math.round(totalDeliveryFees / totalOrders) : 0;
-
-    const ordersWithDriver = orders.filter(o => o.driver_id || o.assigned_driver_id).length;
-    const driverAttachRate = totalOrders ? Math.round((ordersWithDriver / totalOrders) * 100) : 0;
-
-    const rushOrders   = orders.filter(o=>o.meta && o.meta.rush).length;
-    const fraudFlagged = orders.filter(o=> (o.fraud_score || 0) > 0.5).length;
-
-    // Top products
-    const itemCounts = {};
-    orders.forEach(o => {
-      (o.items || []).forEach(i => {
-        const name = i.name || 'Unknown item';
-        const qty  = Number(i.qty || 1);
-        itemCounts[name] = (itemCounts[name] || 0) + qty;
-      });
-    });
-    const topProducts = Object.entries(itemCounts)
-      .sort((a,b)=>b[1]-a[1])
-      .slice(0,5)
-      .map(([name,qty])=>({name,qty}));
-
-    // Top areas
-    const areaCounts = {};
-    orders.forEach(o=>{
-      const key = (o.meta && o.meta.collection_name) || '—';
-      areaCounts[key] = (areaCounts[key] || 0) + 1;
-    });
-    const topAreas = Object.entries(areaCounts)
-      .sort((a,b)=>b[1]-a[1])
-      .slice(0,5)
-      .map(([name,count])=>({name,count}));
-
-    return {
-      totalOrders,
-      deliveredOrders,
-      pendingOrders,
-      assignedOrders,
-      inTransitOrders,
-      totalRevenue:      Math.round(totalRevenue),
-      deliveredRevenue:  Math.round(deliveredRevenue),
-      totalDeliveryFees: Math.round(totalDeliveryFees),
-      avgOrderValue,
-      avgDeliveryFee,
-      activeDrivers,
-      driverAttachRate,
-      rushOrders,
-      fraudFlagged,
-      topProducts,
-      topAreas,
-      driverPayoutPending:  driverTotals.pending,
-      driverPayoutApproved: driverTotals.approved
-    };
-  }
-
-  function renderStats(){
+  async function renderAdminStats(){
     if(!ordersPanel) return;
 
     if(!statsContainer){
@@ -1969,79 +1834,45 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ordersPanel.appendChild(statsContainer);
     }
 
-    const s = computeStats();
-
-    const productsHtml = (s.topProducts && s.topProducts.length)
-      ? s.topProducts.map(p=>`
-          <li class="flex items-center justify-between text-sm">
-            <span class="truncate">${salesSafe(p.name)}</span>
-            <span class="font-semibold text-slate-900">${p.qty}</span>
-          </li>
-        `).join('')
-      : `<li class="text-sm text-slate-500">No data yet</li>`;
-
-    const areasHtml = (s.topAreas && s.topAreas.length)
-      ? s.topAreas.map(a=>`
-          <li class="flex items-center justify-between text-sm">
-            <span class="truncate">${salesSafe(a.name)}</span>
-            <span class="font-semibold text-slate-900">${a.count}</span>
-          </li>
-        `).join('')
-      : `<li class="text-sm text-slate-500">No data yet</li>`;
-
-    statsContainer.innerHTML = `
-      <div id="adminStatsWrap" class="space-y-4">
-        <div class="grid gap-3 sm:grid-cols-3">
-          <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-            <div id="adminStatsOrders" class="text-2xl font-semibold">${s.totalOrders || 0}</div>
-            <div class="text-[9px] text-slate-500 mt-1">
-              ✅ ${s.deliveredOrders || 0}
-              &nbsp;🚚 ${s.inTransitOrders || 0}
-              &nbsp;📦 ${s.assignedOrders || 0}
-              &nbsp;⏳ ${s.pendingOrders || 0}
+    // Ensure base layout exists
+    if(!document.getElementById('adminStatsWrap')){
+      statsContainer.innerHTML = `
+        <div id="adminStatsWrap" class="space-y-4">
+          <div class="grid gap-3 sm:grid-cols-3">
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+              <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Revenue</div>
+              <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Drivers &amp; Payouts</div>
+              <div class="text-sm">
+                Drivers: <b id="adminDriversCount">0</b>
+              </div>
+              <div class="text-xs text-slate-500 mt-2">
+                Pending: <b id="adminPayPending">R0</b>
+              </div>
+              <div class="text-xs text-slate-500">
+                Approved: <b id="adminPayApproved">R0</b>
+              </div>
             </div>
           </div>
-          <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Revenue</div>
-            <div id="adminStatsRevenue" class="text-2xl font-semibold">R${s.totalRevenue || 0}</div>
-            <div class="text-[9px] text-emerald-600 mt-1">
-              Delivered: R${s.deliveredRevenue || 0}
+          <div class="grid gap-3 sm:grid-cols-2 mt-2">
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Top Products</div>
+              <ul id="adminTopProducts" class="space-y-1 text-sm"></ul>
             </div>
-          </div>
-          <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Drivers &amp; Payouts</div>
-            <div class="text-sm">
-              Drivers: <b id="adminDriversCount">${s.activeDrivers || 0}</b>
-            </div>
-            <div class="text-xs text-slate-500 mt-1">
-              Orders w/ driver:
-              <span class="font-semibold text-emerald-600">${s.driverAttachRate || 0}%</span>
-            </div>
-            <div class="text-xs text-slate-500 mt-2">
-              Pending: <b id="adminPayPending">R${s.driverPayoutPending || 0}</b>
-            </div>
-            <div class="text-xs text-slate-500">
-              Approved: <b id="adminPayApproved">R${s.driverPayoutApproved || 0}</b>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Top Areas</div>
+              <ul id="adminTopAreas" class="space-y-1 text-sm"></ul>
             </div>
           </div>
         </div>
-        <div class="grid gap-3 sm:grid-cols-2 mt-2">
-          <div class="bg-white border rounded-2xl p-3 shadow-sm">
-            <div class="text-sm font-medium mb-2">Top Products</div>
-            <ul id="adminTopProducts" class="space-y-1">
-              ${productsHtml}
-            </ul>
-          </div>
-          <div class="bg-white border rounded-2xl p-3 shadow-sm">
-            <div class="text-sm font-medium mb-2">Top Areas</div>
-            <ul id="adminTopAreas" class="space-y-1">
-              ${areasHtml}
-            </ul>
-          </div>
-        </div>
-      </div>
-    `;
+      `;
+    }
 
     adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
     adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
@@ -2050,6 +1881,70 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     adminDriversCountEl = document.getElementById('adminDriversCount');
     adminPayPendingEl   = document.getElementById('adminPayPending');
     adminPayApprovedEl  = document.getElementById('adminPayApproved');
+
+    // Pull fresh orders + drivers from API/DEMO
+    const orders = await fetchAllOrders();
+    await fetchDrivers();
+
+    // Build ALL_ORDERS_MAP from fresh orders (used by other parts)
+    const map = {};
+    orders.forEach(o=>{
+      const key =
+        o._internal_id || o.internal_id ||
+        o.order_public_id || o.order_id ||
+        Math.random().toString(36).slice(2);
+      map[key] = o;
+    });
+    if(!DEMO_MODE){
+      ALL_ORDERS_MAP = map;
+    }
+
+    // Totals
+    const totalOrders = orders.length;
+    const revenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
+
+    if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
+    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${Math.round(revenue)}`;
+
+    // Top products
+    const prodMap = new Map();
+    orders.forEach(o=>{
+      (o.items||[]).forEach(it=>{
+        if(!it || !it.name) return;
+        prodMap.set(it.name, (prodMap.get(it.name)||0) + Number(it.qty||1));
+      });
+    });
+    const topProducts = Array.from(prodMap.entries())
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0,5);
+    if(adminTopProductsEl){
+      adminTopProductsEl.innerHTML = topProducts.length
+        ? topProducts.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
+        : '<li class="text-slate-500">No data yet</li>';
+    }
+
+    // Top areas
+    const areaMap = new Map();
+    orders.forEach(o=>{
+      const k = o.meta?.collection_name || '—';
+      areaMap.set(k, (areaMap.get(k)||0)+1);
+    });
+    const topAreas = Array.from(areaMap.entries())
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0,5);
+    if(adminTopAreasEl){
+      adminTopAreasEl.innerHTML = topAreas.length
+        ? topAreas.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
+        : '<li class="text-slate-500">No data yet</li>';
+    }
+
+    // Driver + payouts
+    recalcAdminPayoutWidgets();
+  }
+
+  // Wrapper so any existing calls still work
+  function renderStats(){
+    renderAdminStats();
   }
 
   // ========================================================================
@@ -2076,8 +1971,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ['In Transit','in_transit'],
       ['Delivered','delivered'],
       ['Drivers','drivers'],
-      ['Stats','stats'],
-      ['History','history']
+      ['Stats','stats']
     ];
 
     const host = ordersTabsContainer || ordersList?.parentElement || ordersPanel || document.body;
@@ -2112,7 +2006,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     const showDrivers = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
     const showStats   = (tabKey === 'stats');
-    const showHistory = (tabKey === 'history');
 
     const ordersWrapper  = ordersList?.parentElement;
     const driversWrapper = driversList?.parentElement;
@@ -2124,9 +2017,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     if(showDrivers){
       renderDrivers();
     } else if(showStats){
-      renderStats();
-    } else if(showHistory){
-      renderOrders(); // history handled inside renderOrders
+      renderAdminStats();
     } else {
       renderOrders();
     }
@@ -2290,7 +2181,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
   // ========================================================================
-  // ORDER LIST RENDERING (Pending / Assigned / etc / History / by_driver)
+  // ORDER LIST RENDERING
   // ========================================================================
   async function renderOrders(){
     if(!ordersList) return;
@@ -2315,37 +2206,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
-    // history tab
-    if(ordersTab === 'history'){
-      const source = DEMO_MODE
-        ? Object.values(DEMO_ORDERS_DB)
-        : (HISTORY_ORDERS.length ? HISTORY_ORDERS : Object.values(ALL_ORDERS_MAP));
-
-      const data = source.slice().sort((a,b)=>{
-        const aa = new Date(a.created_at_iso || a.created_at || 0).getTime();
-        const bb = new Date(b.created_at_iso || b.created_at || 0).getTime();
-        return bb-aa;
-      });
-
-      currentOrdersByTab[ordersTab] = data;
-
-      ordersList.innerHTML = data.length
-        ? ''
-        : `<div class="text-sm text-slate-500 p-4">No orders found in history.</div>`;
-
-      data.forEach(o=>{
-        const row = buildOrderRow(o);
-        row.classList.add('opacity-90');
-        ordersList.appendChild(row);
-      });
-      wireOrderRowButtons(ordersList);
-      return;
-    }
-
     // status tabs
     const data = DEMO_MODE
       ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status===ordersTab)
-      : await fetchOrdersByStatus(ordersTab);
+      : Object.values(ALL_ORDERS_MAP).filter(o=>o.status===ordersTab);
 
     currentOrdersByTab[ordersTab] = data;
 
@@ -2673,7 +2537,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   // ========================================================================
-  // MAP + ANIMATION (unchanged behavior)
+  // MAP + ANIMATION
   // ========================================================================
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
@@ -3091,6 +2955,7 @@ Vehicle: ${vehicle}`;
             wa_message:     data.wa_message || null
           };
 
+          // refresh orders & drivers so stats & cards pick it up
           await refreshAllData();
         }catch(err){
           console.error("Network/Fetch error", err);
@@ -3196,14 +3061,63 @@ Vehicle: ${vehicle}`;
   });
 
   // ========================================================================
+  // REFRESH ALL DATA (uses live API helpers)
+  // ========================================================================
+  async function refreshAllData(){
+    if(DEMO_MODE){
+      hydrateState();
+      // Build ALL_ORDERS_MAP from demo for consistency
+      const map = {};
+      Object.values(DEMO_ORDERS_DB).forEach(o=>{
+        const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id;
+        if(key) map[key] = o;
+      });
+      ALL_ORDERS_MAP = map;
+      // Drivers already in DEMO_DRIVERS_DB
+      renderOrders();
+      renderDrivers();
+      renderStats();
+      return;
+    }
+
+    const orders = await fetchAllOrders();
+    await fetchDrivers();
+
+    const map = {};
+    orders.forEach(o=>{
+      const key =
+        o._internal_id || o.internal_id ||
+        o.order_public_id || o.order_id ||
+        Math.random().toString(36).slice(2);
+      map[key] = o;
+    });
+    ALL_ORDERS_MAP = map;
+
+    renderOrders();
+    renderDrivers();
+    // Stats tab pulls fresh again when opened, but also update now:
+    renderStats();
+  }
+
+  // ========================================================================
   // FINAL INIT
   // ========================================================================
   renderStoreItems();
   if (DEMO_MODE) {
-    computeDriverTotalsFromDB();
-    renderDrivers();
+    // demo preload
+    const map = {};
+    Object.values(DEMO_ORDERS_DB).forEach(o=>{
+      const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id;
+      if(key) map[key] = o;
+    });
+    ALL_ORDERS_MAP = map;
+    DRIVERS = Object.values(DEMO_DRIVERS_DB);
+    DRIVERS_BY_ID = {};
+    API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
     ensureAdminTabs();
     setActiveAdminTab(ordersTab);
+    renderOrders();
+    renderDrivers();
     renderStats();
   } else {
     refreshAllData().then(()=>{
