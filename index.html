@@ -1711,8 +1711,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     try {
       const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
       const data = await res.json().catch(()=>({}));
-      if(!res.ok || !data.ok){ return []; }
-      return Array.isArray(data.orders) ? data.orders : [];
+      if(!res.ok || !data){ return []; }
+      const list = Array.isArray(data.orders)
+        ? data.orders
+        : Array.isArray(data.data)
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
+      return list;
     } catch(err){
       console.error("fetchOrdersByStatus error",err);
       return [];
@@ -1733,14 +1740,23 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   async function fetchDriversLive(){
-    if(DEMO_MODE){ API_DRIVERS_MAP = {...DEMO_DRIVERS_DB}; return; }
+    if(DEMO_MODE){
+      API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
+      return;
+    }
     try{
       const res = await fetch(`${BASE_API}/drivers`);
       const data = await res.json().catch(()=>({}));
-      if(res.ok && data && Array.isArray(data.drivers)){
+
+      let rows = [];
+      if(Array.isArray(data.drivers)) rows = data.drivers;
+      else if(Array.isArray(data.data)) rows = data.data;
+      else if(Array.isArray(data)) rows = data;
+
+      if(res.ok && rows && rows.length){
         API_DRIVERS_MAP = {};
-        data.drivers.forEach(d=>{
-          const key = d._internal_id || d.driver_id;
+        rows.forEach(d=>{
+          const key = d._internal_id || d.driver_id || d.id;
           if(!key) return;
           API_DRIVERS_MAP[key] = d;
         });
@@ -1755,12 +1771,26 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   // 🔢 STATS: /stats/overview (LIVE)
   async function fetchStatsLive(){
-    if(DEMO_MODE){ return; }
+    if(DEMO_MODE){
+      REMOTE_STATS = null;
+      return;
+    }
     try{
       const res = await fetch(`${BASE_API}/stats/overview`);
       const data = await res.json().catch(()=>({}));
-      if(res.ok && data && data.ok){
-        REMOTE_STATS = data;
+
+      // Accept several shapes, but never throw
+      if(res.ok && data){
+        if(data.ok || data.success){
+          REMOTE_STATS = data;
+        } else if(
+          Number.isFinite(data.total_orders) ||
+          Number.isFinite(data.revenue)
+        ){
+          REMOTE_STATS = data;
+        } else {
+          REMOTE_STATS = null;
+        }
       } else {
         REMOTE_STATS = null;
       }
@@ -1817,15 +1847,16 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     // Merge in remote overview if present
     if(!DEMO_MODE && REMOTE_STATS){
-      if(Number.isFinite(REMOTE_STATS.total_orders)) totalOrders = REMOTE_STATS.total_orders;
-      if(Number.isFinite(REMOTE_STATS.revenue))      totalRevenue = REMOTE_STATS.revenue;
-      if(Number.isFinite(REMOTE_STATS.delivered_orders)) deliveredOrders = REMOTE_STATS.delivered_orders;
-      if(Number.isFinite(REMOTE_STATS.pending_orders))   pendingOrders = REMOTE_STATS.pending_orders;
-      if(Number.isFinite(REMOTE_STATS.in_transit_orders)) inTransitOrders = REMOTE_STATS.in_transit_orders;
-      if(Number.isFinite(REMOTE_STATS.assigned_orders))   assignedOrders = REMOTE_STATS.assigned_orders;
-      if(Number.isFinite(REMOTE_STATS.delivered_revenue)) deliveredRevenue = REMOTE_STATS.delivered_revenue;
-      if(Number.isFinite(REMOTE_STATS.delivery_fees))     totalDeliveryFees = REMOTE_STATS.delivery_fees;
-      if(Number.isFinite(REMOTE_STATS.drivers))           activeDrivers = REMOTE_STATS.drivers;
+      const RS = REMOTE_STATS;
+      if(Number.isFinite(RS.total_orders))       totalOrders       = RS.total_orders;
+      if(Number.isFinite(RS.revenue))            totalRevenue      = RS.revenue;
+      if(Number.isFinite(RS.delivered_orders))   deliveredOrders   = RS.delivered_orders;
+      if(Number.isFinite(RS.pending_orders))     pendingOrders     = RS.pending_orders;
+      if(Number.isFinite(RS.in_transit_orders))  inTransitOrders   = RS.in_transit_orders;
+      if(Number.isFinite(RS.assigned_orders))    assignedOrders    = RS.assigned_orders;
+      if(Number.isFinite(RS.delivered_revenue))  deliveredRevenue  = RS.delivered_revenue;
+      if(Number.isFinite(RS.delivery_fees))      totalDeliveryFees = RS.delivery_fees;
+      if(Number.isFinite(RS.drivers))            activeDrivers     = RS.drivers;
     }
 
     const avgOrderValue  = totalOrders ? Math.round(totalRevenue / totalOrders) : 0;
@@ -1876,48 +1907,82 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   function renderStats(){
     if(!statsContainer) return;
     const s = computeStats();
+
     statsContainer.innerHTML = `
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[11px]">
-        <div class="border rounded-lg p-2">
-          <div class="text-slate-500">Total revenue</div>
-          <div class="text-base font-semibold">R${s.totalRevenue || 0}</div>
-          <div class="text-[10px] text-slate-500">Delivered: R${s.deliveredRevenue || 0}</div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+        <!-- KPI: Total Revenue -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+          <div class="text-[10px] text-slate-500">Total Revenue</div>
+          <div class="text-lg font-semibold text-slate-900">R${s.totalRevenue || 0}</div>
+          <div class="text-[10px] text-emerald-600">Delivered: R${s.deliveredRevenue || 0}</div>
         </div>
-        <div class="border rounded-lg p-2">
-          <div class="text-slate-500">Orders</div>
-          <div class="text-base font-semibold">${s.totalOrders || 0}</div>
-          <div class="text-[10px] text-slate-500">
-            ✅ ${s.deliveredOrders || 0} • 🚚 ${s.inTransitOrders || 0} • 📦 ${s.assignedOrders || 0} • ⏳ ${s.pendingOrders || 0}
+
+        <!-- KPI: Orders -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+          <div class="text-[10px] text-slate-500">Orders Overview</div>
+          <div class="text-lg font-semibold text-slate-900">${s.totalOrders || 0}</div>
+          <div class="text-[9px] text-slate-500 mt-1">
+            ✅ ${s.deliveredOrders || 0}
+            &nbsp;🚚 ${s.inTransitOrders || 0}
+            &nbsp;📦 ${s.assignedOrders || 0}
+            &nbsp;⏳ ${s.pendingOrders || 0}
           </div>
         </div>
-        <div class="border rounded-lg p-2">
-          <div class="text-slate-500">Averages</div>
+
+        <!-- KPI: Averages -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+          <div class="text-[10px] text-slate-500">Averages</div>
           <div class="text-[10px] text-slate-500">
-            AOV: <span class="font-semibold">R${s.avgOrderValue || 0}</span>
+            AOV:
+            <span class="font-semibold text-slate-900">R${s.avgOrderValue || 0}</span>
           </div>
           <div class="text-[10px] text-slate-500">
-            Avg delivery fee: <span class="font-semibold">R${s.avgDeliveryFee || 0}</span>
+            Avg delivery fee:
+            <span class="font-semibold text-slate-900">R${s.avgDeliveryFee || 0}</span>
           </div>
         </div>
-        <div class="border rounded-lg p-2">
-          <div class="text-slate-500">Drivers</div>
-          <div class="text-base font-semibold">${s.activeDrivers || 0}</div>
-          <div class="text-[10px] text-slate-500">Orders with driver: ${s.driverAttachRate || 0}%</div>
+
+        <!-- KPI: Drivers & Attach -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+          <div class="text-[10px] text-slate-500">Drivers</div>
+          <div class="text-lg font-semibold text-slate-900">${s.activeDrivers || 0}</div>
+          <div class="text-[10px] text-slate-500">
+            Orders with driver:
+            <span class="font-semibold text-emerald-600">${s.driverAttachRate || 0}%</span>
+          </div>
         </div>
-        <div class="border rounded-lg p-2">
-          <div class="text-slate-500">Driver payouts</div>
-          <div class="text-[10px] text-slate-500">Pending: <span class="font-semibold">R${s.driverPayoutPending || 0}</span></div>
-          <div class="text-[10px] text-slate-500">Approved: <span class="font-semibold">R${s.driverPayoutApproved || 0}</span></div>
+
+        <!-- KPI: Driver Payouts -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+          <div class="text-[10px] text-slate-500">Driver Payouts</div>
+          <div class="text-[10px] text-slate-500">
+            Pending:
+            <span class="font-semibold text-slate-900">R${s.driverPayoutPending || 0}</span>
+          </div>
+          <div class="text-[10px] text-slate-500">
+            Approved:
+            <span class="font-semibold text-slate-900">R${s.driverPayoutApproved || 0}</span>
+          </div>
         </div>
-        <div class="border rounded-lg p-2">
-          <div class="text-slate-500">Popular item</div>
-          <div class="text-base font-semibold">${s.popularItem || '—'}</div>
-          <div class="text-[10px] text-slate-500">Qty sold: ${s.popularItemQty || 0}</div>
+
+        <!-- KPI: Popular Item -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+          <div class="text-[10px] text-slate-500">Top Item</div>
+          <div class="text-sm font-semibold text-slate-900">${s.popularItem || '—'}</div>
+          <div class="text-[9px] text-slate-500">Qty sold: ${s.popularItemQty || 0}</div>
         </div>
-        <div class="border rounded-lg p-2">
-          <div class="text-slate-500">Rush &amp; Risk</div>
-          <div class="text-[10px] text-slate-500">Rush orders: <span class="font-semibold">${s.rushOrders || 0}</span></div>
-          <div class="text-[10px] text-slate-500">High fraud (&gt;0.5): <span class="font-semibold">${s.fraudFlagged || 0}</span></div>
+
+        <!-- KPI: Rush & Risk -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+          <div class="text-[10px] text-slate-500">Rush &amp; Risk</div>
+          <div class="text-[10px] text-slate-500">
+            Rush orders:
+            <span class="font-semibold text-slate-900">${s.rushOrders || 0}</span>
+          </div>
+          <div class="text-[10px] text-slate-500">
+            High fraud (&gt;0.5):
+            <span class="font-semibold text-slate-900">${s.fraudFlagged || 0}</span>
+          </div>
         </div>
       </div>
     `;
@@ -2003,7 +2068,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   ordersRefresh?.addEventListener('click', hardRefresh);
   driversRefresh?.addEventListener('click', hardRefresh);
 
-  // === DRIVER / ORDER ACTIONS ===============================================
+  // === ORDER / DRIVER ACTIONS ===============================================
   let rrIdx = 0;
   function pickDriverId(){
     const ids = DEMO_MODE ? Object.keys(DEMO_DRIVERS_DB) : Object.keys(API_DRIVERS_MAP);
@@ -2353,54 +2418,105 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
+    const wrapper = document.createElement('div');
+    wrapper.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
+
     for(const [driverKey, dr] of pairs){
       const stats = computeDriverDerived(driverKey);
       const labelId = dr.driver_id || driverKey;
-      const row = document.createElement('div');
-      row.className = 'p-3 flex flex-col gap-2';
+      const area =
+        dr.area ||
+        dr.zone ||
+        dr.base_area ||
+        dr.depot_name ||
+        dr.hub_name ||
+        'Area not set';
 
-      row.innerHTML = `
-        <div class="yt-driver-card">
-          <div class="min-w-0">
-            <div class="font-medium flex flex-wrap items-center gap-2">
-              <span>#${salesSafe(labelId)}</span>
-              <span>• ${salesSafe(dr.name || '')}</span>
-              <span class="text-slate-500">(${salesSafe(dr.vehicle || 'Vehicle')})</span>
-              <span class="text-[11px] text-slate-500">WhatsApp: ${salesSafe(dr.phone || '—')}</span>
+      const card = document.createElement('div');
+      card.className =
+        'bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-col gap-2 text-xs';
+
+      card.innerHTML = `
+        <div class="flex flex-col gap-1">
+          <div class="flex flex-wrap items-baseline gap-2">
+            <div class="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
+              #${salesSafe(labelId)}
             </div>
-            <div class="text-xs text-slate-500">
-              Assigned: <b>${stats.assigned}</b> • In transit: <b>${stats.in_transit}</b> • Delivered: <b>${stats.delivered}</b>
-            </div>
-            <div class="text-xs text-slate-500">
-              Pending pay: <b>R${stats.pendingPay}</b> • Approved pay: <b>R${stats.approvedPay}</b> •
-              Delivered total (R): <b>${stats.deliveredRevenue}</b> • Avg fee: <b>R${stats.avgFee}</b>
-            </div>
+            <div class="font-semibold text-slate-900">${salesSafe(dr.name || '')}</div>
           </div>
-          <div class="yt-actions">
-            <button class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-                    data-id="${salesSafe(driverKey)}">
-              View Orders
-            </button>
-            <button class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-                    data-id="${salesSafe(driverKey)}">
-              Approve All Pay
-            </button>
-            <a class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-               href="https://wa.me/${dr.phone || ''}" target="_blank" rel="noopener">
-              WhatsApp
-            </a>
+          <div class="text-[10px] text-slate-500">
+            📞 ${salesSafe(dr.phone || '—')}
+          </div>
+          <div class="text-[10px] text-slate-500">
+            📍 ${salesSafe(area)}
           </div>
         </div>
+
+        <div class="grid grid-cols-3 gap-2 text-[9px] mt-1">
+          <div class="bg-slate-50 rounded-xl px-2 py-1">
+            <div class="text-slate-500">Delivered</div>
+            <div class="text-sm font-semibold text-emerald-700">${stats.delivered}</div>
+          </div>
+          <div class="bg-slate-50 rounded-xl px-2 py-1">
+            <div class="text-slate-500">Assigned</div>
+            <div class="text-sm font-semibold text-slate-800">${stats.assigned}</div>
+          </div>
+          <div class="bg-slate-50 rounded-xl px-2 py-1">
+            <div class="text-slate-500">In transit</div>
+            <div class="text-sm font-semibold text-slate-800">${stats.in_transit}</div>
+          </div>
+        </div>
+
+        <div class="text-[9px] text-slate-500">
+          Delivered value:
+          <span class="font-semibold text-slate-900">R${stats.deliveredRevenue}</span>
+          &nbsp;• Avg fee:
+          <span class="font-semibold text-slate-900">R${stats.avgFee}</span>
+        </div>
+
+        <div class="text-[9px] text-slate-500">
+          Pending pay:
+          <span class="font-semibold text-amber-600">R${stats.pendingPay}</span>
+          &nbsp;• Approved:
+          <span class="font-semibold text-emerald-700">R${stats.approvedPay}</span>
+        </div>
+
         ${
           stats.lastDeliveries.length
-            ? `<div class="text-[11px] text-slate-500 leading-snug">
-                 Recent delivered refs: ${stats.lastDeliveries.map(x=>`<code>${salesSafe(x)}</code>`).join(', ')}
+            ? `<div class="text-[8px] text-slate-400">
+                 Recent refs:
+                 ${stats.lastDeliveries.map(x=>`<code>${salesSafe(x)}</code>`).join(', ')}
                </div>`
             : ''
         }
+
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button
+            class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
+            data-id="${salesSafe(driverKey)}">
+            View Orders
+          </button>
+          <button
+            class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+            data-id="${salesSafe(driverKey)}">
+            Approve All Pay
+          </button>
+          ${
+            dr.phone
+              ? `<a
+                   class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
+                   href="https://wa.me/${salesSafe(dr.phone)}"
+                   target="_blank" rel="noopener">
+                   WhatsApp
+                 </a>`
+              : ''
+          }
+        </div>
       `;
-      driversList.appendChild(row);
+      wrapper.appendChild(card);
     }
+
+    driversList.appendChild(wrapper);
 
     // Approve payout handler
     driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
