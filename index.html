@@ -924,12 +924,28 @@
 <script>
 window.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & GLOBALS ======================================================
+  // All DB data (orders, drivers, stats, history) is fetched via your backend,
+  // which should be backed by MongoDB.
+  // Expected backend endpoints:
+  //  - GET  /api/app/orders?status=pending|assigned|in_transit|delivered
+  //  - GET  /api/app/orders/history?limit=200
+  //  - GET  /api/app/drivers
+  //  - GET  /api/app/stats/overview
+  //  - POST /api/app/orders
+  //  - POST /api/app/orders/:id/auto-assign
+  //  - POST /api/app/orders/:id/status
+  //  - POST /api/app/drivers/:id/approve-all-pay
+  //  - POST /api/app/drivers
+  //  - POST /api/app/stores
+  //
+  // The frontend here just calls those APIs; MongoDB is handled server-side.
+
   const BASE_API        = "/api/app";
   const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
-  const ADMIN_PASS      = "1234"; // 🔐 simple admin password
+  const ADMIN_PASS      = "1234";
 
-  // Flip this to true for local/demo mode (uses localStorage instead of your API)
+  // Toggle demo mode if you want to use localStorage instead of backend
   const DEMO_MODE       = false;
 
   // Delivery math
@@ -941,7 +957,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const LS_ORDERS  = "YT_DEMO_ORDERS_V1";
   const LS_DRIVERS = "YT_DEMO_DRIVERS_V1";
 
-  // UI Colors
   const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
 
   // Helpers
@@ -950,7 +965,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const clamp  = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
   const pad2   = (n)=> String(n).padStart(2,'0');
 
-  // Haversine fallback (km)
+  // Haversine (km)
   const kmBetween = (a,b)=>{
     if(!a||!b) return 0;
     const R = 6371;
@@ -987,7 +1002,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if(prev && typeof prev.focus === 'function') prev.focus();
   }
 
-  // ESC closes topmost modal
+  // ESC → close topmost modal
   document.addEventListener('keydown', (e)=>{
     if(e.key !== 'Escape') return;
     const modals = [
@@ -1009,9 +1024,10 @@ window.addEventListener('DOMContentLoaded', () => {
   let botStage = 0;
 
   const currentOrdersByTab = {};
-  let ALL_ORDERS_MAP = {};   // LIVE: aggregate across statuses
-  let API_DRIVERS_MAP = {};  // LIVE: drivers keyed by internal key
-  let REMOTE_STATS = null;   // LIVE: stats from backend
+  let ALL_ORDERS_MAP   = {}; // all live orders (from backend / Mongo)
+  let API_DRIVERS_MAP  = {}; // drivers keyed by id (from backend / Mongo)
+  let REMOTE_STATS     = null; // stats overview (from backend / Mongo)
+  let HISTORY_ORDERS   = [];   // history tab data (delivered / archive)
 
   // Positions
   let DELIVERY_COORDS   = null;
@@ -1021,16 +1037,12 @@ window.addEventListener('DOMContentLoaded', () => {
   let DEMO_ORDERS_DB  = {};
   let DEMO_DRIVERS_DB = {};
 
-  // Driver payout helper
   function calcDriverPayout(order){
     const fee = Number(order?.delivery_fee ?? 0);
     return clamp(fee, 25, 45);
   }
 
-  // Global payout totals
   const driverTotals = { pending: 0, approved: 0 };
-
-  // Store items (for store onboarding modal)
   const storeItems = [];
 
   // === YEAR FOOTER ===========================================================
@@ -1152,7 +1164,7 @@ window.addEventListener('DOMContentLoaded', () => {
     {name:'Bandages (set)',price:25}
   ];
 
-  // === PERSISTENCE (DEMO) ====================================================
+  // === DEMO PERSISTENCE ======================================================
   function saveOrdersToLS(){
     try{ localStorage.setItem(LS_ORDERS, JSON.stringify(DEMO_ORDERS_DB)); }catch(_){}
   }
@@ -1556,7 +1568,6 @@ window.addEventListener('DOMContentLoaded', () => {
   closeDriverDash?.addEventListener('click', closeDriverDashWindow);
   ordersClose?.addEventListener('click', closeOrders);
 
-  // 🔐 ADMIN BUTTON → PASSWORD 1234 → OPEN ADMIN PANEL
   adminBtn?.addEventListener('click', (e)=>{
     e.preventDefault();
     const pw = prompt("Enter admin PIN:");
@@ -1568,18 +1579,15 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Also handle custom event triggers
   window.addEventListener('yt-open-orders', openOrders);
 
   // Demo “payment”
   btnFakePayNow?.addEventListener('click', ()=>{
     alert('No money taken. Demo only.');
     closePayModal();
-
     botSendWA?.classList.remove('hidden');
     botNewOrder?.classList.remove('hidden');
     if(botDemoNote) botDemoNote.hidden = false;
-
     appendBot(`<b>Payment marked (demo)</b><br/>We'll WhatsApp you the real secure link next.`, 'bot');
     botStage = 2;
   });
@@ -1702,9 +1710,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   });
 
-  // === LIVE FETCH HELPERS ====================================================
+  // === LIVE FETCH HELPERS (BACKEND / MONGO) =================================
   async function fetchOrdersByStatus(status){
-    if(status === 'drivers' || status === 'stats' || (status||'').startsWith('by_driver:')) return [];
+    if(status === 'drivers' || status === 'stats' || status === 'history' || (status||'').startsWith('by_driver:')) {
+      return [];
+    }
     if(DEMO_MODE){
       return Object.values(DEMO_ORDERS_DB).filter(o => o.status === status);
     }
@@ -1726,14 +1736,44 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   }
 
+  async function fetchOrderHistory(limit=200){
+    // History tab: delivered / archived orders (from Mongo via backend)
+    if(DEMO_MODE){
+      return Object.values(DEMO_ORDERS_DB)
+        .filter(o => o.status === 'delivered')
+        .sort((a,b)=> (b.updated_at||0) - (a.updated_at||0));
+    }
+    try{
+      const res = await fetch(`${BASE_API}/orders/history?limit=${limit}`);
+      const data = await res.json().catch(()=>({}));
+      let list = [];
+      if(Array.isArray(data.orders)) list = data.orders;
+      else if(Array.isArray(data.data)) list = data.data;
+      else if(Array.isArray(data)) list = data;
+      HISTORY_ORDERS = list;
+      return list;
+    }catch(err){
+      console.error("fetchOrderHistory err", err);
+      return [];
+    }
+  }
+
   async function fetchAllOrdersLive(){
-    if(DEMO_MODE){ ALL_ORDERS_MAP = {...DEMO_ORDERS_DB}; return; }
+    if(DEMO_MODE){
+      ALL_ORDERS_MAP = {...DEMO_ORDERS_DB};
+      return;
+    }
     const statuses = ['pending','assigned','in_transit','delivered'];
     const all = await Promise.all(statuses.map(s=>fetchOrdersByStatus(s)));
     const flat = all.flat();
     const map = {};
     flat.forEach(o=>{
-      const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id || Math.random().toString(36).slice(2);
+      const key =
+        o._internal_id ||
+        o.internal_id ||
+        o.order_public_id ||
+        o.order_id ||
+        Math.random().toString(36).slice(2);
       map[key] = o;
     });
     ALL_ORDERS_MAP = map;
@@ -1769,8 +1809,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   }
 
-  // 🔢 STATS: /stats/overview (LIVE)
   async function fetchStatsLive(){
+    // Backend should compute these from MongoDB.
     if(DEMO_MODE){
       REMOTE_STATS = null;
       return;
@@ -1779,7 +1819,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       const res = await fetch(`${BASE_API}/stats/overview`);
       const data = await res.json().catch(()=>({}));
 
-      // Accept several shapes, but never throw
       if(res.ok && data){
         if(data.ok || data.success){
           REMOTE_STATS = data;
@@ -1803,8 +1842,16 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   async function refreshAllData(){
     if(DEMO_MODE){
       hydrateState();
+      HISTORY_ORDERS = Object.values(DEMO_ORDERS_DB)
+        .filter(o=>o.status==='delivered')
+        .sort((a,b)=>(b.updated_at||0)-(a.updated_at||0));
     } else {
-      await Promise.all([fetchAllOrdersLive(), fetchDriversLive(), fetchStatsLive()]);
+      await Promise.all([
+        fetchAllOrdersLive(),
+        fetchDriversLive(),
+        fetchStatsLive(),
+        fetchOrderHistory(200)
+      ]);
     }
     renderOrders();
     renderDrivers();
@@ -1834,7 +1881,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const orders  = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
     const drivers = DEMO_MODE ? Object.values(DEMO_DRIVERS_DB) : Object.values(API_DRIVERS_MAP);
 
-    // Base from local/live orders
     let totalOrders      = orders.length;
     let totalRevenue     = orders.reduce((s,o)=> s + (o.total || 0), 0);
     let deliveredOrders  = orders.filter(o=>o.status === 'delivered').length;
@@ -1845,7 +1891,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     let totalDeliveryFees= orders.reduce((s,o)=> s + (o.delivery_fee || 0), 0);
     let activeDrivers    = drivers.length;
 
-    // Merge in remote overview if present
+    // If backend provides authoritative stats from Mongo, prefer those.
     if(!DEMO_MODE && REMOTE_STATS){
       const RS = REMOTE_STATS;
       if(Number.isFinite(RS.total_orders))       totalOrders       = RS.total_orders;
@@ -1988,7 +2034,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     `;
   }
 
-  // === ADMIN TABS ============================================================
+  // === ADMIN TABS (INCLUDING HISTORY) =======================================
   function ensureAdminTabs(){
     let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
 
@@ -2010,7 +2056,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ['In Transit','in_transit'],
       ['Delivered','delivered'],
       ['Drivers','drivers'],
-      ['Stats','stats']
+      ['Stats','stats'],
+      ['History','history'] // NEW: History tab
     ];
 
     const host = ordersTabsContainer || ordersList?.parentElement || ordersPanel || document.body;
@@ -2045,9 +2092,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     const showDrivers = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
     const showStats   = (tabKey === 'stats');
+    const showHistory = (tabKey === 'history');
 
     const ordersWrapper  = ordersList?.parentElement;
     const driversWrapper = driversList?.parentElement;
+
     if (ordersWrapper)  ordersWrapper.classList.toggle('hidden', showDrivers || showStats);
     if (driversWrapper) driversWrapper.classList.toggle('hidden', !showDrivers);
     if (statsContainer) statsContainer.classList.toggle('hidden', !showStats);
@@ -2056,6 +2105,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       renderDrivers();
     } else if(showStats){
       renderStats();
+    } else if(showHistory){
+      renderOrders(); // renderOrders handles history mode
     } else {
       renderOrders();
     }
@@ -2221,7 +2272,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   async function renderOrders(){
     if(!ordersList) return;
 
-    // by driver tab: ordersTab = "by_driver:<driverKey>"
+    // by driver tab
     if((ordersTab||'').startsWith('by_driver:')){
       const did = ordersTab.split(':',2)[1];
       const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
@@ -2231,11 +2282,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       });
 
       currentOrdersByTab[ordersTab] = data;
-
       ordersList.innerHTML = data.length
         ? ''
         : `<div class="text-sm text-slate-500 p-4">No orders for that driver.</div>`;
-
       for(const o of data){
         ordersList.appendChild(buildOrderRow(o));
       }
@@ -2243,6 +2292,28 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
+    // history tab
+    if(ordersTab === 'history'){
+      const data = DEMO_MODE
+        ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status==='delivered')
+        : (HISTORY_ORDERS || []);
+
+      currentOrdersByTab[ordersTab] = data;
+
+      ordersList.innerHTML = data.length
+        ? ''
+        : `<div class="text-sm text-slate-500 p-4">No historical orders found.</div>`;
+
+      data.forEach(o=>{
+        const row = buildOrderRow(o);
+        row.classList.add('opacity-80');
+        ordersList.appendChild(row);
+      });
+      wireOrderRowButtons(ordersList);
+      return;
+    }
+
+    // normal status tabs
     const data = DEMO_MODE
       ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status===ordersTab)
       : await fetchOrdersByStatus(ordersTab);
@@ -2270,7 +2341,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ? ` • Fraud: ${Number(o.fraud_score).toFixed(2)}`
       : "";
 
-    const driverMaps = DEMO_MODE ? DEMO_DRIVERS_MAP : API_DRIVERS_MAP;
+    const driverMaps = DEMO_MODE ? DEMO_DRIVERS_DB : API_DRIVERS_MAP;
     const driverKey  = o.assigned_driver_id || o.driver_id || null;
     let driverName   = '—';
 
@@ -2571,7 +2642,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   }
 
-  // === MAP (slower cars) =====================================================
+  // === MAP (slower cars, unchanged logic) ====================================
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
     if(!heroEl) return;
@@ -2642,7 +2713,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       for(let i=0;i<count;i++){
         const r    = 0.01 + Math.random()*0.02;
         const ang0 = Math.random()*Math.PI*2;
-        const spd  = 0.10 + Math.random()*0.15; // slower
+        const spd  = 0.10 + Math.random()*0.15;
         const m    = L.marker(
           [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
           { icon:carIcon() }
@@ -2791,7 +2862,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           try { heroMap.invalidateSize(); } catch(_){}
         });
 
-        // Driver signup → drop car near depot and send to API
+        // Driver signup → send to backend (Mongo via API)
         formSignup?.addEventListener('submit', async e=>{
           e.preventDefault();
           const name    = document.getElementById('drvName')?.value.trim();
