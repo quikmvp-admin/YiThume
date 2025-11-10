@@ -1733,21 +1733,13 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   // ========================================================================
   // ADMIN STATS (LIVE FROM API) - USED TO POPULATE STATS & DRIVERS
   // ========================================================================
+ // === ADMIN STATS (live from API) ==========================================
   async function fetchAllOrders(){
-    if (DEMO_MODE){
-      return Object.values(DEMO_ORDERS_DB);
-    }
     try{
       const r = await fetch(`${BASE_API}/orders`);
       const j = await r.json().catch(()=>({}));
-      if(!r.ok || j.ok === false) return [];
-      return Array.isArray(j.orders)
-        ? j.orders
-        : Array.isArray(j.data)
-        ? j.data
-        : Array.isArray(j)
-        ? j
-        : [];
+      if(!r.ok || !j.ok) return [];
+      return Array.isArray(j.orders) ? j.orders : [];
     }catch(e){
       console.error("fetchAllOrders", e);
       return [];
@@ -1755,53 +1747,110 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   async function fetchDrivers(){
-    if(DEMO_MODE){
-      DRIVERS = Object.values(DEMO_DRIVERS_DB);
-      DRIVERS_BY_ID = Object.create(null);
-      API_DRIVERS_MAP = {};
-      for(const d of DRIVERS){
-        const key = d._internal_id || d.driver_id;
-        if(key){
-          DRIVERS_BY_ID[key] = d;
-          API_DRIVERS_MAP[key] = d;
-        }
-      }
-      return;
-    }
-
     try{
       const r = await fetch(`${BASE_API}/drivers`);
       const j = await r.json().catch(()=>({}));
-      if(!r.ok || j.ok === false){
-        DRIVERS = [];
-        DRIVERS_BY_ID = {};
-        API_DRIVERS_MAP = {};
-        return;
-      }
-      DRIVERS = Array.isArray(j.drivers)
-        ? j.drivers
-        : Array.isArray(j.data)
-        ? j.data
-        : Array.isArray(j)
-        ? j
-        : [];
+      if(!r.ok || !j.ok) { DRIVERS=[]; DRIVERS_BY_ID={}; return; }
+      DRIVERS = Array.isArray(j.drivers) ? j.drivers : [];
       DRIVERS_BY_ID = Object.create(null);
-      API_DRIVERS_MAP = {};
       for(const d of DRIVERS){
-        const key = d._internal_id || d.driver_id || d.id;
-        if(key){
-          DRIVERS_BY_ID[key] = d;
-          API_DRIVERS_MAP[key] = d;
-        }
+        if(d && d._internal_id) DRIVERS_BY_ID[d._internal_id] = d;
       }
     }catch(e){
       console.error("fetchDrivers", e);
-      DRIVERS = [];
-      DRIVERS_BY_ID = {};
-      API_DRIVERS_MAP = {};
+      DRIVERS=[]; DRIVERS_BY_ID={};
     }
   }
 
+  async function renderAdminStats(){
+    // Ensure stats container exists with correct layout (label over value)
+    adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
+    adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
+    adminTopProductsEl  = document.getElementById('adminTopProducts');
+    adminTopAreasEl     = document.getElementById('adminTopAreas');
+
+    if(!document.getElementById('adminStatsWrap')){
+      const stats = document.createElement('div');
+      stats.id = 'adminStatsWrap';
+      stats.className = 'hidden';
+      stats.innerHTML = `
+        <div class="grid gap-3 sm:grid-cols-3">
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+            <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
+          </div>
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Revenue</div>
+            <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
+          </div>
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Drivers</div>
+            <div class="text-sm"><b id="adminDriversCount">0</b></div>
+            <div class="text-xs text-slate-500 mt-2">Payouts</div>
+            <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
+            <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
+          </div>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 mt-4">
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Products</div>
+            <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
+          </div>
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Areas</div>
+            <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
+          </div>
+        </div>
+      `;
+      (ordersPanel || document.body).appendChild(stats);
+      adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
+      adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
+      adminTopProductsEl  = document.getElementById('adminTopProducts');
+      adminTopAreasEl     = document.getElementById('adminTopAreas');
+      adminDriversCountEl = document.getElementById('adminDriversCount');
+      adminPayPendingEl   = document.getElementById('adminPayPending');
+      adminPayApprovedEl  = document.getElementById('adminPayApproved');
+    }
+
+    // Pull fresh data
+    const [orders] = await Promise.all([fetchAllOrders()]);
+    const totalOrders = orders.length;
+    const revenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
+
+    if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
+    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${revenue}`;
+
+    // Top products
+    const prodMap = new Map();
+    orders.forEach(o=>{
+      (o.items||[]).forEach(it=>{
+        prodMap.set(it.name, (prodMap.get(it.name)||0) + (it.qty||1));
+      });
+    });
+    const topProducts = Array.from(prodMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    if(adminTopProductsEl){
+      adminTopProductsEl.innerHTML = topProducts.length
+        ? topProducts.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
+        : '<li class="text-slate-500">No data yet</li>';
+    }
+
+    // Top areas (by meta.collection_name)
+    const areaMap = new Map();
+    orders.forEach(o=>{
+      const k = o.meta?.collection_name || '—';
+      areaMap.set(k, (areaMap.get(k)||0)+1);
+    });
+    const topAreas = Array.from(areaMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    if(adminTopAreasEl){
+      adminTopAreasEl.innerHTML = topAreas.length
+        ? topAreas.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
+        : '<li class="text-slate-500">No data yet</li>';
+    }
+
+    // Also refresh driver/payout widgets from live drivers
+    await fetchDrivers();
+    recalcAdminPayoutWidgets();
+  }  
   function recalcAdminPayoutWidgets(){
     if(!adminDriversCountEl || !adminPayPendingEl || !adminPayApprovedEl) return;
 
