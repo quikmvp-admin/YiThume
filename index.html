@@ -923,14 +923,24 @@
 
 <script>
 window.addEventListener('DOMContentLoaded', () => {
-  // === CONFIG & GLOBALS ======================================================
-  // All DB data (orders, drivers, stats, history) is fetched via your backend,
-  // which should be backed by MongoDB.
-  // Expected backend endpoints:
-  //  - GET  /api/app/orders?status=pending|assigned|in_transit|delivered
-  //  - GET  /api/app/orders/history?limit=200
+  // ========================================================================
+  // CONFIG
+  // ========================================================================
+  //
+  // This frontend expects your backend (Node/Express/etc) to read from your
+  // MongoDB Atlas cluster and expose JSON APIs:
+  //
+  //  - GET  /api/app/orders/all
+  //        → all orders from yithume.orders
+  //        shape: [ { _internal_id, order_id, order_public_id, status,
+  //                  total, delivery_fee, items[], customer, meta, payment,
+  //                  driver_id / assigned_driver_id, driver_pay_* ... }, ... ]
+  //
+  //  - (Fallback) GET /api/app/orders?status=pending|assigned|in_transit|delivered
   //  - GET  /api/app/drivers
-  //  - GET  /api/app/stats/overview
+  //        → all drivers from yithume.drivers
+  //  - (Optional) GET /api/app/stats/overview
+  //        → pre-aggregated stats; if missing, stats are computed here.
   //  - POST /api/app/orders
   //  - POST /api/app/orders/:id/auto-assign
   //  - POST /api/app/orders/:id/status
@@ -938,28 +948,34 @@ window.addEventListener('DOMContentLoaded', () => {
   //  - POST /api/app/drivers
   //  - POST /api/app/stores
   //
-  // The frontend here just calls those APIs; MongoDB is handled server-side.
+  // All "stats" you see on the admin panel are calculated from the *orders*
+  // returned by the API (which themselves come from MongoDB).
+  //
+  // ========================================================================
 
   const BASE_API        = "/api/app";
   const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
   const ADMIN_PASS      = "1234";
 
-  // Toggle demo mode if you want to use localStorage instead of backend
+  // Set to true for local demo-only behaviour (localStorage instead of API)
   const DEMO_MODE       = false;
 
-  // Delivery math
+  // Delivery pricing
   const BASE_DELIVERY_FEE = 15;
   const PER_KM_PRICE      = 8;
   const RUSH_FEE          = 30;
 
-  // Storage keys (for demo)
+  // Demo storage keys
   const LS_ORDERS  = "YT_DEMO_ORDERS_V1";
   const LS_DRIVERS = "YT_DEMO_DRIVERS_V1";
 
+  // UI palette
   const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
 
-  // Helpers
+  // ========================================================================
+  // HELPERS
+  // ========================================================================
   const waText = (str) => encodeURIComponent(str);
   const digits = (val) => (val || "").replace(/\D+/g, "");
   const clamp  = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
@@ -978,7 +994,15 @@ window.addEventListener('DOMContentLoaded', () => {
     return 2*R*Math.asin(Math.sqrt(s1));
   };
 
-  // === BODY SCROLL LOCK + FOCUS RESTORE =====================================
+  function salesSafe(str){
+    return (str || '').toString().replace(/[<>&]/g, c => (
+      c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'
+    ));
+  }
+
+  // ========================================================================
+  // BODY SCROLL LOCK + FOCUS RESTORE
+  // ========================================================================
   const lastFocus = new Map();
   const firstFocusable = (el) =>
     el?.querySelector?.('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
@@ -1019,21 +1043,22 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // === RUNTIME / GLOBAL STATE ===============================================
+  // ========================================================================
+  // GLOBAL STATE
+  // ========================================================================
   let latestOrderData = null;
   let botStage = 0;
 
   const currentOrdersByTab = {};
-  let ALL_ORDERS_MAP   = {}; // all live orders (from backend / Mongo)
-  let API_DRIVERS_MAP  = {}; // drivers keyed by id (from backend / Mongo)
-  let REMOTE_STATS     = null; // stats overview (from backend / Mongo)
-  let HISTORY_ORDERS   = [];   // history tab data (delivered / archive)
+  let ALL_ORDERS_MAP   = {}; // all orders from backend/Mongo
+  let API_DRIVERS_MAP  = {}; // drivers from backend/Mongo
+  let REMOTE_STATS     = null; // optional stats from backend
+  let HISTORY_ORDERS   = [];   // history view (derived from orders)
 
-  // Positions
   let DELIVERY_COORDS   = null;
   let COLLECTION_COORDS = {lat:-33.590, lng:26.890};
 
-  // DEMO pseudo-DB
+  // Demo DB
   let DEMO_ORDERS_DB  = {};
   let DEMO_DRIVERS_DB = {};
 
@@ -1045,88 +1070,91 @@ window.addEventListener('DOMContentLoaded', () => {
   const driverTotals = { pending: 0, approved: 0 };
   const storeItems = [];
 
-  // === YEAR FOOTER ===========================================================
-  const yearEl = document.getElementById('year');
+  // ========================================================================
+  // ELEMENT REFS
+  // ========================================================================
+  const yearEl             = document.getElementById('year');
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
-  // === ELEMENT REFS ==========================================================
-  const mobileBtn       = document.getElementById('mobileMenuBtn');
-  const mobileDropdown  = document.getElementById('mobileNavDropdown');
-  const mobileIconOpen  = document.getElementById('mobileMenuIconOpen');
-  const mobileIconClose = document.getElementById('mobileMenuIconClose');
+  const mobileBtn          = document.getElementById('mobileMenuBtn');
+  const mobileDropdown     = document.getElementById('mobileNavDropdown');
+  const mobileIconOpen     = document.getElementById('mobileMenuIconOpen');
+  const mobileIconClose    = document.getElementById('mobileMenuIconClose');
 
-  const modal               = document.getElementById('orderBuilder');
-  const closeBtn            = document.getElementById('closeOrderBuilder');
-  const cancelOrderBuilder  = document.getElementById('cancelOrderBuilder');
-  const itemsList           = document.getElementById('itemsList');
+  const modal              = document.getElementById('orderBuilder');
+  const closeBtn           = document.getElementById('closeOrderBuilder');
+  const cancelOrderBuilder = document.getElementById('cancelOrderBuilder');
+  const itemsList          = document.getElementById('itemsList');
 
-  const zoneSelect          = document.getElementById('zoneSelect');
-  const rushToggle          = document.getElementById('rushToggle');
-  const totalEl             = document.getElementById('orderTotal');
-  const rushNote            = document.getElementById('rushNote');
-  const depositBanner       = document.getElementById('depositBanner');
-  const depositAmtEl        = document.getElementById('depositAmt');
-  const custNameEl          = document.getElementById('custName');
-  const custPhoneEl         = document.getElementById('custPhone');
-  const custAddrEl          = document.getElementById('custAddress');
+  const zoneSelect         = document.getElementById('zoneSelect');
+  const rushToggle         = document.getElementById('rushToggle');
+  const totalEl            = document.getElementById('orderTotal');
+  const rushNote           = document.getElementById('rushNote');
+  const depositBanner      = document.getElementById('depositBanner');
+  const depositAmtEl       = document.getElementById('depositAmt');
+  const custNameEl         = document.getElementById('custName');
+  const custPhoneEl        = document.getElementById('custPhone');
+  const custAddrEl         = document.getElementById('custAddress');
 
-  const adminBtn            = document.getElementById('adminLoginBtn');
+  const adminBtn           = document.getElementById('adminLoginBtn');
 
-  const confirmBtn2         = document.getElementById('confirmOrderBtn');
-  const botModal            = document.getElementById('botChat');
-  const botFeed             = document.getElementById('botFeed');
-  const botNext             = document.getElementById('botNext');
-  const botSendWA           = document.getElementById('botSendWA');
-  const botNewOrder         = document.getElementById('botNewOrder');
-  const botPayChoice        = document.getElementById('botPayChoice');
-  const botDemoNote         = document.getElementById('botDemoNote');
+  const confirmBtn2        = document.getElementById('confirmOrderBtn');
+  const botModal           = document.getElementById('botChat');
+  const botFeed            = document.getElementById('botFeed');
+  const botNext            = document.getElementById('botNext');
+  const botSendWA          = document.getElementById('botSendWA');
+  const botNewOrder        = document.getElementById('botNewOrder');
+  const botPayChoice       = document.getElementById('botPayChoice');
+  const botDemoNote        = document.getElementById('botDemoNote');
 
-  const payModal            = document.getElementById('payModal');
-  const payOrderRef         = document.getElementById('payOrderRef');
-  const payAmountEl         = document.getElementById('payAmount');
-  const closePayModalBtn    = document.getElementById('closePayModal');
-  const btnFakePayNow       = document.getElementById('btnFakePayNow');
-  const btnCancelPay        = document.getElementById('btnCancelPay');
+  const payModal           = document.getElementById('payModal');
+  const payOrderRef        = document.getElementById('payOrderRef');
+  const payAmountEl        = document.getElementById('payAmount');
+  const closePayModalBtn   = document.getElementById('closePayModal');
+  const btnFakePayNow      = document.getElementById('btnFakePayNow');
+  const btnCancelPay       = document.getElementById('btnCancelPay');
 
-  const driverModal         = document.getElementById('driverModal');
-  const closeDriver         = document.getElementById('closeDriverModal');
-  const tabSignup           = document.getElementById('tabSignup');
-  const tabLogin            = document.getElementById('tabLogin');
-  const formSignup          = document.getElementById('driverFormSignup');
-  const formLogin           = document.getElementById('driverFormLogin');
+  const driverModal        = document.getElementById('driverModal');
+  const closeDriver        = document.getElementById('closeDriverModal');
+  const tabSignup          = document.getElementById('tabSignup');
+  const tabLogin           = document.getElementById('tabLogin');
+  const formSignup         = document.getElementById('driverFormSignup');
+  const formLogin          = document.getElementById('driverFormLogin');
 
-  const driverDashModal         = document.getElementById('driverDashModal');
-  const closeDriverDash         = document.getElementById('closeDriverDash');
-  const driverPayoutPendingEl   = document.getElementById('driverPayoutPending');
-  const driverPayoutApprovedEl  = document.getElementById('driverPayoutApproved');
-  const driverNextWindowEl      = document.getElementById('driverNextWindow');
-  const driverZoneDisplayEl     = document.getElementById('driverZoneDisplay');
-  const driverRadiusDisplayEl   = document.getElementById('driverRadiusDisplay');
+  const driverDashModal        = document.getElementById('driverDashModal');
+  const closeDriverDash        = document.getElementById('closeDriverDash');
+  const driverPayoutPendingEl  = document.getElementById('driverPayoutPending');
+  const driverPayoutApprovedEl = document.getElementById('driverPayoutApproved');
+  const driverNextWindowEl     = document.getElementById('driverNextWindow');
+  const driverZoneDisplayEl    = document.getElementById('driverZoneDisplay');
+  const driverRadiusDisplayEl  = document.getElementById('driverRadiusDisplay');
 
-  const ordersPanel         = document.getElementById('ordersPanel');
-  const ordersList          = document.getElementById('ordersList');
-  const ordersClose         = document.getElementById('closeOrdersPanel');
-  const ordersAssign        = document.getElementById('ordersAssign');
-  const ordersRefresh       = document.getElementById('ordersRefresh');
+  const ordersPanel        = document.getElementById('ordersPanel');
+  const ordersList         = document.getElementById('ordersList');
+  const ordersClose        = document.getElementById('closeOrdersPanel');
+  const ordersAssign       = document.getElementById('ordersAssign');
+  const ordersRefresh      = document.getElementById('ordersRefresh');
 
-  const driversList         = document.getElementById('driversList');
-  const driversRefresh      = document.getElementById('driversRefresh');
+  const driversList        = document.getElementById('driversList');
+  const driversRefresh     = document.getElementById('driversRefresh');
 
-  const ordersTabsContainer = document.getElementById('ordersTabs');
-  const statsContainer      = document.getElementById('statsContainer');
+  const ordersTabsContainer= document.getElementById('ordersTabs');
+  const statsContainer     = document.getElementById('statsContainer');
 
-  const storeModal          = document.getElementById('storeModal');
-  const openStoreFooter     = document.getElementById('openStoreModalFooter');
-  const closeStoreModalBtn  = document.getElementById('closeStoreModal');
-  const cancelStoreBtn      = document.getElementById('cancelStore');
-  const submitStoreBtn      = document.getElementById('submitStore');
-  const addStoreItemBtn     = document.getElementById('addStoreItem');
-  const storeItemsList      = document.getElementById('storeItemsList');
-  const storeNameEl         = document.getElementById('storeName');
-  const storePhoneEl        = document.getElementById('storePhone');
-  const storeZoneEl         = document.getElementById('storeZone');
+  const storeModal         = document.getElementById('storeModal');
+  const openStoreFooter    = document.getElementById('openStoreModalFooter');
+  const closeStoreModalBtn = document.getElementById('closeStoreModal');
+  const cancelStoreBtn     = document.getElementById('cancelStore');
+  const submitStoreBtn     = document.getElementById('submitStore');
+  const addStoreItemBtn    = document.getElementById('addStoreItem');
+  const storeItemsList     = document.getElementById('storeItemsList');
+  const storeNameEl        = document.getElementById('storeName');
+  const storePhoneEl       = document.getElementById('storePhone');
+  const storeZoneEl        = document.getElementById('storeZone');
 
-  // === COLLECTION POINTS =====================================================
+  // ========================================================================
+  // COLLECTION POINTS
+  // ========================================================================
   const COLLECTIONS = [
     { id:'DEPOT-PA',   name:'Port Alfred Depot',         lat:-33.590, lng:26.890 },
     { id:'DEPOT-KENT', name:'Kenton-on-Sea Depot',       lat:-33.686, lng:26.668 },
@@ -1155,7 +1183,9 @@ window.addEventListener('DOMContentLoaded', () => {
     zoneSelect.dataset.enhanced = '1';
   }
 
-  // === CATALOG ===============================================================
+  // ========================================================================
+  // CATALOG
+  // ========================================================================
   const CATALOG = [
     {name:'Panado 500mg (24s)',price:35},
     {name:'Allergex 10mg (10s)',price:30},
@@ -1164,7 +1194,9 @@ window.addEventListener('DOMContentLoaded', () => {
     {name:'Bandages (set)',price:25}
   ];
 
-  // === DEMO PERSISTENCE ======================================================
+  // ========================================================================
+  // DEMO PERSISTENCE
+  // ========================================================================
   function saveOrdersToLS(){
     try{ localStorage.setItem(LS_ORDERS, JSON.stringify(DEMO_ORDERS_DB)); }catch(_){}
   }
@@ -1248,7 +1280,9 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   hydrateState();
 
-  // === UI HELPERS: Items, totals, deposits ==================================
+  // ========================================================================
+  // CUSTOMER UI: items + totals
+  // ========================================================================
   function renderItems(){
     if(!itemsList) return;
     itemsList.innerHTML = '';
@@ -1409,7 +1443,9 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // === MODAL / ADMIN BTN WIRING ==============================================
+  // ========================================================================
+  // MODALS & NAV
+  // ========================================================================
   const openOrder  = async ()=>{
     openFlex(modal);
     const s = await computeTotal();
@@ -1474,7 +1510,6 @@ window.addEventListener('DOMContentLoaded', () => {
     botFeed.scrollTop = botFeed.scrollHeight;
   }
 
-  // === MOBILE NAV ============================================================
   function toggleMobileMenu() {
     if(!mobileDropdown || !mobileBtn || !mobileIconOpen || !mobileIconClose) return;
     const isHidden = mobileDropdown.classList.contains('hidden');
@@ -1515,7 +1550,9 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('openDriverModal')?.click();
   });
 
-  // === INIT CUSTOMER UI ======================================================
+  // ========================================================================
+  // INIT CUSTOMER UI
+  // ========================================================================
   renderItems();
   ensureCollectionSelectPopulated();
   computeTotal();
@@ -1558,7 +1595,7 @@ window.addEventListener('DOMContentLoaded', () => {
     computeTotal().then(s=>toggleDepositBanner(s.total));
   });
 
-  // === MODAL / ADMIN BTN WIRING (WITH PASSWORD) ==============================
+  // Modal wiring
   document.getElementById('closeBot')?.addEventListener('click', closeBot);
   closeBtn?.addEventListener('click', closeOrder);
   cancelOrderBuilder?.addEventListener('click', closeOrder);
@@ -1568,6 +1605,7 @@ window.addEventListener('DOMContentLoaded', () => {
   closeDriverDash?.addEventListener('click', closeDriverDashWindow);
   ordersClose?.addEventListener('click', closeOrders);
 
+  // Admin PIN
   adminBtn?.addEventListener('click', (e)=>{
     e.preventDefault();
     const pw = prompt("Enter admin PIN:");
@@ -1581,7 +1619,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   window.addEventListener('yt-open-orders', openOrders);
 
-  // Demo “payment”
+  // Demo fake pay
   btnFakePayNow?.addEventListener('click', ()=>{
     alert('No money taken. Demo only.');
     closePayModal();
@@ -1592,7 +1630,6 @@ window.addEventListener('DOMContentLoaded', () => {
     botStage = 2;
   });
 
-  // Openers
   ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.addEventListener('click', openOrder);
@@ -1620,7 +1657,7 @@ window.addEventListener('DOMContentLoaded', () => {
     tabLogin.setAttribute('aria-selected','true');
   });
 
-  // === STORE MODAL ===========================================================
+  // Store modal
   function renderStoreItems(){
     if(!storeItemsList) return;
     storeItemsList.innerHTML = '';
@@ -1701,7 +1738,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     renderStoreItems();
   });
 
-  // === ADMIN PANEL LISTENERS =================================================
+  // ========================================================================
+  // ADMIN DATA EVENTS
+  // ========================================================================
   window.addEventListener('yt-orders-updated', ()=>{
     if(ordersPanel && !ordersPanel.classList.contains('hidden')) {
       renderOrders();
@@ -1710,7 +1749,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   });
 
-  // === LIVE FETCH HELPERS (BACKEND / MONGO) =================================
+  // ========================================================================
+  // LIVE FETCH HELPERS (BACKEND/MONGO)
+  // ========================================================================
   async function fetchOrdersByStatus(status){
     if(status === 'drivers' || status === 'stats' || status === 'history' || (status||'').startsWith('by_driver:')) {
       return [];
@@ -1736,47 +1777,54 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
   }
 
-  async function fetchOrderHistory(limit=200){
-    // History tab: delivered / archived orders (from Mongo via backend)
-    if(DEMO_MODE){
-      return Object.values(DEMO_ORDERS_DB)
-        .filter(o => o.status === 'delivered')
-        .sort((a,b)=> (b.updated_at||0) - (a.updated_at||0));
-    }
-    try{
-      const res = await fetch(`${BASE_API}/orders/history?limit=${limit}`);
-      const data = await res.json().catch(()=>({}));
-      let list = [];
-      if(Array.isArray(data.orders)) list = data.orders;
-      else if(Array.isArray(data.data)) list = data.data;
-      else if(Array.isArray(data)) list = data;
-      HISTORY_ORDERS = list;
-      return list;
-    }catch(err){
-      console.error("fetchOrderHistory err", err);
-      return [];
-    }
-  }
-
   async function fetchAllOrdersLive(){
     if(DEMO_MODE){
       ALL_ORDERS_MAP = {...DEMO_ORDERS_DB};
+      HISTORY_ORDERS = Object.values(DEMO_ORDERS_DB);
       return;
     }
+
+    // 1) Prefer a dedicated /orders/all endpoint
+    try{
+      const res = await fetch(`${BASE_API}/orders/all`);
+      if(res.ok){
+        const data = await res.json().catch(()=>({}));
+        let list = [];
+        if(Array.isArray(data.orders)) list = data.orders;
+        else if(Array.isArray(data.data)) list = data.data;
+        else if(Array.isArray(data)) list = data;
+        const map = {};
+        list.forEach(o=>{
+          const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id || Math.random().toString(36).slice(2);
+          map[key] = o;
+        });
+        ALL_ORDERS_MAP = map;
+        HISTORY_ORDERS = list.slice().sort((a,b)=>{
+          const aa = new Date(a.created_at_iso || a.created_at || 0).getTime();
+          const bb = new Date(b.created_at_iso || b.created_at || 0).getTime();
+          return bb-aa;
+        });
+        return;
+      }
+    }catch(err){
+      console.warn("orders/all failed, falling back by-status", err);
+    }
+
+    // 2) Fallback: pull per-status
     const statuses = ['pending','assigned','in_transit','delivered'];
     const all = await Promise.all(statuses.map(s=>fetchOrdersByStatus(s)));
     const flat = all.flat();
     const map = {};
     flat.forEach(o=>{
-      const key =
-        o._internal_id ||
-        o.internal_id ||
-        o.order_public_id ||
-        o.order_id ||
-        Math.random().toString(36).slice(2);
+      const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id || Math.random().toString(36).slice(2);
       map[key] = o;
     });
     ALL_ORDERS_MAP = map;
+    HISTORY_ORDERS = flat.slice().sort((a,b)=>{
+      const aa = new Date(a.created_at_iso || a.created_at || 0).getTime();
+      const bb = new Date(b.created_at_iso || b.created_at || 0).getTime();
+      return bb-aa;
+    });
   }
 
   async function fetchDriversLive(){
@@ -1810,7 +1858,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   async function fetchStatsLive(){
-    // Backend should compute these from MongoDB.
+    // Optional: if backend supplies aggregated stats
     if(DEMO_MODE){
       REMOTE_STATS = null;
       return;
@@ -1834,7 +1882,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         REMOTE_STATS = null;
       }
     }catch(err){
-      console.error("fetch stats err", err);
+      console.warn("fetch stats err (will compute on frontend)", err);
       REMOTE_STATS = null;
     }
   }
@@ -1842,15 +1890,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   async function refreshAllData(){
     if(DEMO_MODE){
       hydrateState();
-      HISTORY_ORDERS = Object.values(DEMO_ORDERS_DB)
-        .filter(o=>o.status==='delivered')
-        .sort((a,b)=>(b.updated_at||0)-(a.updated_at||0));
+      HISTORY_ORDERS = Object.values(DEMO_ORDERS_DB);
     } else {
       await Promise.all([
         fetchAllOrdersLive(),
         fetchDriversLive(),
-        fetchStatsLive(),
-        fetchOrderHistory(200)
+        fetchStatsLive()
       ]);
     }
     renderOrders();
@@ -1858,7 +1903,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     renderStats();
   }
 
-  // === ADMIN KPIs / STATS ====================================================
+  // ========================================================================
+  // STATS / KPIs (CALCULATED FROM Mongo ORDERS)
+  // ========================================================================
   function computeDriverTotalsFromDB() {
     let pendingTotal = 0;
     let approvedTotal = 0;
@@ -1891,7 +1938,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     let totalDeliveryFees= orders.reduce((s,o)=> s + (o.delivery_fee || 0), 0);
     let activeDrivers    = drivers.length;
 
-    // If backend provides authoritative stats from Mongo, prefer those.
+    // If backend provides authoritative stats, merge them in
     if(!DEMO_MODE && REMOTE_STATS){
       const RS = REMOTE_STATS;
       if(Number.isFinite(RS.total_orders))       totalOrders       = RS.total_orders;
@@ -1952,89 +1999,96 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   function renderStats(){
     if(!statsContainer) return;
-    const s = computeStats();
+    try{
+      const s = computeStats();
+      statsContainer.innerHTML = `
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <!-- KPI: Total Revenue -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+            <div class="text-[10px] text-slate-500">Total Revenue</div>
+            <div class="text-lg font-semibold text-slate-900">R${s.totalRevenue || 0}</div>
+            <div class="text-[10px] text-emerald-600">Delivered: R${s.deliveredRevenue || 0}</div>
+          </div>
 
-    statsContainer.innerHTML = `
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-        <!-- KPI: Total Revenue -->
-        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-          <div class="text-[10px] text-slate-500">Total Revenue</div>
-          <div class="text-lg font-semibold text-slate-900">R${s.totalRevenue || 0}</div>
-          <div class="text-[10px] text-emerald-600">Delivered: R${s.deliveredRevenue || 0}</div>
-        </div>
+          <!-- KPI: Orders -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+            <div class="text-[10px] text-slate-500">Orders Overview</div>
+            <div class="text-lg font-semibold text-slate-900">${s.totalOrders || 0}</div>
+            <div class="text-[9px] text-slate-500 mt-1">
+              ✅ ${s.deliveredOrders || 0}
+              &nbsp;🚚 ${s.inTransitOrders || 0}
+              &nbsp;📦 ${s.assignedOrders || 0}
+              &nbsp;⏳ ${s.pendingOrders || 0}
+            </div>
+          </div>
 
-        <!-- KPI: Orders -->
-        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-          <div class="text-[10px] text-slate-500">Orders Overview</div>
-          <div class="text-lg font-semibold text-slate-900">${s.totalOrders || 0}</div>
-          <div class="text-[9px] text-slate-500 mt-1">
-            ✅ ${s.deliveredOrders || 0}
-            &nbsp;🚚 ${s.inTransitOrders || 0}
-            &nbsp;📦 ${s.assignedOrders || 0}
-            &nbsp;⏳ ${s.pendingOrders || 0}
+          <!-- KPI: Averages -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+            <div class="text-[10px] text-slate-500">Averages</div>
+            <div class="text-[10px] text-slate-500">
+              AOV:
+              <span class="font-semibold text-slate-900">R${s.avgOrderValue || 0}</span>
+            </div>
+            <div class="text-[10px] text-slate-500">
+              Avg delivery fee:
+              <span class="font-semibold text-slate-900">R${s.avgDeliveryFee || 0}</span>
+            </div>
           </div>
-        </div>
 
-        <!-- KPI: Averages -->
-        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-          <div class="text-[10px] text-slate-500">Averages</div>
-          <div class="text-[10px] text-slate-500">
-            AOV:
-            <span class="font-semibold text-slate-900">R${s.avgOrderValue || 0}</span>
+          <!-- KPI: Drivers & Attach -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+            <div class="text-[10px] text-slate-500">Drivers</div>
+            <div class="text-lg font-semibold text-slate-900">${s.activeDrivers || 0}</div>
+            <div class="text-[10px] text-slate-500">
+              Orders with driver:
+              <span class="font-semibold text-emerald-600">${s.driverAttachRate || 0}%</span>
+            </div>
           </div>
-          <div class="text-[10px] text-slate-500">
-            Avg delivery fee:
-            <span class="font-semibold text-slate-900">R${s.avgDeliveryFee || 0}</span>
-          </div>
-        </div>
 
-        <!-- KPI: Drivers & Attach -->
-        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-          <div class="text-[10px] text-slate-500">Drivers</div>
-          <div class="text-lg font-semibold text-slate-900">${s.activeDrivers || 0}</div>
-          <div class="text-[10px] text-slate-500">
-            Orders with driver:
-            <span class="font-semibold text-emerald-600">${s.driverAttachRate || 0}%</span>
+          <!-- KPI: Driver Payouts -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+            <div class="text-[10px] text-slate-500">Driver Payouts</div>
+            <div class="text-[10px] text-slate-500">
+              Pending:
+              <span class="font-semibold text-slate-900">R${s.driverPayoutPending || 0}</span>
+            </div>
+            <div class="text-[10px] text-slate-500">
+              Approved:
+              <span class="font-semibold text-slate-900">R${s.driverPayoutApproved || 0}</span>
+            </div>
           </div>
-        </div>
 
-        <!-- KPI: Driver Payouts -->
-        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-          <div class="text-[10px] text-slate-500">Driver Payouts</div>
-          <div class="text-[10px] text-slate-500">
-            Pending:
-            <span class="font-semibold text-slate-900">R${s.driverPayoutPending || 0}</span>
+          <!-- KPI: Popular Item -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+            <div class="text-[10px] text-slate-500">Top Item</div>
+            <div class="text-sm font-semibold text-slate-900">${s.popularItem || '—'}</div>
+            <div class="text-[9px] text-slate-500">Qty sold: ${s.popularItemQty || 0}</div>
           </div>
-          <div class="text-[10px] text-slate-500">
-            Approved:
-            <span class="font-semibold text-slate-900">R${s.driverPayoutApproved || 0}</span>
-          </div>
-        </div>
 
-        <!-- KPI: Popular Item -->
-        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-          <div class="text-[10px] text-slate-500">Top Item</div>
-          <div class="text-sm font-semibold text-slate-900">${s.popularItem || '—'}</div>
-          <div class="text-[9px] text-slate-500">Qty sold: ${s.popularItemQty || 0}</div>
-        </div>
-
-        <!-- KPI: Rush & Risk -->
-        <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-          <div class="text-[10px] text-slate-500">Rush &amp; Risk</div>
-          <div class="text-[10px] text-slate-500">
-            Rush orders:
-            <span class="font-semibold text-slate-900">${s.rushOrders || 0}</span>
-          </div>
-          <div class="text-[10px] text-slate-500">
-            High fraud (&gt;0.5):
-            <span class="font-semibold text-slate-900">${s.fraudFlagged || 0}</span>
+          <!-- KPI: Rush & Risk -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+            <div class="text-[10px] text-slate-500">Rush &amp; Risk</div>
+            <div class="text-[10px] text-slate-500">
+              Rush orders:
+              <span class="font-semibold text-slate-900">${s.rushOrders || 0}</span>
+            </div>
+            <div class="text-[10px] text-slate-500">
+              High fraud (&gt;0.5):
+              <span class="font-semibold text-slate-900">${s.fraudFlagged || 0}</span>
+            </div>
           </div>
         </div>
-      </div>
-    `;
+      `;
+    }catch(err){
+      console.error("renderStats error", err);
+      statsContainer.innerHTML =
+        `<div class="text-xs text-red-600">Unable to compute stats. Check API / console.</div>`;
+    }
   }
 
-  // === ADMIN TABS (INCLUDING HISTORY) =======================================
+  // ========================================================================
+  // ADMIN TABS (INCLUDING HISTORY)
+  // ========================================================================
   function ensureAdminTabs(){
     let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
 
@@ -2057,7 +2111,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ['Delivered','delivered'],
       ['Drivers','drivers'],
       ['Stats','stats'],
-      ['History','history'] // NEW: History tab
+      ['History','history'] // all orders regardless of status
     ];
 
     const host = ordersTabsContainer || ordersList?.parentElement || ordersPanel || document.body;
@@ -2106,7 +2160,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     } else if(showStats){
       renderStats();
     } else if(showHistory){
-      renderOrders(); // renderOrders handles history mode
+      renderOrders(); // history handled inside renderOrders
     } else {
       renderOrders();
     }
@@ -2119,7 +2173,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   ordersRefresh?.addEventListener('click', hardRefresh);
   driversRefresh?.addEventListener('click', hardRefresh);
 
-  // === ORDER / DRIVER ACTIONS ===============================================
+  // ========================================================================
+  // ORDER / DRIVER ACTIONS
+  // ========================================================================
   let rrIdx = 0;
   function pickDriverId(){
     const ids = DEMO_MODE ? Object.keys(DEMO_DRIVERS_DB) : Object.keys(API_DRIVERS_MAP);
@@ -2262,13 +2318,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
-  // === ORDER ROW RENDERING ===================================================
-  function salesSafe(str){
-    return (str || '').toString().replace(/[<>&]/g, c => (
-      c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'
-    ));
-  }
-
+  // ========================================================================
+  // ORDER LIST RENDERING (INCLUDING HISTORY)
+  // ========================================================================
   async function renderOrders(){
     if(!ordersList) return;
 
@@ -2292,21 +2344,27 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
-    // history tab
+    // history tab → all orders (any status) sorted newest first
     if(ordersTab === 'history'){
-      const data = DEMO_MODE
-        ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status==='delivered')
-        : (HISTORY_ORDERS || []);
+      const source = DEMO_MODE
+        ? Object.values(DEMO_ORDERS_DB)
+        : (HISTORY_ORDERS.length ? HISTORY_ORDERS : Object.values(ALL_ORDERS_MAP));
+
+      const data = source.slice().sort((a,b)=>{
+        const aa = new Date(a.created_at_iso || a.created_at || 0).getTime();
+        const bb = new Date(b.created_at_iso || b.created_at || 0).getTime();
+        return bb-aa;
+      });
 
       currentOrdersByTab[ordersTab] = data;
 
       ordersList.innerHTML = data.length
         ? ''
-        : `<div class="text-sm text-slate-500 p-4">No historical orders found.</div>`;
+        : `<div class="text-sm text-slate-500 p-4">No orders found in history.</div>`;
 
       data.forEach(o=>{
         const row = buildOrderRow(o);
-        row.classList.add('opacity-80');
+        row.classList.add('opacity-90');
         ordersList.appendChild(row);
       });
       wireOrderRowButtons(ordersList);
@@ -2352,7 +2410,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
 
     let driverPayText = "Driver pay: R0";
-    let driverPayStatusText = "Status: –";
+    let driverPayStatusText = "Pay: –";
     if(o.driver_pay_status === "pending"){
       driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
       driverPayStatusText = "Pay: pending";
@@ -2364,6 +2422,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const isDelivered = o.status === "delivered";
     const canAssign   = (o.status === "pending" || o.status === "review_required") && !isDelivered;
     const canDeliver  = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
+
+    const createdRaw =
+      o.created_at_iso ||
+      o.created_at ||
+      o.createdAt ||
+      (o.meta && o.meta.created_at);
+    const createdText = createdRaw
+      ? new Date(createdRaw).toLocaleString()
+      : '';
 
     const row = document.createElement('div');
     row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
@@ -2377,13 +2444,18 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           <span>• Total R${o.total}</span>
           ${kmText}
         </div>
-        <div class="text-xs text-slate-500 break-words">${salesSafe(itemsText)}</div>
+        <div class="text-xs text-slate-500 break-words">${salesSafe(itemsText || '')}</div>
         <div class="text-xs text-slate-500">
           Status: <b>${salesSafe(o.status || '')}</b> • Driver: ${salesSafe(driverName)}${fraudDisplay}
         </div>
         <div class="text-[11px] leading-snug text-slate-500 mt-1">
           ${driverPayText} • ${driverPayStatusText}
         </div>
+        ${
+          createdText
+            ? `<div class="text-[9px] text-slate-400 mt-0.5">Created: ${salesSafe(createdText)}</div>`
+            : ''
+        }
       </div>
       <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
         <button
@@ -2431,7 +2503,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   }
 
-  // === DRIVER METRICS & RENDERING ===========================================
+  // ========================================================================
+  // DRIVER METRICS & RENDERING (drivers from Mongo)
+  // ========================================================================
   function computeDriverDerived(driverKey){
     const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
     const mine = Object.values(source).filter(o => {
@@ -2642,7 +2716,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   }
 
-  // === MAP (slower cars, unchanged logic) ====================================
+  // ========================================================================
+  // MAP (unchanged behaviour, uses COLLECTIONS + geolocation)
+  // ========================================================================
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
     if(!heroEl) return;
@@ -2862,7 +2938,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           try { heroMap.invalidateSize(); } catch(_){}
         });
 
-        // Driver signup → send to backend (Mongo via API)
+        // Driver signup → send to backend
         formSignup?.addEventListener('submit', async e=>{
           e.preventDefault();
           const name    = document.getElementById('drvName')?.value.trim();
@@ -2924,7 +3000,9 @@ Vehicle: ${vehicle}`;
     })();
   })();
 
-  // === DRIVER LOGIN → DASH (demo-ish) =======================================
+  // ========================================================================
+  // DRIVER LOGIN → DASH (demo)
+  // ========================================================================
   formLogin?.addEventListener('submit',e=>{
     e.preventDefault();
     alert('Logged in (demo). Opening dashboard.');
@@ -2932,7 +3010,9 @@ Vehicle: ${vehicle}`;
     if(driverDashModal){ openDriverDash(); }
   });
 
-  // === ORDER SUBMISSION ======================================================
+  // ========================================================================
+  // ORDER SUBMISSION
+  // ========================================================================
   confirmBtn2?.addEventListener('click', async ()=>{
     confirmBtn2.disabled = true;
     try{
@@ -3089,7 +3169,9 @@ Vehicle: ${vehicle}`;
     }
   });
 
-  // === BOT PAY & WHATSAPP ====================================================
+  // ========================================================================
+  // BOT PAY & WHATSAPP
+  // ========================================================================
   botNext?.addEventListener('click', ()=>{
     if(!latestOrderData) return;
 
@@ -3157,7 +3239,9 @@ Vehicle: ${vehicle}`;
     openOrder();
   });
 
-  // === FINAL INIT ===========================================================
+  // ========================================================================
+  // FINAL INIT
+  // ========================================================================
   renderStoreItems();
   if (DEMO_MODE) {
     computeDriverTotalsFromDB();
