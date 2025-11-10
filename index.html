@@ -920,89 +920,38 @@
     </div>
   </div>
 </div>
-
 <script>
 window.addEventListener('DOMContentLoaded', () => {
-  // ========================================================================
-  // CONFIG
-  // ========================================================================
-  //
-  // This frontend expects your backend (Node/Express/etc) to read from your
-  // MongoDB Atlas cluster and expose JSON APIs:
-  //
-  //  - GET  /api/app/orders/all
-  //        → all orders from yithume.orders
-  //        shape: [ { _internal_id, order_id, order_public_id, status,
-  //                  total, delivery_fee, items[], customer, meta, payment,
-  //                  driver_id / assigned_driver_id, driver_pay_* ... }, ... ]
-  //
-  //  - (Fallback) GET /api/app/orders?status=pending|assigned|in_transit|delivered
-  //  - GET  /api/app/drivers
-  //        → all drivers from yithume.drivers
-  //  - (Optional) GET /api/app/stats/overview
-  //        → pre-aggregated stats; if missing, stats are computed here.
-  //  - POST /api/app/orders
-  //  - POST /api/app/orders/:id/auto-assign
-  //  - POST /api/app/orders/:id/status
-  //  - POST /api/app/drivers/:id/approve-all-pay
-  //  - POST /api/app/drivers
-  //  - POST /api/app/stores
-  //
-  // All "stats" you see on the admin panel are calculated from the *orders*
-  // returned by the API (which themselves come from MongoDB).
-  //
-  // ========================================================================
-
+  // === CONFIG & GLOBALS ======================================================
   const BASE_API        = "/api/app";
-  const WHATSAPP_NUMBER = "270691456201";
+  const WHATSAPP_NUMBER = "270691456201"; // customer support / business inbox
   const ADMIN_WHATSAPP  = "270691456201";
-  const ADMIN_PASS      = "1234";
+  const DEMO_MODE       = false; // ← HARD OFF: everything goes to MongoDB via Flask
 
-  // Set to true for local demo-only behaviour (localStorage instead of API)
-  const DEMO_MODE       = false;
+  // Delivery math
+  const BASE_DELIVERY_FEE = 15; // R
+  const PER_KM_PRICE      = 8;  // R per km (OSRM distance when available)
+  const RUSH_FEE          = 30; // R flat
 
-  // Delivery pricing
-  const BASE_DELIVERY_FEE = 15;
-  const PER_KM_PRICE      = 8;
-  const RUSH_FEE          = 30;
-
-  // Demo storage keys
-  const LS_ORDERS  = "YT_DEMO_ORDERS_V1";
-  const LS_DRIVERS = "YT_DEMO_DRIVERS_V1";
-
-  // UI palette
+  // UI Colors
   const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
 
-  // ========================================================================
-  // HELPERS
-  // ========================================================================
+  // Helpers
   const waText = (str) => encodeURIComponent(str);
   const digits = (val) => (val || "").replace(/\D+/g, "");
   const clamp  = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
-  const pad2   = (n)=> String(n).padStart(2,'0');
 
-  // Haversine (km)
+  // Haversine fallback (km)
   const kmBetween = (a,b)=>{
     if(!a||!b) return 0;
     const R = 6371;
     const dLat = (b.lat-a.lat)*Math.PI/180;
     const dLng = (b.lng-a.lng)*Math.PI/180;
-    const s1 = Math.sin(dLat/2)**2 +
-      Math.cos(a.lat*Math.PI/180) *
-      Math.cos(b.lat*Math.PI/180) *
-      Math.sin(dLng/2)**2;
+    const s1 = Math.sin(dLat/2)**2 + Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2;
     return 2*R*Math.asin(Math.sqrt(s1));
   };
 
-  function salesSafe(str){
-    return (str || '').toString().replace(/[<>&]/g, c => (
-      c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'
-    ));
-  }
-
-  // ========================================================================
-  // BODY SCROLL LOCK + FOCUS RESTORE
-  // ========================================================================
+  // === BODY SCROLL LOCK + FOCUS RESTORE =====================================
   const lastFocus = new Map();
   const firstFocusable = (el) =>
     el?.querySelector?.('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
@@ -1026,7 +975,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if(prev && typeof prev.focus === 'function') prev.focus();
   }
 
-  // ESC → close topmost modal
+  // ESC closes topmost modal
   document.addEventListener('keydown', (e)=>{
     if(e.key !== 'Escape') return;
     const modals = [
@@ -1043,149 +992,141 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ========================================================================
-  // GLOBAL STATE
-  // ========================================================================
+  // === RUNTIME / GLOBAL STATE ===============================================
   let latestOrderData = null;
   let botStage = 0;
 
+  // caches
   const currentOrdersByTab = {};
-  let ALL_ORDERS_MAP   = {}; // all orders from backend/Mongo
-  let API_DRIVERS_MAP  = {}; // drivers from backend/Mongo
-  let REMOTE_STATS     = null; // optional stats from backend
-  let HISTORY_ORDERS   = [];   // history view (derived from orders)
+  let DRIVERS = [];                        // full driver docs from API
+  let DRIVERS_BY_ID = Object.create(null); // map by _internal_id
 
+  // Customer & collection positions
   let DELIVERY_COORDS   = null;
-  let COLLECTION_COORDS = {lat:-33.590, lng:26.890};
+  let COLLECTION_COORDS = {lat:-33.590, lng:26.890}; // default if none chosen
 
-  // Demo DB
-  let DEMO_ORDERS_DB  = {};
-  let DEMO_DRIVERS_DB = {};
-
-  function calcDriverPayout(order){
-    const fee = Number(order?.delivery_fee ?? 0);
-    return clamp(fee, 25, 45);
-  }
-
+  // Global payout totals for driver dashboard & admin widgets
   const driverTotals = { pending: 0, approved: 0 };
+
+  // Simple product catalog (user can add items via Store flow)
   const storeItems = [];
 
-  // ========================================================================
-  // ELEMENT REFS
-  // ========================================================================
-  const yearEl             = document.getElementById('year');
+  // === YEAR FOOTER ===========================================================
+  const yearEl = document.getElementById('year');
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
-  const mobileBtn          = document.getElementById('mobileMenuBtn');
-  const mobileDropdown     = document.getElementById('mobileNavDropdown');
-  const mobileIconOpen     = document.getElementById('mobileMenuIconOpen');
-  const mobileIconClose    = document.getElementById('mobileMenuIconClose');
+  // === ELEMENT REFS ==========================================================
+  const mobileBtn       = document.getElementById('mobileMenuBtn');
+  const mobileDropdown  = document.getElementById('mobileNavDropdown');
+  const mobileIconOpen  = document.getElementById('mobileMenuIconOpen');
+  const mobileIconClose = document.getElementById('mobileMenuIconClose');
 
-  const modal              = document.getElementById('orderBuilder');
-  const closeBtn           = document.getElementById('closeOrderBuilder');
-  const cancelOrderBuilder = document.getElementById('cancelOrderBuilder');
-  const itemsList          = document.getElementById('itemsList');
+  const modal               = document.getElementById('orderBuilder');
+  const closeBtn            = document.getElementById('closeOrderBuilder');
+  const cancelOrderBuilder  = document.getElementById('cancelOrderBuilder');
+  const itemsList           = document.getElementById('itemsList');
 
-  const zoneSelect         = document.getElementById('zoneSelect');
-  const rushToggle         = document.getElementById('rushToggle');
-  const totalEl            = document.getElementById('orderTotal');
-  const rushNote           = document.getElementById('rushNote');
-  const depositBanner      = document.getElementById('depositBanner');
-  const depositAmtEl       = document.getElementById('depositAmt');
-  const custNameEl         = document.getElementById('custName');
-  const custPhoneEl        = document.getElementById('custPhone');
-  const custAddrEl         = document.getElementById('custAddress');
+  // “Zone” here is actually our COLLECTION selector (no price zones)
+  const zoneSelect          = document.getElementById('zoneSelect');
+  const rushToggle          = document.getElementById('rushToggle');
+  const totalEl             = document.getElementById('orderTotal');
+  const rushNote            = document.getElementById('rushNote');
+  const depositBanner       = document.getElementById('depositBanner');
+  const depositAmtEl        = document.getElementById('depositAmt');
+  const custNameEl          = document.getElementById('custName');
+  const custPhoneEl         = document.getElementById('custPhone');
+  const custAddrEl          = document.getElementById('custAddress');
 
-  const adminBtn           = document.getElementById('adminLoginBtn');
+  const adminBtn            = document.getElementById('adminLoginBtn');
 
-  const confirmBtn2        = document.getElementById('confirmOrderBtn');
-  const botModal           = document.getElementById('botChat');
-  const botFeed            = document.getElementById('botFeed');
-  const botNext            = document.getElementById('botNext');
-  const botSendWA          = document.getElementById('botSendWA');
-  const botNewOrder        = document.getElementById('botNewOrder');
-  const botPayChoice       = document.getElementById('botPayChoice');
-  const botDemoNote        = document.getElementById('botDemoNote');
+  const confirmBtn2         = document.getElementById('confirmOrderBtn');
+  const botModal            = document.getElementById('botChat');
+  const botFeed             = document.getElementById('botFeed');
+  const botNext             = document.getElementById('botNext');
+  const botSendWA           = document.getElementById('botSendWA');
+  const botNewOrder         = document.getElementById('botNewOrder');
+  const botPayChoice        = document.getElementById('botPayChoice');
+  const botDemoNote         = document.getElementById('botDemoNote');
 
-  const payModal           = document.getElementById('payModal');
-  const payOrderRef        = document.getElementById('payOrderRef');
-  const payAmountEl        = document.getElementById('payAmount');
-  const closePayModalBtn   = document.getElementById('closePayModal');
-  const btnFakePayNow      = document.getElementById('btnFakePayNow');
-  const btnCancelPay       = document.getElementById('btnCancelPay');
+  const payModal            = document.getElementById('payModal');
+  const payOrderRef         = document.getElementById('payOrderRef');
+  const payAmountEl         = document.getElementById('payAmount');
+  const closePayModalBtn    = document.getElementById('closePayModal');
+  const btnFakePayNow       = document.getElementById('btnFakePayNow');
+  const btnCancelPay        = document.getElementById('btnCancelPay');
 
-  const driverModal        = document.getElementById('driverModal');
-  const closeDriver        = document.getElementById('closeDriverModal');
-  const tabSignup          = document.getElementById('tabSignup');
-  const tabLogin           = document.getElementById('tabLogin');
-  const formSignup         = document.getElementById('driverFormSignup');
-  const formLogin          = document.getElementById('driverFormLogin');
+  const driverModal         = document.getElementById('driverModal');       // signup/login modal
+  const closeDriver         = document.getElementById('closeDriverModal');
+  const tabSignup           = document.getElementById('tabSignup');
+  const tabLogin            = document.getElementById('tabLogin');
+  const formSignup          = document.getElementById('driverFormSignup');
+  const formLogin           = document.getElementById('driverFormLogin');
 
-  const driverDashModal        = document.getElementById('driverDashModal');
-  const closeDriverDash        = document.getElementById('closeDriverDash');
-  const driverPayoutPendingEl  = document.getElementById('driverPayoutPending');
-  const driverPayoutApprovedEl = document.getElementById('driverPayoutApproved');
-  const driverNextWindowEl     = document.getElementById('driverNextWindow');
-  const driverZoneDisplayEl    = document.getElementById('driverZoneDisplay');
-  const driverRadiusDisplayEl  = document.getElementById('driverRadiusDisplay');
+  const driverDashModal     = document.getElementById('driverDashModal');   // driver dashboard modal
+  const closeDriverDash     = document.getElementById('closeDriverDash');
+  const driverPayoutPendingEl   = document.getElementById('driverPayoutPending');
+  const driverPayoutApprovedEl  = document.getElementById('driverPayoutApproved');
+  const driverNextWindowEl  = document.getElementById('driverNextWindow');   // optional
+  const driverZoneDisplayEl = document.getElementById('driverZoneDisplay');  // optional
+  const driverRadiusDisplayEl = document.getElementById('driverRadiusDisplay'); // optional
 
-  const ordersPanel        = document.getElementById('ordersPanel');
-  const ordersList         = document.getElementById('ordersList');
-  const ordersClose        = document.getElementById('closeOrdersPanel');
-  const ordersAssign       = document.getElementById('ordersAssign');
-  const ordersRefresh      = document.getElementById('ordersRefresh');
+  // Admin: Admin Panel
+  const ordersPanel         = document.getElementById('ordersPanel');
+  const ordersList          = document.getElementById('ordersList');
+  const ordersClose         = document.getElementById('closeOrdersPanel');
+  const ordersAssign        = document.getElementById('ordersAssign');
+  const ordersRefresh       = document.getElementById('ordersRefresh');
 
-  const driversList        = document.getElementById('driversList');
-  const driversRefresh     = document.getElementById('driversRefresh');
+  const driversList         = document.getElementById('driversList');
+  const driversRefresh      = document.getElementById('driversRefresh');
 
-  const ordersTabsContainer= document.getElementById('ordersTabs');
-  const statsContainer     = document.getElementById('statsContainer');
+  // Optional aggregate widgets (top of Admin/Stats)
+  let adminDriversCountEl = document.getElementById('adminDriversCount');
+  let adminPayPendingEl   = document.getElementById('adminPayPending');
+  let adminPayApprovedEl  = document.getElementById('adminPayApproved');
 
-  const storeModal         = document.getElementById('storeModal');
-  const openStoreFooter    = document.getElementById('openStoreModalFooter');
-  const closeStoreModalBtn = document.getElementById('closeStoreModal');
-  const cancelStoreBtn     = document.getElementById('cancelStore');
-  const submitStoreBtn     = document.getElementById('submitStore');
-  const addStoreItemBtn    = document.getElementById('addStoreItem');
-  const storeItemsList     = document.getElementById('storeItemsList');
-  const storeNameEl        = document.getElementById('storeName');
-  const storePhoneEl       = document.getElementById('storePhone');
-  const storeZoneEl        = document.getElementById('storeZone');
+  // Optional stats widgets (if present in your HTML; otherwise we inject)
+  let adminStatsOrdersEl   = document.getElementById('adminStatsOrders');   // total orders
+  let adminStatsRevenueEl  = document.getElementById('adminStatsRevenue');  // R total
+  let adminTopProductsEl   = document.getElementById('adminTopProducts');   // list
+  let adminTopAreasEl      = document.getElementById('adminTopAreas');      // list
 
-  // ========================================================================
-  // COLLECTION POINTS
-  // ========================================================================
+  // Optional container for admin tabs (we’ll inject tabs if missing)
+  const ordersTabsContainer = document.getElementById('ordersTabs');
+
+  // === COLLECTION POINTS =====================================================
   const COLLECTIONS = [
     { id:'DEPOT-PA',   name:'Port Alfred Depot',         lat:-33.590, lng:26.890 },
-    { id:'DEPOT-KENT', name:'Kenton-on-Sea Depot',       lat:-33.686, lng:26.668 },
+    { id:'DEPOT-ALC',  name:'Alice Depot',               lat:-32.787, lng:26.835 },
     { id:'DEPOT-GHT',  name:'Makhanda / Grahamstown',    lat:-33.310, lng:26.520 },
-    { id:'DEPOT-ALC',  name:'Alice Depot',               lat:-32.789, lng:26.834 },
-    { id:'DEPOT-GQ',   name:'Gqeberha (Port Elizabeth)', lat:-33.958, lng:25.602 },
-    { id:'DEPOT-PTA',  name:'Pretoria (Main Depot)',     lat:-25.746, lng:28.188 }
+    { id:'DEPOT-PE',   name:'Gqeberha (Port Elizabeth)', lat:-33.961, lng:25.602 },
+    { id:'DEPOT-PTA',  name:'Pretoria (Main Depot)',     lat:-25.747, lng:28.229 }
   ];
 
   function ensureCollectionSelectPopulated(){
     if(!zoneSelect) return;
     if(zoneSelect.dataset.enhanced === '1') return;
+
     zoneSelect.innerHTML = '';
-    COLLECTIONS.forEach((c,i)=>{
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = 'Select a pickup depot…';
+    ph.disabled = true;
+    ph.selected = true;
+    zoneSelect.appendChild(ph);
+
+    COLLECTIONS.forEach((c)=>{
       const opt = document.createElement('option');
       opt.value = c.id;
       opt.textContent = c.name;
       opt.dataset.lat = String(c.lat);
       opt.dataset.lng = String(c.lng);
-      if(i===0){
-        opt.selected = true;
-        COLLECTION_COORDS = {lat:c.lat, lng:c.lng};
-      }
       zoneSelect.appendChild(opt);
     });
     zoneSelect.dataset.enhanced = '1';
   }
 
-  // ========================================================================
-  // CATALOG
-  // ========================================================================
+  // === CATALOG ===============================================================
   const CATALOG = [
     {name:'Panado 500mg (24s)',price:35},
     {name:'Allergex 10mg (10s)',price:30},
@@ -1194,95 +1135,126 @@ window.addEventListener('DOMContentLoaded', () => {
     {name:'Bandages (set)',price:25}
   ];
 
-  // ========================================================================
-  // DEMO PERSISTENCE
-  // ========================================================================
-  function saveOrdersToLS(){
-    try{ localStorage.setItem(LS_ORDERS, JSON.stringify(DEMO_ORDERS_DB)); }catch(_){}
-  }
-  function saveDriversToLS(){
-    try{ localStorage.setItem(LS_DRIVERS, JSON.stringify(DEMO_DRIVERS_DB)); }catch(_){}
-  }
-  function loadOrdersFromLS(){
-    let parsed=null;
-    try{ parsed = JSON.parse(localStorage.getItem(LS_ORDERS)||'null'); }catch(_){}
-    return (parsed && typeof parsed==='object') ? parsed : null;
-  }
-  function loadDriversFromLS(){
-    let parsed=null;
-    try{ parsed = JSON.parse(localStorage.getItem(LS_DRIVERS)||'null'); }catch(_){}
-    return (parsed && typeof parsed==='object') ? parsed : null;
-  }
-
-  function seedIfEmpty(){
-    if(!DEMO_DRIVERS_DB || Object.keys(DEMO_DRIVERS_DB).length===0){
-      DEMO_DRIVERS_DB = {
-        "DRV-100001": { driver_id:"DRV-100001", name:"Sipho N", phone:"27810000001", vehicle:"Bike",
-                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
-        "DRV-100002": { driver_id:"DRV-100002", name:"Anele M", phone:"27810000002", vehicle:"Car",
-                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
-        "DRV-100003": { driver_id:"DRV-100003", name:"Thandi D", phone:"27810000003", vehicle:"Car",
-                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
-      };
-    }
-    if(!DEMO_ORDERS_DB || Object.keys(DEMO_ORDERS_DB).length===0){
-      const o = (id, total, delivery_fee, status, driver_id=null) => ({
-        _internal_id: id,
-        order_id: id.replace("demo-","YI-").toUpperCase(),
-        order_public_id: id.toUpperCase(),
-        status,
-        total,
-        delivery_fee,
-        items: [{name:"Panado 500mg (24s)",qty:1},{name:"Cough Syrup 100ml",qty:1}],
-        meta: { collection_name: 'Port Alfred Depot', distance_km: 3.2 },
-        fraud_score: 0.04,
-        driver_id,
-        driver_pay_status: status === 'delivered' ? 'approved' : 'pending',
-        driver_pay_pending: status === 'delivered' ? 0 : clamp(delivery_fee,25,45),
-        driver_pay_approved: status === 'delivered' ? clamp(delivery_fee,25,45) : 0
-      });
-      DEMO_ORDERS_DB = {
-        "demo-abc123": o("demo-abc123",180,35,"pending",    "DRV-100001"),
-        "demo-def456": o("demo-def456",240,45,"assigned",   "DRV-100002"),
-        "demo-ghi789": o("demo-ghi789",120,25,"in_transit", "DRV-100002"),
-        "demo-jkl012": o("demo-jkl012",220,30,"delivered",  "DRV-100003"),
-      };
+  // === ADMIN STATS (live from API) ==========================================
+  async function fetchAllOrders(){
+    try{
+      const r = await fetch(`${BASE_API}/orders`);
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok || !j.ok) return [];
+      return Array.isArray(j.orders) ? j.orders : [];
+    }catch(e){
+      console.error("fetchAllOrders", e);
+      return [];
     }
   }
 
-  function hydrateState(){
-    if (DEMO_MODE){
-      const o = loadOrdersFromLS();
-      const d = loadDriversFromLS();
-      DEMO_ORDERS_DB  = o || {};
-      DEMO_DRIVERS_DB = d || {};
-      seedIfEmpty();
-
-      Object.values(DEMO_DRIVERS_DB).forEach(dr=>{
-        dr.stats = {assigned:0,in_transit:0,delivered:0};
-        dr.payout_pending = 0;
-        dr.payout_approved= 0;
-      });
-      Object.values(DEMO_ORDERS_DB).forEach(ord=>{
-        const did = ord.driver_id;
-        if(did && DEMO_DRIVERS_DB[did]){
-          const dr = DEMO_DRIVERS_DB[did];
-          if(ord.status === 'assigned')   dr.stats.assigned++;
-          if(ord.status === 'in_transit') dr.stats.in_transit++;
-          if(ord.status === 'delivered')  dr.stats.delivered++;
-          if(ord.driver_pay_status === 'pending')  dr.payout_pending  += (ord.driver_pay_pending||0);
-          if(ord.driver_pay_status === 'approved') dr.payout_approved += (ord.driver_pay_approved||0);
-        }
-      });
-      saveOrdersToLS();
-      saveDriversToLS();
+  async function fetchDrivers(){
+    try{
+      const r = await fetch(`${BASE_API}/drivers`);
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok || !j.ok) { DRIVERS=[]; DRIVERS_BY_ID={}; return; }
+      DRIVERS = Array.isArray(j.drivers) ? j.drivers : [];
+      DRIVERS_BY_ID = Object.create(null);
+      for(const d of DRIVERS){
+        if(d && d._internal_id) DRIVERS_BY_ID[d._internal_id] = d;
+      }
+    }catch(e){
+      console.error("fetchDrivers", e);
+      DRIVERS=[]; DRIVERS_BY_ID={};
     }
   }
-  hydrateState();
 
-  // ========================================================================
-  // CUSTOMER UI: items + totals
-  // ========================================================================
+  async function renderAdminStats(){
+    // Ensure stats container exists with correct layout (label over value)
+    adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
+    adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
+    adminTopProductsEl  = document.getElementById('adminTopProducts');
+    adminTopAreasEl     = document.getElementById('adminTopAreas');
+
+    if(!document.getElementById('adminStatsWrap')){
+      const stats = document.createElement('div');
+      stats.id = 'adminStatsWrap';
+      stats.className = 'hidden';
+      stats.innerHTML = `
+        <div class="grid gap-3 sm:grid-cols-3">
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+            <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
+          </div>
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Revenue</div>
+            <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
+          </div>
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Drivers</div>
+            <div class="text-sm"><b id="adminDriversCount">0</b></div>
+            <div class="text-xs text-slate-500 mt-2">Payouts</div>
+            <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
+            <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
+          </div>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 mt-4">
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Products</div>
+            <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
+          </div>
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Areas</div>
+            <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
+          </div>
+        </div>
+      `;
+      (ordersPanel || document.body).appendChild(stats);
+      adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
+      adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
+      adminTopProductsEl  = document.getElementById('adminTopProducts');
+      adminTopAreasEl     = document.getElementById('adminTopAreas');
+      adminDriversCountEl = document.getElementById('adminDriversCount');
+      adminPayPendingEl   = document.getElementById('adminPayPending');
+      adminPayApprovedEl  = document.getElementById('adminPayApproved');
+    }
+
+    // Pull fresh data
+    const [orders] = await Promise.all([fetchAllOrders()]);
+    const totalOrders = orders.length;
+    const revenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
+
+    if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
+    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${revenue}`;
+
+    // Top products
+    const prodMap = new Map();
+    orders.forEach(o=>{
+      (o.items||[]).forEach(it=>{
+        prodMap.set(it.name, (prodMap.get(it.name)||0) + (it.qty||1));
+      });
+    });
+    const topProducts = Array.from(prodMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    if(adminTopProductsEl){
+      adminTopProductsEl.innerHTML = topProducts.length
+        ? topProducts.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
+        : '<li class="text-slate-500">No data yet</li>';
+    }
+
+    // Top areas (by meta.collection_name)
+    const areaMap = new Map();
+    orders.forEach(o=>{
+      const k = o.meta?.collection_name || '—';
+      areaMap.set(k, (areaMap.get(k)||0)+1);
+    });
+    const topAreas = Array.from(areaMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    if(adminTopAreasEl){
+      adminTopAreasEl.innerHTML = topAreas.length
+        ? topAreas.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
+        : '<li class="text-slate-500">No data yet</li>';
+    }
+
+    // Also refresh driver/payout widgets from live drivers
+    await fetchDrivers();
+    recalcAdminPayoutWidgets();
+  }
+
+  // === UI HELPERS: Items, totals, deposits ==================================
   function renderItems(){
     if(!itemsList) return;
     itemsList.innerHTML = '';
@@ -1308,15 +1280,6 @@ window.addEventListener('DOMContentLoaded', () => {
       itemsList.appendChild(row);
     });
   }
-
-  document.getElementById('addCustomItem')?.addEventListener('click', ()=>{
-    const name = prompt('Item name?');
-    if(!name) return;
-    const p = Number(prompt('Price (R)?'));
-    if(!Number.isFinite(p) || p<=0) return;
-    CATALOG.push({name,price:p});
-    renderItems();
-  });
 
   const selectedPay = () => {
     const el = document.querySelector('input[name="pay"]:checked');
@@ -1349,11 +1312,7 @@ window.addEventListener('DOMContentLoaded', () => {
     ensureCollectionSelectPopulated();
 
     if(!totalEl || !rushNote){
-      return {
-        items:[], itemsTotal:0, fee:0, rush:0, total:0,
-        collectionName:'Port Alfred Depot',
-        hubLat:COLLECTION_COORDS.lat, hubLng:COLLECTION_COORDS.lng, distanceKm:0
-      };
+      return { items:[], itemsTotal:0, fee:0, rush:0, total:0, collectionName:'', hubLat:COLLECTION_COORDS.lat, hubLng:COLLECTION_COORDS.lng, distanceKm:0 };
     }
 
     const items = Array.from(document.querySelectorAll('.itemCheck'))
@@ -1367,28 +1326,33 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const itemsTotal = items.reduce((sum,it)=> sum + (it.price * it.qty), 0);
 
-    const opt = zoneSelect?.options?.[zoneSelect.selectedIndex] || {};
-    const hubLat = Number(opt?.dataset?.lat ?? COLLECTION_COORDS.lat);
-    const hubLng = Number(opt?.dataset?.lng ?? COLLECTION_COORDS.lng);
-    const collectionName = opt?.textContent || 'Port Alfred Depot';
-    COLLECTION_COORDS = {lat:hubLat, lng:hubLng};
+    // Require a depot selection
+    const opt = (zoneSelect && zoneSelect.value)
+      ? zoneSelect.options[zoneSelect.selectedIndex]
+      : null;
+
+    let hubLat = COLLECTION_COORDS.lat, hubLng = COLLECTION_COORDS.lng, collectionName = '';
+    if(opt){
+      hubLat = Number(opt.dataset.lat);
+      hubLng = Number(opt.dataset.lng);
+      collectionName = opt.textContent || '';
+      COLLECTION_COORDS = {lat:hubLat, lng:hubLng};
+    }
 
     if(!DELIVERY_COORDS){
       DELIVERY_COORDS = await tryGetCustomerCoords();
     }
 
     let distanceKm = 0;
-    if(DELIVERY_COORDS){
-      const meters = await osrmDistanceMeters(COLLECTION_COORDS, DELIVERY_COORDS);
+    if(DELIVERY_COORDS && opt){
+      const meters = await osrmDistanceMeters({lat:hubLat,lng:hubLng}, DELIVERY_COORDS);
       distanceKm = Math.max(0, meters/1000);
-    } else {
-      distanceKm = 3;
     }
 
     const rushFee = rushToggle?.checked ? RUSH_FEE : 0;
     rushNote.textContent = rushFee ? ' + rush' : '';
 
-    const deliveryFee = Math.round(BASE_DELIVERY_FEE + (PER_KM_PRICE * distanceKm));
+    const deliveryFee = opt ? Math.round(BASE_DELIVERY_FEE + (PER_KM_PRICE * distanceKm)) : 0;
     const total = itemsTotal + deliveryFee + rushFee;
     totalEl.textContent = String(total);
 
@@ -1403,10 +1367,11 @@ window.addEventListener('DOMContentLoaded', () => {
     };
   }
 
+  const pad2 = (n)=> String(n).padStart(2,'0');
   function nextETA(rush){
     const now     = new Date();
     const windows = [[8,10],[12,14],[16,18]];
-    const allowed = new Set([0,3,4,5,6]);
+    const allowed = new Set([0,3,4,5,6]); // Sun, Wed, Thu, Fri, Sat
     const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
     const fmt = (date,[h1,h2])=>{
@@ -1443,14 +1408,8 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ========================================================================
-  // MODALS & NAV
-  // ========================================================================
-  const openOrder  = async ()=>{
-    openFlex(modal);
-    const s = await computeTotal();
-    toggleDepositBanner(s.total);
-  };
+  // === MODAL WRAPPERS ========================================================
+  const openOrder  = async ()=>{ openFlex(modal); const s = await computeTotal(); toggleDepositBanner(s.total); };
   const closeOrder = ()=> closeFlex(modal);
 
   const openBot = ()=>{
@@ -1458,13 +1417,14 @@ window.addEventListener('DOMContentLoaded', () => {
     if(!botNext || !botSendWA || !botNewOrder || !botDemoNote || !botFeed) return;
     botNext.disabled = false;
     botNext.textContent = "Pay";
-    botSendWA.classList.add('hidden');
+    botSendWA.textContent = "Contact support";
+    botSendWA.classList.add('hidden'); // will show after payment modal
     botNewOrder.classList.add('hidden');
     botDemoNote.hidden = true;
     botFeed.innerHTML = "";
     openFlex(botModal);
   };
-  const closeBot = ()=>{ if(botFeed) botFeed.innerHTML=''; closeFlex(botModal); };
+  const closeBot    = ()=>{ if(botFeed) botFeed.innerHTML=''; closeFlex(botModal); };
 
   const openPayModal  = (orderRef, amount)=>{
     if(!payModal) return;
@@ -1480,14 +1440,82 @@ window.addEventListener('DOMContentLoaded', () => {
   const openStore = ()=> openFlex(storeModal);
   const closeStore= ()=> closeFlex(storeModal);
 
-  let ordersTab = 'pending';
+  // === WRAPPERS / TABS =======================================================
+  function ensureWrappers(){
+    if(ordersList && !document.getElementById('ordersListWrap')){
+      const wrap = document.createElement('div');
+      wrap.id = 'ordersListWrap';
+      ordersList.parentElement?.insertBefore(wrap, ordersList);
+      wrap.appendChild(ordersList);
+    }
+    if(driversList && !document.getElementById('driversListWrap')){
+      const wrap = document.createElement('div');
+      wrap.id = 'driversListWrap';
+      driversList.parentElement?.insertBefore(wrap, driversList);
+      wrap.appendChild(driversList);
+    }
+    // Clean vertical Stats layout (labels ABOVE values)
+    if(!document.getElementById('adminStatsWrap')){
+      const stats = document.createElement('div');
+      stats.id = 'adminStatsWrap';
+      stats.className = 'hidden';
+      stats.innerHTML = `
+        <div class="grid gap-3 sm:grid-cols-3">
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+            <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
+          </div>
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Revenue</div>
+            <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
+          </div>
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Drivers</div>
+            <div class="text-sm"><b id="adminDriversCount">0</b></div>
+            <div class="text-xs text-slate-500 mt-2">Payouts</div>
+            <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
+            <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
+          </div>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 mt-4">
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Products</div>
+            <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
+          </div>
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Areas</div>
+            <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
+          </div>
+        </div>
+      `;
+      (ordersPanel || document.body).appendChild(stats);
+      adminDriversCountEl = document.getElementById('adminDriversCount');
+      adminPayPendingEl   = document.getElementById('adminPayPending');
+      adminPayApprovedEl  = document.getElementById('adminPayApproved');
+    }
+    if(!document.getElementById('ordersTabs')){
+      const host = ordersTabsContainer || ordersPanel || document.body;
+      const tabs = document.createElement('div');
+      tabs.id = 'ordersTabs';
+      tabs.className = 'flex gap-2 mb-3 flex-wrap';
+      host.insertBefore(tabs, host.firstChild);
+    }
+  }
+  const getWrapRefs = ()=>({
+    ordersWrap: document.getElementById('ordersListWrap'),
+    driversWrap: document.getElementById('driversListWrap'),
+    statsWrap:   document.getElementById('adminStatsWrap')
+  });
 
-  const openOrders = ()=>{
-    if(!ordersPanel) return;
+  // Admin open/close
+  const openOrders = async ()=>{
     openFlex(ordersPanel);
     ensureAdminTabs();
     setActiveAdminTab(ordersTab);
-    refreshAllData();
+    await fetchDrivers();
+    await renderOrders();
+    await renderDrivers();
+    await renderAdminStats();
   };
   const closeOrders= ()=> closeFlex(ordersPanel);
 
@@ -1510,6 +1538,7 @@ window.addEventListener('DOMContentLoaded', () => {
     botFeed.scrollTop = botFeed.scrollHeight;
   }
 
+  // === MOBILE NAV ============================================================
   function toggleMobileMenu() {
     if(!mobileDropdown || !mobileBtn || !mobileIconOpen || !mobileIconClose) return;
     const isHidden = mobileDropdown.classList.contains('hidden');
@@ -1544,15 +1573,23 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('openDriverModal')?.click();
   });
   document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{
-    adminBtn?.click();
+    document.getElementById('adminLoginBtn')?.click();
   });
   document.getElementById('openDriverModalSection')?.addEventListener('click', ()=>{
     document.getElementById('openDriverModal')?.click();
   });
 
-  // ========================================================================
-  // INIT CUSTOMER UI
-  // ========================================================================
+  // === “Drivers tab” quick open =============================================
+  function forceOpenDriversTab(e){
+    e?.preventDefault?.();
+    ordersTab = 'drivers';
+    openOrders();
+    setActiveAdminTab('drivers');
+  }
+  document.querySelectorAll('.openDriversTab, #openDriversTab, [data-nav="drivers"], a[href="#drivers"]')
+    .forEach(el => el.addEventListener('click', forceOpenDriversTab, {capture:true}));
+
+  // === INIT CUSTOMER UI ======================================================
   renderItems();
   ensureCollectionSelectPopulated();
   computeTotal();
@@ -1574,6 +1611,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Persist ONLY customer form locally (not orders/drivers/stats)
   [custNameEl, custPhoneEl, custAddrEl].forEach((el)=>{
     if(!el) return;
     const key = 'yt_'+el.id;
@@ -1582,82 +1620,18 @@ window.addEventListener('DOMContentLoaded', () => {
     el.addEventListener('input', ()=> localStorage.setItem(key, el.value));
   });
 
-  // Store items add
-  addStoreItemBtn?.addEventListener('click', e=>{
-    e.preventDefault();
-    const name = prompt('Item name');
-    const priceVal = prompt('Price (R)');
-    const price = Number(priceVal);
-    if(!name || !Number.isFinite(price) || price<=0){ return; }
-    CATALOG.push({name,price});
-    storeItems.push({name,price});
-    renderItems();
-    computeTotal().then(s=>toggleDepositBanner(s.total));
-  });
+  // === STORE MODAL (optional) ===============================================
+  const addStoreItemBtn = document.getElementById('addStoreItem');
+  const storeItemsList  = document.getElementById('storeItemsList');
+  const storeModal      = document.getElementById('storeModal');
+  const openStoreFooter = document.getElementById('openStoreModalFooter');
+  const closeStoreModalBtn  = document.getElementById('closeStoreModal');
+  const cancelStoreBtn      = document.getElementById('cancelStore');
+  const submitStoreBtn      = document.getElementById('submitStore');
+  const storeNameEl         = document.getElementById('storeName');
+  const storePhoneEl        = document.getElementById('storePhone');
+  const storeZoneEl         = document.getElementById('storeZone');
 
-  // Modal wiring
-  document.getElementById('closeBot')?.addEventListener('click', closeBot);
-  closeBtn?.addEventListener('click', closeOrder);
-  cancelOrderBuilder?.addEventListener('click', closeOrder);
-  closePayModalBtn?.addEventListener('click', closePayModal);
-  btnCancelPay?.addEventListener('click', closePayModal);
-  closeDriver?.addEventListener('click', closeDriverWindow);
-  closeDriverDash?.addEventListener('click', closeDriverDashWindow);
-  ordersClose?.addEventListener('click', closeOrders);
-
-  // Admin PIN
-  adminBtn?.addEventListener('click', (e)=>{
-    e.preventDefault();
-    const pw = prompt("Enter admin PIN:");
-    if (pw === null) return;
-    if (pw === ADMIN_PASS) {
-      openOrders();
-    } else {
-      alert("Incorrect PIN");
-    }
-  });
-
-  window.addEventListener('yt-open-orders', openOrders);
-
-  // Demo fake pay
-  btnFakePayNow?.addEventListener('click', ()=>{
-    alert('No money taken. Demo only.');
-    closePayModal();
-    botSendWA?.classList.remove('hidden');
-    botNewOrder?.classList.remove('hidden');
-    if(botDemoNote) botDemoNote.hidden = false;
-    appendBot(`<b>Payment marked (demo)</b><br/>We'll WhatsApp you the real secure link next.`, 'bot');
-    botStage = 2;
-  });
-
-  ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.addEventListener('click', openOrder);
-  });
-  ['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.addEventListener('click', openDriverWindow);
-  });
-
-  // Driver modal tabs
-  tabSignup?.addEventListener('click',()=>{
-    tabSignup.classList.add('bg-emerald-600','text-white');
-    tabLogin.classList.remove('bg-emerald-600','text-white');
-    formSignup?.classList.remove('hidden');
-    formLogin?.classList.add('hidden');
-    tabSignup.setAttribute('aria-selected','true');
-    tabLogin.setAttribute('aria-selected','false');
-  });
-  tabLogin?.addEventListener('click',()=>{
-    tabLogin.classList.add('bg-emerald-600','text-white');
-    tabSignup.classList.remove('bg-emerald-600','text-white');
-    formSignup?.classList.add('hidden');
-    formLogin?.classList.remove('hidden');
-    tabSignup.setAttribute('aria-selected','false');
-    tabLogin.setAttribute('aria-selected','true');
-  });
-
-  // Store modal
   function renderStoreItems(){
     if(!storeItemsList) return;
     storeItemsList.innerHTML = '';
@@ -1683,7 +1657,19 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  addStoreItemBtn?.addEventListener('click', e=>{
+    e.preventDefault();
+    const name = prompt('Item name');
+    const priceVal = prompt('Price (R)');
+    const price = Number(priceVal);
+    if(!name || !Number.isFinite(price) || price<=0){ return; }
+    CATALOG.push({name,price});
+    renderItems();
+    computeTotal().then(s=>toggleDepositBanner(s.total));
+  });
+
   openStoreFooter?.addEventListener('click', openStore);
+  document.getElementById('openStoreHeader')?.addEventListener('click', openStore);
   closeStoreModalBtn?.addEventListener('click', closeStore);
   cancelStoreBtn?.addEventListener('click', closeStore);
 
@@ -1691,14 +1677,11 @@ window.addEventListener('DOMContentLoaded', () => {
     const storeName  = storeNameEl?.value.trim();
     const storePhone = digits(storePhoneEl?.value.trim());
     const zone       = storeZoneEl?.value || 'A';
+
     if(!storeName || !storePhone){
       alert("Please add store name & WhatsApp.");
       return;
     }
-    if(storeItems.length === 0){
-      if(!confirm("No items added yet. Submit anyway?")) return;
-    }
-
     const payload = {
       name: storeName,
       owner_name: storeName,
@@ -1707,17 +1690,15 @@ window.addEventListener('DOMContentLoaded', () => {
       address: {}
     };
 
-    if(!DEMO_MODE){
-      try{
-        const r = await fetch(`${BASE_API}/stores`, {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify(payload)
-        });
-        const j = await r.json().catch(()=>({}));
-        if(!r.ok || !j.ok){ alert("Store save failed on server."); }
-      }catch(err){ console.error("store create failed",err); }
-    }
+    try{
+      const r = await fetch(`${BASE_API}/stores`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok || !j.ok){ alert("Store save failed."); return; }
+    }catch(err){ console.error("store create failed",err); }
 
     const adminMsg =
 `New store signup:
@@ -1738,359 +1719,21 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     renderStoreItems();
   });
 
-  // ========================================================================
-  // ADMIN DATA EVENTS
-  // ========================================================================
+  // === ADMIN PANEL: TABS, RENDERERS, ACTIONS ================================
+  ordersClose?.addEventListener('click', closeOrders);
+  window.addEventListener('yt-open-orders', openOrders);
   window.addEventListener('yt-orders-updated', ()=>{
     if(ordersPanel && !ordersPanel.classList.contains('hidden')) {
       renderOrders();
       renderDrivers();
-      renderStats();
+      renderAdminStats();
     }
   });
 
-  // ========================================================================
-  // LIVE FETCH HELPERS (BACKEND/MONGO)
-  // ========================================================================
-  async function fetchOrdersByStatus(status){
-    if(status === 'drivers' || status === 'stats' || status === 'history' || (status||'').startsWith('by_driver:')) {
-      return [];
-    }
-    if(DEMO_MODE){
-      return Object.values(DEMO_ORDERS_DB).filter(o => o.status === status);
-    }
-    try {
-      const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
-      const data = await res.json().catch(()=>({}));
-      if(!res.ok || !data){ return []; }
-      const list = Array.isArray(data.orders)
-        ? data.orders
-        : Array.isArray(data.data)
-          ? data.data
-          : Array.isArray(data)
-            ? data
-            : [];
-      return list;
-    } catch(err){
-      console.error("fetchOrdersByStatus error",err);
-      return [];
-    }
-  }
+  let ordersTab = 'pending'; // 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'drivers' | 'by_driver:<id>' | 'stats'
 
-  async function fetchAllOrdersLive(){
-    if(DEMO_MODE){
-      ALL_ORDERS_MAP = {...DEMO_ORDERS_DB};
-      HISTORY_ORDERS = Object.values(DEMO_ORDERS_DB);
-      return;
-    }
-
-    // 1) Prefer a dedicated /orders/all endpoint
-    try{
-      const res = await fetch(`${BASE_API}/orders/all`);
-      if(res.ok){
-        const data = await res.json().catch(()=>({}));
-        let list = [];
-        if(Array.isArray(data.orders)) list = data.orders;
-        else if(Array.isArray(data.data)) list = data.data;
-        else if(Array.isArray(data)) list = data;
-        const map = {};
-        list.forEach(o=>{
-          const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id || Math.random().toString(36).slice(2);
-          map[key] = o;
-        });
-        ALL_ORDERS_MAP = map;
-        HISTORY_ORDERS = list.slice().sort((a,b)=>{
-          const aa = new Date(a.created_at_iso || a.created_at || 0).getTime();
-          const bb = new Date(b.created_at_iso || b.created_at || 0).getTime();
-          return bb-aa;
-        });
-        return;
-      }
-    }catch(err){
-      console.warn("orders/all failed, falling back by-status", err);
-    }
-
-    // 2) Fallback: pull per-status
-    const statuses = ['pending','assigned','in_transit','delivered'];
-    const all = await Promise.all(statuses.map(s=>fetchOrdersByStatus(s)));
-    const flat = all.flat();
-    const map = {};
-    flat.forEach(o=>{
-      const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id || Math.random().toString(36).slice(2);
-      map[key] = o;
-    });
-    ALL_ORDERS_MAP = map;
-    HISTORY_ORDERS = flat.slice().sort((a,b)=>{
-      const aa = new Date(a.created_at_iso || a.created_at || 0).getTime();
-      const bb = new Date(b.created_at_iso || b.created_at || 0).getTime();
-      return bb-aa;
-    });
-  }
-
-  async function fetchDriversLive(){
-    if(DEMO_MODE){
-      API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
-      return;
-    }
-    try{
-      const res = await fetch(`${BASE_API}/drivers`);
-      const data = await res.json().catch(()=>({}));
-
-      let rows = [];
-      if(Array.isArray(data.drivers)) rows = data.drivers;
-      else if(Array.isArray(data.data)) rows = data.data;
-      else if(Array.isArray(data)) rows = data;
-
-      if(res.ok && rows && rows.length){
-        API_DRIVERS_MAP = {};
-        rows.forEach(d=>{
-          const key = d._internal_id || d.driver_id || d.id;
-          if(!key) return;
-          API_DRIVERS_MAP[key] = d;
-        });
-      } else {
-        API_DRIVERS_MAP = {};
-      }
-    }catch(err){
-      console.error("fetch drivers err", err);
-      API_DRIVERS_MAP = {};
-    }
-  }
-
-  async function fetchStatsLive(){
-    // Optional: if backend supplies aggregated stats
-    if(DEMO_MODE){
-      REMOTE_STATS = null;
-      return;
-    }
-    try{
-      const res = await fetch(`${BASE_API}/stats/overview`);
-      const data = await res.json().catch(()=>({}));
-
-      if(res.ok && data){
-        if(data.ok || data.success){
-          REMOTE_STATS = data;
-        } else if(
-          Number.isFinite(data.total_orders) ||
-          Number.isFinite(data.revenue)
-        ){
-          REMOTE_STATS = data;
-        } else {
-          REMOTE_STATS = null;
-        }
-      } else {
-        REMOTE_STATS = null;
-      }
-    }catch(err){
-      console.warn("fetch stats err (will compute on frontend)", err);
-      REMOTE_STATS = null;
-    }
-  }
-
-  async function refreshAllData(){
-    if(DEMO_MODE){
-      hydrateState();
-      HISTORY_ORDERS = Object.values(DEMO_ORDERS_DB);
-    } else {
-      await Promise.all([
-        fetchAllOrdersLive(),
-        fetchDriversLive(),
-        fetchStatsLive()
-      ]);
-    }
-    renderOrders();
-    renderDrivers();
-    renderStats();
-  }
-
-  // ========================================================================
-  // STATS / KPIs (CALCULATED FROM Mongo ORDERS)
-  // ========================================================================
-  function computeDriverTotalsFromDB() {
-    let pendingTotal = 0;
-    let approvedTotal = 0;
-    const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
-    Object.values(source).forEach(o=>{
-      if(o.driver_pay_status === 'pending'){
-        pendingTotal += (o.driver_pay_pending || 0);
-      }
-      if(o.driver_pay_status === 'approved'){
-        approvedTotal += (o.driver_pay_approved || 0);
-      }
-    });
-    driverTotals.pending  = Math.round(pendingTotal);
-    driverTotals.approved = Math.round(approvedTotal);
-  }
-
-  function computeStats(){
-    computeDriverTotalsFromDB();
-
-    const orders  = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
-    const drivers = DEMO_MODE ? Object.values(DEMO_DRIVERS_DB) : Object.values(API_DRIVERS_MAP);
-
-    let totalOrders      = orders.length;
-    let totalRevenue     = orders.reduce((s,o)=> s + (o.total || 0), 0);
-    let deliveredOrders  = orders.filter(o=>o.status === 'delivered').length;
-    let pendingOrders    = orders.filter(o=>o.status === 'pending').length;
-    let inTransitOrders  = orders.filter(o=>o.status === 'in_transit').length;
-    let assignedOrders   = orders.filter(o=>o.status === 'assigned').length;
-    let deliveredRevenue = orders.filter(o=>o.status === 'delivered').reduce((s,o)=> s + (o.total || 0), 0);
-    let totalDeliveryFees= orders.reduce((s,o)=> s + (o.delivery_fee || 0), 0);
-    let activeDrivers    = drivers.length;
-
-    // If backend provides authoritative stats, merge them in
-    if(!DEMO_MODE && REMOTE_STATS){
-      const RS = REMOTE_STATS;
-      if(Number.isFinite(RS.total_orders))       totalOrders       = RS.total_orders;
-      if(Number.isFinite(RS.revenue))            totalRevenue      = RS.revenue;
-      if(Number.isFinite(RS.delivered_orders))   deliveredOrders   = RS.delivered_orders;
-      if(Number.isFinite(RS.pending_orders))     pendingOrders     = RS.pending_orders;
-      if(Number.isFinite(RS.in_transit_orders))  inTransitOrders   = RS.in_transit_orders;
-      if(Number.isFinite(RS.assigned_orders))    assignedOrders    = RS.assigned_orders;
-      if(Number.isFinite(RS.delivered_revenue))  deliveredRevenue  = RS.delivered_revenue;
-      if(Number.isFinite(RS.delivery_fees))      totalDeliveryFees = RS.delivery_fees;
-      if(Number.isFinite(RS.drivers))            activeDrivers     = RS.drivers;
-    }
-
-    const avgOrderValue  = totalOrders ? Math.round(totalRevenue / totalOrders) : 0;
-    const avgDeliveryFee = totalOrders ? Math.round(totalDeliveryFees / totalOrders) : 0;
-
-    const ordersWithDriver = orders.filter(o => o.driver_id || o.assigned_driver_id).length;
-    const driverAttachRate = totalOrders ? Math.round((ordersWithDriver / totalOrders) * 100) : 0;
-
-    const rushOrders   = orders.filter(o=>o.meta && o.meta.rush).length;
-    const fraudFlagged = orders.filter(o=> (o.fraud_score || 0) > 0.5).length;
-
-    const itemCounts = {};
-    orders.forEach(o => {
-      (o.items || []).forEach(i => {
-        const name = i.name || 'Unknown item';
-        const qty  = Number(i.qty || 1);
-        itemCounts[name] = (itemCounts[name] || 0) + qty;
-      });
-    });
-    let popularItem = '—';
-    let popularItemQty = 0;
-    Object.entries(itemCounts).forEach(([name,qty]) => {
-      if (qty > popularItemQty) { popularItemQty = qty; popularItem = name; }
-    });
-
-    return {
-      totalOrders,
-      deliveredOrders,
-      pendingOrders,
-      assignedOrders,
-      inTransitOrders,
-      totalRevenue: Math.round(totalRevenue),
-      deliveredRevenue: Math.round(deliveredRevenue),
-      totalDeliveryFees: Math.round(totalDeliveryFees),
-      avgOrderValue,
-      avgDeliveryFee,
-      activeDrivers,
-      driverAttachRate,
-      rushOrders,
-      fraudFlagged,
-      popularItem,
-      popularItemQty,
-      driverPayoutPending:  driverTotals.pending,
-      driverPayoutApproved: driverTotals.approved
-    };
-  }
-
-  function renderStats(){
-    if(!statsContainer) return;
-    try{
-      const s = computeStats();
-      statsContainer.innerHTML = `
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-          <!-- KPI: Total Revenue -->
-          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-            <div class="text-[10px] text-slate-500">Total Revenue</div>
-            <div class="text-lg font-semibold text-slate-900">R${s.totalRevenue || 0}</div>
-            <div class="text-[10px] text-emerald-600">Delivered: R${s.deliveredRevenue || 0}</div>
-          </div>
-
-          <!-- KPI: Orders -->
-          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-            <div class="text-[10px] text-slate-500">Orders Overview</div>
-            <div class="text-lg font-semibold text-slate-900">${s.totalOrders || 0}</div>
-            <div class="text-[9px] text-slate-500 mt-1">
-              ✅ ${s.deliveredOrders || 0}
-              &nbsp;🚚 ${s.inTransitOrders || 0}
-              &nbsp;📦 ${s.assignedOrders || 0}
-              &nbsp;⏳ ${s.pendingOrders || 0}
-            </div>
-          </div>
-
-          <!-- KPI: Averages -->
-          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-            <div class="text-[10px] text-slate-500">Averages</div>
-            <div class="text-[10px] text-slate-500">
-              AOV:
-              <span class="font-semibold text-slate-900">R${s.avgOrderValue || 0}</span>
-            </div>
-            <div class="text-[10px] text-slate-500">
-              Avg delivery fee:
-              <span class="font-semibold text-slate-900">R${s.avgDeliveryFee || 0}</span>
-            </div>
-          </div>
-
-          <!-- KPI: Drivers & Attach -->
-          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-            <div class="text-[10px] text-slate-500">Drivers</div>
-            <div class="text-lg font-semibold text-slate-900">${s.activeDrivers || 0}</div>
-            <div class="text-[10px] text-slate-500">
-              Orders with driver:
-              <span class="font-semibold text-emerald-600">${s.driverAttachRate || 0}%</span>
-            </div>
-          </div>
-
-          <!-- KPI: Driver Payouts -->
-          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-            <div class="text-[10px] text-slate-500">Driver Payouts</div>
-            <div class="text-[10px] text-slate-500">
-              Pending:
-              <span class="font-semibold text-slate-900">R${s.driverPayoutPending || 0}</span>
-            </div>
-            <div class="text-[10px] text-slate-500">
-              Approved:
-              <span class="font-semibold text-slate-900">R${s.driverPayoutApproved || 0}</span>
-            </div>
-          </div>
-
-          <!-- KPI: Popular Item -->
-          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-            <div class="text-[10px] text-slate-500">Top Item</div>
-            <div class="text-sm font-semibold text-slate-900">${s.popularItem || '—'}</div>
-            <div class="text-[9px] text-slate-500">Qty sold: ${s.popularItemQty || 0}</div>
-          </div>
-
-          <!-- KPI: Rush & Risk -->
-          <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-            <div class="text-[10px] text-slate-500">Rush &amp; Risk</div>
-            <div class="text-[10px] text-slate-500">
-              Rush orders:
-              <span class="font-semibold text-slate-900">${s.rushOrders || 0}</span>
-            </div>
-            <div class="text-[10px] text-slate-500">
-              High fraud (&gt;0.5):
-              <span class="font-semibold text-slate-900">${s.fraudFlagged || 0}</span>
-            </div>
-          </div>
-        </div>
-      `;
-    }catch(err){
-      console.error("renderStats error", err);
-      statsContainer.innerHTML =
-        `<div class="text-xs text-red-600">Unable to compute stats. Check API / console.</div>`;
-    }
-  }
-
-  // ========================================================================
-  // ADMIN TABS (INCLUDING HISTORY)
-  // ========================================================================
   function ensureAdminTabs(){
-    let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
+    ensureWrappers();
 
     function makeTabBtn(label, tabKey){
       const btn = document.createElement('button');
@@ -2110,21 +1753,19 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ['In Transit','in_transit'],
       ['Delivered','delivered'],
       ['Drivers','drivers'],
-      ['Stats','stats'],
-      ['History','history'] // all orders regardless of status
+      ['Stats','stats']
     ];
 
-    const host = ordersTabsContainer || ordersList?.parentElement || ordersPanel || document.body;
-
-    const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
+    const host = document.getElementById('ordersTabs') || ordersTabsContainer || ordersPanel || document.body;
+    const haveKeys = new Set(Array.from(document.querySelectorAll('.yt-o-tab')).map(b=>b.dataset.oTab));
     wanted.forEach(([label,key])=>{
       if(!haveKeys.has(key)){
         host.appendChild(makeTabBtn(label, key));
       }
     });
 
-    tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
-    tabButtons.forEach(b=>{
+    // Re-wire (idempotent)
+    document.querySelectorAll('.yt-o-tab').forEach(b=>{
       if(!b.dataset.wired){
         b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
         b.dataset.wired = '1';
@@ -2144,81 +1785,67 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
     });
 
-    const showDrivers = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
-    const showStats   = (tabKey === 'stats');
-    const showHistory = (tabKey === 'history');
+    const { ordersWrap, driversWrap, statsWrap } = getWrapRefs();
+    const showDrivers = tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:');
+    const showStats   = tabKey === 'stats';
 
-    const ordersWrapper  = ordersList?.parentElement;
-    const driversWrapper = driversList?.parentElement;
+    if(ordersWrap) ordersWrap.classList.toggle('hidden', showDrivers || showStats);
+    if(driversWrap) driversWrap.classList.toggle('hidden', !showDrivers);
+    if(statsWrap)   statsWrap.classList.toggle('hidden', !showStats);
 
-    if (ordersWrapper)  ordersWrapper.classList.toggle('hidden', showDrivers || showStats);
-    if (driversWrapper) driversWrapper.classList.toggle('hidden', !showDrivers);
-    if (statsContainer) statsContainer.classList.toggle('hidden', !showStats);
+    if(showDrivers){ renderDrivers(); }
+    else if(showStats){ renderAdminStats(); }
+    else { renderOrders(); }
 
-    if(showDrivers){
-      renderDrivers();
-    } else if(showStats){
-      renderStats();
-    } else if(showHistory){
-      renderOrders(); // history handled inside renderOrders
-    } else {
-      renderOrders();
-    }
+    // keep header cards fresh
+    renderAdminStats();
   }
 
-  function hardRefresh(){
-    refreshAllData();
+  async function hardRefresh(){
+    await fetchDrivers();
+    await renderOrders();
+    await renderDrivers();
+    await renderAdminStats();
     setActiveAdminTab(ordersTab);
   }
   ordersRefresh?.addEventListener('click', hardRefresh);
   driversRefresh?.addEventListener('click', hardRefresh);
 
-  // ========================================================================
-  // ORDER / DRIVER ACTIONS
-  // ========================================================================
-  let rrIdx = 0;
-  function pickDriverId(){
-    const ids = DEMO_MODE ? Object.keys(DEMO_DRIVERS_DB) : Object.keys(API_DRIVERS_MAP);
-    if(ids.length===0) return null;
-    const id = ids[rrIdx % ids.length];
-    rrIdx++;
-    return id;
+  function recalcAdminPayoutWidgets() {
+    const driverCount = DRIVERS.length;
+    const pendingTotal = DRIVERS.reduce((s,d)=> s + Number(d.weekly_payout_due || 0), 0);
+    const approvedTotal = 0; // requires payouts list endpoint; showing 0 for now
+    driverTotals.pending  = pendingTotal;
+    driverTotals.approved = approvedTotal;
+    if(adminDriversCountEl) adminDriversCountEl.textContent = String(driverCount);
+    if(adminPayPendingEl)   adminPayPendingEl.textContent   = `R${pendingTotal}`;
+    if(adminPayApprovedEl)  adminPayApprovedEl.textContent  = `R${approvedTotal}`;
+    if(driverDashModal && !driverDashModal.classList.contains('hidden')){
+      if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent  = String(pendingTotal);
+      if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(approvedTotal);
+    }
   }
 
-  function mutateOrder(internalId, mut){
-    if(DEMO_MODE){
-      const o = DEMO_ORDERS_DB[internalId];
-      if(!o) return null;
-      mut(o);
-      saveOrdersToLS();
-      hydrateState();
-      window.dispatchEvent(new Event('yt-orders-updated'));
-      return o;
+  // === API: Orders & actions =================================================
+  async function fetchOrdersByStatus(status){
+    if(status === 'drivers' || (status||'').startsWith('by_driver:') || status === 'stats') return [];
+    try {
+      const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok || !data.ok){ return []; }
+      return Array.isArray(data.orders) ? data.orders : [];
+    } catch(err){
+      console.error("fetchOrdersByStatus error",err);
+      return [];
     }
-    return null;
   }
 
   async function assignOneOrder(internalId){
     if(!internalId){ alert("Missing order id."); return; }
-
-    if(DEMO_MODE){
-      mutateOrder(internalId, (o)=>{
-        if(!o.driver_id){ o.driver_id = pickDriverId(); }
-        const pay = calcDriverPayout(o);
-        o.driver_pay_status   = 'pending';
-        o.driver_pay_pending  = pay;
-        o.driver_pay_approved = 0;
-        if(o.status === 'pending') o.status = 'assigned';
-      });
-      renderOrders(); renderDrivers(); renderStats();
-      alert(`[DEMO] Assigned ${internalId}.`);
-      return;
-    }
-
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
         method: "POST",
-        headers: {"Content-Type":"application/json"}
+        headers: {"Content-Type":"application/json", "X-Admin-Secret": (window.YT_ADMIN_SECRET||'changeme-admin')}
       });
       const data = await res.json().catch(()=>({}));
 
@@ -2233,25 +1860,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       console.error("assignOneOrder err",err);
       alert(`Network error assigning ${internalId}`);
     }
-    refreshAllData();
+    renderOrders();
   }
 
   async function markDelivered(internalId){
     if(!internalId){ alert("Missing order id."); return; }
-
-    if(DEMO_MODE){
-      mutateOrder(internalId, (o)=>{
-        const pay = calcDriverPayout(o);
-        o.status = 'delivered';
-        o.driver_pay_status   = 'approved';
-        o.driver_pay_approved = pay;
-        o.driver_pay_pending  = 0;
-      });
-      renderOrders(); renderDrivers(); renderStats();
-      alert(`[DEMO] Delivered ${internalId}.`);
-      return;
-    }
-
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
         method: "POST",
@@ -2268,35 +1881,21 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       console.error("markDelivered err",err);
       alert(`Network error marking delivered ${internalId}`);
     }
-    refreshAllData();
+    renderOrders();
   }
 
   async function autoAssignForAll(){
-    const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
-    const ids = Object.values(source)
-      .filter(o => o.status === 'pending')
-      .map(o => o._internal_id || o.internal_id);
-
+    // fetch all pending from API, then assign
+    const pend = await fetchOrdersByStatus('pending');
+    const ids = pend.map(o => o._internal_id).filter(Boolean);
     if (ids.length === 0){ alert("No pending orders to assign."); return; }
 
     const results = [];
     for (const internalId of ids){
-      if (DEMO_MODE){
-        mutateOrder(internalId, (o)=>{
-          if(!o.driver_id){ o.driver_id = pickDriverId(); }
-          const pay = calcDriverPayout(o);
-          o.driver_pay_status  = 'pending';
-          o.driver_pay_pending = pay;
-          o.status             = 'assigned';
-          results.push(`✅ (demo) ${internalId} -> ${o.driver_id} (R${pay})`);
-        });
-        continue;
-      }
-
       try {
         const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
           method: "POST",
-          headers: {"Content-Type":"application/json"}
+          headers: {"Content-Type":"application/json", "X-Admin-Secret": (window.YT_ADMIN_SECRET||'changeme-admin')}
         });
         const data = await res.json().catch(()=>({}));
 
@@ -2313,30 +1912,27 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         results.push(`❌ ${internalId}: network error`);
       }
     }
+    await renderDrivers();
     alert(results.join("\n"));
-    refreshAllData();
+    renderOrders();
   }
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
-  // ========================================================================
-  // ORDER LIST RENDERING (INCLUDING HISTORY)
-  // ========================================================================
+  // === RENDER: Orders ========================================================
   async function renderOrders(){
     if(!ordersList) return;
 
-    // by driver tab
+    // Driver-filtered view
     if((ordersTab||'').startsWith('by_driver:')){
       const did = ordersTab.split(':',2)[1];
-      const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
-      const data = src.filter(o => {
-        const assigned = o.assigned_driver_id || o.driver_id;
-        return assigned === did;
-      });
-
+      const all = await fetchAllOrders();
+      const data = all.filter(o => (o.assigned_driver_id || '') === did);
       currentOrdersByTab[ordersTab] = data;
+
       ordersList.innerHTML = data.length
         ? ''
-        : `<div class="text-sm text-slate-500 p-4">No orders for that driver.</div>`;
+        : `<div class="text-sm text-slate-500 p-4">No orders for ${did}.</div>`;
+
       for(const o of data){
         ordersList.appendChild(buildOrderRow(o));
       }
@@ -2344,38 +1940,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
-    // history tab → all orders (any status) sorted newest first
-    if(ordersTab === 'history'){
-      const source = DEMO_MODE
-        ? Object.values(DEMO_ORDERS_DB)
-        : (HISTORY_ORDERS.length ? HISTORY_ORDERS : Object.values(ALL_ORDERS_MAP));
-
-      const data = source.slice().sort((a,b)=>{
-        const aa = new Date(a.created_at_iso || a.created_at || 0).getTime();
-        const bb = new Date(b.created_at_iso || b.created_at || 0).getTime();
-        return bb-aa;
-      });
-
-      currentOrdersByTab[ordersTab] = data;
-
-      ordersList.innerHTML = data.length
-        ? ''
-        : `<div class="text-sm text-slate-500 p-4">No orders found in history.</div>`;
-
-      data.forEach(o=>{
-        const row = buildOrderRow(o);
-        row.classList.add('opacity-90');
-        ordersList.appendChild(row);
-      });
-      wireOrderRowButtons(ordersList);
-      return;
-    }
-
-    // normal status tabs
-    const data = DEMO_MODE
-      ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status===ordersTab)
-      : await fetchOrdersByStatus(ordersTab);
-
+    // status view
+    const data = await fetchOrdersByStatus(ordersTab);
     currentOrdersByTab[ordersTab] = data;
 
     ordersList.innerHTML = data.length
@@ -2389,48 +1955,32 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   function buildOrderRow(o){
-    const itemsText = (o.items || []).map(i=>`${i.name} x${i.qty}`).join(', ');
+    const itemsText = (o.items || [])
+      .map(i=>`${i.name} x${i.qty}`)
+      .join(', ');
+
     const internalId  = o._internal_id || o.internal_id || null;
-    const refDisplay  = o.order_public_id || o.order_id || internalId || "REF?";
-    const kmText      = (o.meta && Number.isFinite(o.meta.distance_km))
-      ? ` • ${Number(o.meta.distance_km).toFixed(1)} km`
-      : "";
+    const refDisplay  = o.order_id || o.order_public_id || internalId || "REF?";
+    const kmText      = (o.route && Number.isFinite(o.route.distance_km)) ? ` • ${Number(o.route.distance_km).toFixed(1)} km` : "";
     const fraudDisplay = (typeof o.fraud_score === "number")
-      ? ` • Fraud: ${Number(o.fraud_score).toFixed(2)}`
+      ? ` • Fraud: ${o.fraud_score.toFixed(2)}`
       : "";
 
-    const driverMaps = DEMO_MODE ? DEMO_DRIVERS_DB : API_DRIVERS_MAP;
-    const driverKey  = o.assigned_driver_id || o.driver_id || null;
-    let driverName   = '—';
+    const assignedDriverId = o.assigned_driver_id || null;
+    const driverName = assignedDriverId && DRIVERS_BY_ID[assignedDriverId]
+      ? DRIVERS_BY_ID[assignedDriverId].name
+      : '—';
 
-    if(driverKey && driverMaps[driverKey]){
-      driverName = driverMaps[driverKey].name || driverMaps[driverKey].driver_id || driverKey;
-    } else if(o.driver_id && driverMaps[o.driver_id]){
-      driverName = driverMaps[o.driver_id].name || o.driver_id;
-    }
-
-    let driverPayText = "Driver pay: R0";
-    let driverPayStatusText = "Pay: –";
-    if(o.driver_pay_status === "pending"){
-      driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
-      driverPayStatusText = "Pay: pending";
-    } else if(o.driver_pay_status === "approved"){
-      driverPayText = `Driver pay: R${o.driver_pay_approved || 0}`;
-      driverPayStatusText = "Pay: approved";
+    // Driver pay (from backend settlement if delivered)
+    let driverPayText = "Driver pay: —";
+    if (o.settlement && typeof o.settlement.driver === 'number'){
+      driverPayText = `Driver pay: R${o.settlement.driver}`;
     }
 
     const isDelivered = o.status === "delivered";
     const canAssign   = (o.status === "pending" || o.status === "review_required") && !isDelivered;
+    const canStart    = (o.status === "assigned");
     const canDeliver  = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
-
-    const createdRaw =
-      o.created_at_iso ||
-      o.created_at ||
-      o.createdAt ||
-      (o.meta && o.meta.created_at);
-    const createdText = createdRaw
-      ? new Date(createdRaw).toLocaleString()
-      : '';
 
     const row = document.createElement('div');
     row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
@@ -2440,22 +1990,17 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     row.innerHTML = `
       <div class="flex-1 min-w-0">
         <div class="font-medium flex flex-wrap items-center gap-1">
-          <span>Ref ${salesSafe(refDisplay)}</span>
+          <span>Ref ${refDisplay}</span>
           <span>• Total R${o.total}</span>
           ${kmText}
         </div>
-        <div class="text-xs text-slate-500 break-words">${salesSafe(itemsText || '')}</div>
+        <div class="text-xs text-slate-500 break-words">${itemsText}</div>
         <div class="text-xs text-slate-500">
-          Status: <b>${salesSafe(o.status || '')}</b> • Driver: ${salesSafe(driverName)}${fraudDisplay}
+          Status: <b>${o.status}</b> • Driver: ${driverName}${fraudDisplay}
         </div>
         <div class="text-[11px] leading-snug text-slate-500 mt-1">
-          ${driverPayText} • ${driverPayStatusText}
+          ${driverPayText}
         </div>
-        ${
-          createdText
-            ? `<div class="text-[9px] text-slate-400 mt-0.5">Created: ${salesSafe(createdText)}</div>`
-            : ''
-        }
       </div>
       <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
         <button
@@ -2466,7 +2011,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         </button>
         <button
           class="btn-start px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-          ${(o.status !== 'assigned' || !internalId) ? 'disabled' : ''}
+          ${(!canStart || !internalId) ? 'disabled' : ''}
           data-id="${internalId || ''}">
           Start trip
         </button>
@@ -2486,16 +2031,18 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       btn.addEventListener('click', ()=> assignOneOrder(btn.getAttribute('data-id')));
     });
     scopeEl.querySelectorAll('.btn-start').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
+      btn.addEventListener('click', async ()=>{
         const id = btn.getAttribute('data-id');
-        if(DEMO_MODE && DEMO_ORDERS_DB[id]){
-          mutateOrder(id, (o)=>{
-            if(o.status === 'assigned') o.status = 'in_transit';
+        // transition assigned -> in_transit
+        try{
+          const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(id)}/status`, {
+            method: "POST",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({status:"in_transit"})
           });
-          renderOrders();
-          renderDrivers();
-          renderStats();
-        }
+          await res.json().catch(()=>({}));
+        }catch(e){ console.error('start trip', e); }
+        renderOrders();
       });
     });
     scopeEl.querySelectorAll('.btn-delivered').forEach(btn=>{
@@ -2503,210 +2050,53 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
   }
 
-  // ========================================================================
-  // DRIVER METRICS & RENDERING (drivers from Mongo)
-  // ========================================================================
-  function computeDriverDerived(driverKey){
-    const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
-    const mine = Object.values(source).filter(o => {
-      const assigned = o.assigned_driver_id || o.driver_id;
-      return assigned === driverKey;
-    });
-
-    let assigned = 0, in_transit = 0, delivered = 0;
-    let pendingPay = 0, approvedPay = 0;
-    let deliveredRevenue = 0;
-    let totalFee = 0, feeCount = 0;
-    const deliveredRefs = [];
-
-    mine.forEach(o=>{
-      if(o.status === 'assigned')   assigned++;
-      if(o.status === 'in_transit') in_transit++;
-      if(o.status === 'delivered'){
-        delivered++;
-        deliveredRevenue += (o.total || 0);
-        deliveredRefs.push(o.order_public_id || o.order_id || o._internal_id || '—');
-      }
-      if(Number.isFinite(o.delivery_fee)){
-        totalFee += o.delivery_fee;
-        feeCount++;
-      }
-      if(o.driver_pay_status === 'pending')  pendingPay  += (o.driver_pay_pending  || 0);
-      if(o.driver_pay_status === 'approved') approvedPay += (o.driver_pay_approved || 0);
-    });
-
-    const avgFee = feeCount ? Math.round(totalFee / feeCount) : 0;
-    const lastDeliveries = deliveredRefs.slice(-3);
-
-    return {
-      assigned,
-      in_transit,
-      delivered,
-      pendingPay: Math.round(pendingPay),
-      approvedPay: Math.round(approvedPay),
-      deliveredRevenue: Math.round(deliveredRevenue),
-      avgFee,
-      lastDeliveries
-    };
-  }
-
-  function renderDrivers(){
+  // === DRIVERS TAB (live) ====================================================
+  async function renderDrivers(){
     if(!driversList) return;
+    await fetchDrivers();
 
-    const pairs = DEMO_MODE
-      ? Object.entries(DEMO_DRIVERS_DB)
-      : Object.entries(API_DRIVERS_MAP);
-
+    const drivers = DRIVERS;
     driversList.innerHTML = '';
-    if(pairs.length===0){
+    if(drivers.length===0){
       driversList.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
+      recalcAdminPayoutWidgets();
       return;
     }
 
-    const wrapper = document.createElement('div');
-    wrapper.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
+    for(const dr of drivers){
+      const row = document.createElement('div');
+      row.className = 'p-3 flex flex-col gap-2 border-b border-slate-200';
 
-    for(const [driverKey, dr] of pairs){
-      const stats = computeDriverDerived(driverKey);
-      const labelId = dr.driver_id || driverKey;
-      const area =
-        dr.area ||
-        dr.zone ||
-        dr.base_area ||
-        dr.depot_name ||
-        dr.hub_name ||
-        'Area not set';
+      const stats = dr.stats || {};
+      const pendingDue = Number(dr.weekly_payout_due || 0);
 
-      const card = document.createElement('div');
-      card.className =
-        'bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-col gap-2 text-xs';
-
-      card.innerHTML = `
-        <div class="flex flex-col gap-1">
-          <div class="flex flex-wrap items-baseline gap-2">
-            <div class="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
-              #${salesSafe(labelId)}
+      row.innerHTML = `
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="font-medium flex flex-wrap items-center gap-2">
+              <span>#${dr.driver_id || (dr._internal_id||'DRV')}</span>
+              <span>• ${dr.name || 'Driver'}</span>
+              <span class="text-slate-500">(${dr.vehicle || 'car'})</span>
+              <span class="text-[11px] text-slate-500">WhatsApp: ${dr.phone || '—'}</span>
             </div>
-            <div class="font-semibold text-slate-900">${salesSafe(dr.name || '')}</div>
+            <div class="text-xs text-slate-500">
+              Assigned: <b>${stats.assigned||0}</b> • In transit: <b>${stats.in_transit||0}</b> • Delivered: <b>${stats.delivered||0}</b>
+            </div>
+            <div class="text-xs text-slate-500">
+              Weekly due: <b>R${pendingDue}</b>
+            </div>
           </div>
-          <div class="text-[10px] text-slate-500">
-            📞 ${salesSafe(dr.phone || '—')}
+          <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
+            <button class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
+                    data-id="${dr._internal_id}">
+              View Orders
+            </button>
           </div>
-          <div class="text-[10px] text-slate-500">
-            📍 ${salesSafe(area)}
-          </div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-2 text-[9px] mt-1">
-          <div class="bg-slate-50 rounded-xl px-2 py-1">
-            <div class="text-slate-500">Delivered</div>
-            <div class="text-sm font-semibold text-emerald-700">${stats.delivered}</div>
-          </div>
-          <div class="bg-slate-50 rounded-xl px-2 py-1">
-            <div class="text-slate-500">Assigned</div>
-            <div class="text-sm font-semibold text-slate-800">${stats.assigned}</div>
-          </div>
-          <div class="bg-slate-50 rounded-xl px-2 py-1">
-            <div class="text-slate-500">In transit</div>
-            <div class="text-sm font-semibold text-slate-800">${stats.in_transit}</div>
-          </div>
-        </div>
-
-        <div class="text-[9px] text-slate-500">
-          Delivered value:
-          <span class="font-semibold text-slate-900">R${stats.deliveredRevenue}</span>
-          &nbsp;• Avg fee:
-          <span class="font-semibold text-slate-900">R${stats.avgFee}</span>
-        </div>
-
-        <div class="text-[9px] text-slate-500">
-          Pending pay:
-          <span class="font-semibold text-amber-600">R${stats.pendingPay}</span>
-          &nbsp;• Approved:
-          <span class="font-semibold text-emerald-700">R${stats.approvedPay}</span>
-        </div>
-
-        ${
-          stats.lastDeliveries.length
-            ? `<div class="text-[8px] text-slate-400">
-                 Recent refs:
-                 ${stats.lastDeliveries.map(x=>`<code>${salesSafe(x)}</code>`).join(', ')}
-               </div>`
-            : ''
-        }
-
-        <div class="mt-2 flex flex-wrap gap-2">
-          <button
-            class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-            data-id="${salesSafe(driverKey)}">
-            View Orders
-          </button>
-          <button
-            class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-            data-id="${salesSafe(driverKey)}">
-            Approve All Pay
-          </button>
-          ${
-            dr.phone
-              ? `<a
-                   class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-                   href="https://wa.me/${salesSafe(dr.phone)}"
-                   target="_blank" rel="noopener">
-                   WhatsApp
-                 </a>`
-              : ''
-          }
         </div>
       `;
-      wrapper.appendChild(card);
+      driversList.appendChild(row);
     }
 
-    driversList.appendChild(wrapper);
-
-    // Approve payout handler
-    driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const did = btn.getAttribute('data-id');
-
-        if (DEMO_MODE){
-          let count = 0;
-          Object.values(DEMO_ORDERS_DB).forEach(o=>{
-            const assigned = o.assigned_driver_id || o.driver_id;
-            if(assigned===did && o.driver_pay_status==='pending'){
-              const amount = o.driver_pay_pending || 0;
-              o.driver_pay_status = 'approved';
-              o.driver_pay_approved = amount;
-              o.driver_pay_pending  = 0;
-              count++;
-            }
-          });
-          saveOrdersToLS();
-          hydrateState();
-          renderDrivers(); renderOrders(); renderStats();
-          alert(count ? `Approved ${count} payout(s) for driver.` : `No pending payouts.`);
-          return;
-        }
-
-        try{
-          const res = await fetch(`${BASE_API}/drivers/${encodeURIComponent(did)}/approve-all-pay`, {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'}
-          });
-          const data = await res.json().catch(()=>({}));
-          if(res.ok && data && data.ok){
-            alert(`Approved payouts for driver.`);
-          } else {
-            alert('Server did not approve payouts.');
-          }
-        }catch(err){
-          console.error('approve payouts err', err);
-          alert('Network/API error approving payouts.');
-        }
-        refreshAllData();
-      });
-    });
-
-    // View orders by driver
     driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const did = btn.getAttribute('data-id');
@@ -2714,18 +2104,29 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         setActiveAdminTab(ordersTab);
       });
     });
+
+    recalcAdminPayoutWidgets();
   }
 
-  // ========================================================================
-  // MAP (unchanged behaviour, uses COLLECTIONS + geolocation)
-  // ========================================================================
+  // === MAP (unchanged visuals) ==============================================
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
-    if(!heroEl) return;
+    if(!heroEl){ return; }
 
     let heroMap;
-    const localCars = [];
-    const movers = [];
+    let localCars = [];
+
+    const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
+
+    async function centerMapHeuristic() {
+      DELIVERY_COORDS = DELIVERY_COORDS || await tryGetCustomerCoords();
+      if(DELIVERY_COORDS){
+        try { heroMap.setView([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], 12, { animate:true }); } catch(_){}
+        spawnLocalTraffic({lat:DELIVERY_COORDS.lat,lng:DELIVERY_COORDS.lng}, 6);
+        return;
+      }
+      try { heroMap.setView([COLLECTION_COORDS.lat, COLLECTION_COORDS.lng], 10, { animate:true }); } catch(_){}
+    }
 
     function carIcon(){
       const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
@@ -2743,7 +2144,30 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
       <path fill='${emerald[600]}' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
     </svg>`;
-    const pkgIcon = () => L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
+    const pkgIcon=L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
+
+    function spawnLocalTraffic(center, count){
+      for(let i=0;i<count;i++){
+        const r    = 0.01 + Math.random()*0.02;
+        const ang0 = Math.random()*Math.PI*2;
+        const spd  = 0.4 + Math.random()*0.6;
+        const m    = L.marker(
+          [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
+          { icon:carIcon() }
+        ).addTo(heroMap);
+        localCars.push({m, cx:center.lat, cy:center.lng, r, ang:ang0, spd});
+      }
+      const pulse = L.circle([center.lat, center.lng], {
+        radius: 60, color:emerald[500], weight:1, opacity:0.7, fillOpacity:0
+      }).addTo(heroMap);
+      let grow=true;
+      setInterval(()=>{
+        const rr = pulse.getRadius();
+        pulse.setRadius(grow ? rr+10 : rr-10);
+        if(pulse.getRadius()>140) grow=false;
+        if(pulse.getRadius()<60)  grow=true;
+      }, 250);
+    }
 
     async function osrmRoute(a,b){
       try{
@@ -2757,7 +2181,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }catch(_){}
       return null;
     }
-
     function buildStraight(a,b){ return [[a.lat,a.lng],[b.lat,b.lng]]; }
 
     function cumulativeLengths(latlngs){
@@ -2771,113 +2194,32 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
       return { lensKm:lens, totalKm:acc };
     }
-
     function pointAtFraction(latlngs, lensKm, frac){
       const target = frac*lensKm[lensKm.length-1];
-      let i=1;
-      while(i<lensKm.length && lensKm[i]<target) i++;
+      let i=1; while(i<lensKm.length && lensKm[i]<target) i++;
       const a=latlngs[i-1], b=latlngs[i];
       const segLen = lensKm[i]-lensKm[i-1] || 1e-6;
       const t = (target - lensKm[i-1]) / segLen;
-      return [
-        a[0] + (b[0]-a[0])*t,
-        a[1] + (b[1]-a[1])*t
-      ];
-    }
-
-    function spawnLocalTraffic(center, count){
-      for(let i=0;i<count;i++){
-        const r    = 0.01 + Math.random()*0.02;
-        const ang0 = Math.random()*Math.PI*2;
-        const spd  = 0.10 + Math.random()*0.15;
-        const m    = L.marker(
-          [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
-          { icon:carIcon() }
-        ).addTo(heroMap);
-        localCars.push({m, cx:center.lat, cy:center.lng, r, ang:ang0, spd});
-      }
-    }
-
-    async function centerAndDraw(){
-      DELIVERY_COORDS = DELIVERY_COORDS || await tryGetCustomerCoords();
-
-      const centerLatLng = [-33.20, 26.55];
-      const centerZoom   = 7;
-
-      if(!DELIVERY_COORDS){
-        heroMap.setView(centerLatLng, centerZoom);
-        COLLECTIONS.slice(0,3).forEach(c=>{
-          L.marker([c.lat, c.lng], { icon: pkgIcon(), title: c.name }).addTo(heroMap).bindTooltip(c.name);
-        });
-        spawnLocalTraffic({lat:centerLatLng[0], lng:centerLatLng[1]}, 4);
-        return;
-      }
-
-      let best = null;
-      for(const c of COLLECTIONS){
-        const d = kmBetween({lat:c.lat,lng:c.lng}, DELIVERY_COORDS);
-        if(!best || d < best.d) best = { c, d };
-      }
-      const depot = best.c;
-
-      document.getElementById('coverageBadge')?.classList.add('bg-[rgba(15,23,42,.75)]');
-
-      L.marker([depot.lat,depot.lng], { icon: pkgIcon(), title: depot.name }).addTo(heroMap).bindTooltip(depot.name);
-      L.circleMarker([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], {
-        radius: 7, color: emerald[600], fillColor: emerald[600], fillOpacity: 0.95
-      }).addTo(heroMap).bindTooltip('You');
-
-      let latlngs = await osrmRoute({lat:depot.lat, lng:depot.lng}, DELIVERY_COORDS);
-      if(!latlngs){ latlngs = buildStraight({lat:depot.lat, lng:depot.lng}, DELIVERY_COORDS); }
-
-      L.polyline(latlngs, { weight:3, color:emerald[600], opacity:0.9 }).addTo(heroMap);
-
-      const bounds = L.latLngBounds(latlngs);
-      bounds.extend([depot.lat,depot.lng]);
-      bounds.extend([DELIVERY_COORDS.lat,DELIVERY_COORDS.lng]);
-      heroMap.fitBounds(bounds, { padding:[30,30], maxZoom:14 });
-
-      const { lensKm } = cumulativeLengths(latlngs);
-      for(let i=0;i<3;i++){
-        const m = L.marker(latlngs[0], {icon:carIcon()}).addTo(heroMap);
-        movers.push({ m, latlngs, lensKm, t: Math.random(), speed: 0.05 + Math.random()*0.03, dir: 1 });
-      }
-
-      spawnLocalTraffic(DELIVERY_COORDS, 3);
-
-      const pulse = L.circle([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], {
-        radius: 50,
-        color: emerald[500],
-        weight: 1,
-        opacity: 0.6,
-        fillOpacity: 0
-      }).addTo(heroMap);
-
-      let grow = true;
-      setInterval(()=>{
-        const r = pulse.getRadius();
-        pulse.setRadius(grow ? r+6 : r-6);
-        if(pulse.getRadius()>120) grow=false;
-        if(pulse.getRadius()<40)  grow=true;
-      }, 220);
+      const lat = a[0] + (b[0]-a[0])*t;
+      const lng = a[1] + (b[1]-a[1])*t;
+      return [lat,lng];
     }
 
     (async function(){
-      try{
-        if(typeof L === 'undefined'){
+      try {
+        if (typeof L === "undefined") {
           throw new Error("Leaflet not loaded");
         }
 
-        const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
-
-        heroMap = L.map(heroEl, {
+        const heroMapOpts = {
           zoomControl:false,
           dragging:false,
           scrollWheelZoom:false,
           doubleClickZoom:false,
           boxZoom:false,
           touchZoom:false
-        }).setView([-33.20, 26.55], 7);
+        };
+        heroMap = L.map(heroEl, heroMapOpts).setView([-33.20, 26.55], 8);
 
         L.tileLayer(
           'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
@@ -2886,102 +2228,90 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
         heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
 
-        if(COLLECTIONS.length >= 2){
-          const bgPairs = [];
-          for(let i=0;i<COLLECTIONS.length;i++){
-            const a = COLLECTIONS[i];
-            const b = COLLECTIONS[(i+1)%COLLECTIONS.length];
-            bgPairs.push([a,b]);
-          }
-          for(const [A,B] of bgPairs){
-            let latlngs = await osrmRoute({lat:A.lat,lng:A.lng}, {lat:B.lat,lng:B.lng});
-            if(!latlngs){ latlngs = buildStraight({lat:A.lat,lng:A.lng}, {lat:B.lat,lng:B.lng}); }
-            const { lensKm } = cumulativeLengths(latlngs);
-            L.polyline(latlngs, { weight:2, color:emerald[500], opacity:0.25 }).addTo(heroMap);
+        const pairs = [
+          [COLLECTIONS[0], COLLECTIONS[1]],
+          [COLLECTIONS[1], COLLECTIONS[2]],
+          [COLLECTIONS[2], COLLECTIONS[3] || COLLECTIONS[0]]
+        ];
 
-            for(let i=0;i<2;i++){
-              const m = L.marker(latlngs[0], {icon:carIcon()}).addTo(heroMap);
-              movers.push({
-                m,
-                latlngs,
-                lensKm,
-                t: Math.random(),
-                speed: 0.03 + Math.random()*0.02,
-                dir: Math.random()<0.5 ? 1 : -1
-              });
-            }
-          }
+        const routes = [];
+        for(const [A,B] of pairs){
+          const rr = await osrmRoute({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng});
+          routes.push(rr || buildStraight({lat:A.lat,lng:A.lng},{lat:B.lat,lng:B.lng}));
         }
+
+        const movers = [];
+        routes.forEach((latlngs)=>{
+          L.polyline(latlngs,{weight:3, opacity:.55, color:emerald[500]}).addTo(heroMap);
+          const {lensKm,totalKm} = cumulativeLengths(latlngs);
+
+          for(let i=0;i<3;i++){
+            const m = L.marker(latlngs[0],{icon:carIcon()}).addTo(heroMap);
+            const speed = 0.15 + Math.random()*0.1;
+            const dir   = Math.random()<.5 ? 1 : -1;
+            const start = Math.random();
+            movers.push({m, latlngs, lensKm, totalKm, t:start, speed, dir});
+          }
+          for(let i=0;i<2;i++){
+            const m = L.marker(latlngs[0],{icon:pkgIcon}).addTo(heroMap);
+            const speed = 0.18 + Math.random()*0.1;
+            const dir   = Math.random()<.5 ? 1 : -1;
+            const start = Math.random();
+            movers.push({m, latlngs, lensKm, totalKm, t:start, speed, dir});
+          }
+        });
 
         function animate(){
           movers.forEach(o=>{
             o.t += o.speed * o.dir * (1/60);
-            if(o.t > 1) o.t = 0;
-            if(o.t < 0) o.t = 1;
-            const [lat,lng] = pointAtFraction(o.latlngs, o.lensKm, o.t);
-            o.m.setLatLng([lat,lng]);
+            if(o.t>1){ o.t=1; o.dir=-1; }
+            if(o.t<0){ o.t=0; o.dir= 1; }
+            o.m.setLatLng(pointAtFraction(o.latlngs,o.lensKm,o.t));
           });
-          localCars.forEach(lc=>{
-            lc.ang += lc.spd * 0.0015;
+          for(const lc of localCars){
+            lc.ang += lc.spd * 0.004;
             const lat = lc.cx + lc.r*Math.sin(lc.ang);
             const lng = lc.cy + lc.r*Math.cos(lc.ang);
             lc.m.setLatLng([lat,lng]);
-          });
+          }
           requestAnimationFrame(animate);
         }
         requestAnimationFrame(animate);
 
-        await centerAndDraw();
+        setTimeout(()=>{ try{ heroMap.invalidateSize(); }catch(_){}; centerMapHeuristic(); },180);
+        window.addEventListener('resize',()=>{ try{ heroMap.invalidateSize(); }catch(_){}});
 
-        setTimeout(()=>{ try{ heroMap.invalidateSize(); }catch(_){ } }, 150);
-        window.addEventListener('resize', ()=> {
-          try { heroMap.invalidateSize(); } catch(_){}
-        });
-
-        // Driver signup → send to backend
+        // Driver signup -> POST to API + WhatsApp to admin
         formSignup?.addEventListener('submit', async e=>{
           e.preventDefault();
           const name    = document.getElementById('drvName')?.value.trim();
           const phone   = digits(document.getElementById('drvPhone')?.value.trim());
           const radius  = Math.max(1, Number(document.getElementById('drvRadius')?.value || 10));
-          const vehicle = document.getElementById('drvVehicle')?.value.trim() || 'Car';
-          if(!name || !phone){
-            alert("Please enter name and phone.");
-            return;
-          }
+          const vehicle = document.getElementById('drvVehicle')?.value.trim() || 'car';
+          if(!name || !phone){ alert("Please enter name and phone."); return; }
 
+          // simple jittered start near current collection for marker only
           const jitter = ()=>{
-            const d = 1500 / 111111;
-            const a = Math.random()*Math.PI*2;
-            const r = Math.random()*d;
-            return {
-              lat: COLLECTION_COORDS.lat + r*Math.cos(a),
-              lng: COLLECTION_COORDS.lng + r*Math.sin(a)
-            };
+            const d=(1500)/111111, a=Math.random()*Math.PI*2, r=Math.random()*d;
+            return { lat: COLLECTION_COORDS.lat + r*Math.cos(a), lng: COLLECTION_COORDS.lng + r*Math.sin(a) };
           };
           const start = jitter();
-          L.marker([start.lat,start.lng], {icon:carIcon()}).addTo(heroMap);
+          L.marker([start.lat,start.lng],{icon:carIcon()}).addTo(heroMap);
 
-          const driver_id = `DRV-${Date.now().toString().slice(-6)}`;
-          if (DEMO_MODE){
-            DEMO_DRIVERS_DB[driver_id] = {
-              driver_id, name, phone, vehicle,
-              stats:{assigned:0,in_transit:0,delivered:0},
-              payout_pending:0, payout_approved:0
+          try{
+            const payload = {
+              name, phone, vehicle,
+              available: true,
+              current_location: { lat: start.lat, lng: start.lng }
             };
-            saveDriversToLS();
-            renderDrivers();
-            renderStats();
-          } else {
-            try{
-              await fetch(`${BASE_API}/drivers`, {
-                method:'POST',
-                headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({driver_id, name, phone, vehicle, radius_km: radius})
-              });
-            }catch(_){}
-            refreshAllData();
-          }
+            const r = await fetch(`${BASE_API}/drivers`, {
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify(payload)
+            });
+            const j = await r.json().catch(()=>({}));
+            if(!r.ok || !j.ok){ alert("Driver create failed."); return; }
+          }catch(err){ console.error("driver create failed", err); }
 
           const text = `New driver sign-up
 Name: ${name}
@@ -2991,42 +2321,40 @@ Vehicle: ${vehicle}`;
           window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
 
           closeDriverWindow();
+          await renderDrivers();
           alert('Driver submitted.');
         });
 
-      }catch(err){
+      } catch (err) {
         console.warn("Map disabled:", err);
       }
     })();
   })();
 
-  // ========================================================================
-  // DRIVER LOGIN → DASH (demo)
-  // ========================================================================
+  // === DRIVER LOGIN → DASH (placeholder demo view) ==========================
   formLogin?.addEventListener('submit',e=>{
     e.preventDefault();
-    alert('Logged in (demo). Opening dashboard.');
+    alert('Logged in. Opening dashboard.');
     closeDriverWindow();
     if(driverDashModal){ openDriverDash(); }
   });
 
-  // ========================================================================
-  // ORDER SUBMISSION
-  // ========================================================================
+  // === ORDER SUBMISSION (customer) ==========================================
   confirmBtn2?.addEventListener('click', async ()=>{
     confirmBtn2.disabled = true;
     try{
       const summary = await computeTotal();
-      if (!summary.items.length){
-        alert('Please select at least one item.');
-        return;
-      }
+      if (!summary.items.length){ alert('Please select at least one item.'); return; }
 
       const custName  = (custNameEl?.value||'').trim();
       const custPhone = digits((custPhoneEl?.value||'').trim());
       const custAddr  = (custAddrEl?.value||'').trim();
       if(!custName || !custPhone || !custAddr){
         alert('Please fill name, WhatsApp and address.');
+        return;
+      }
+      if(!zoneSelect?.value){
+        alert('Please select a pickup depot.');
         return;
       }
 
@@ -3037,144 +2365,105 @@ Vehicle: ${vehicle}`;
         customer: {
           name: custName,
           phone: custPhone,
-          address: { line1: custAddr, suburb: '—', coords: DELIVERY_COORDS || null }
+          address: {
+            line1: custAddr,
+            suburb: '—',
+            coords: DELIVERY_COORDS || null
+          }
         },
         items: summary.items.map(it => ({
-          sku: null,
-          name: it.name,
-          qty: it.qty,
-          price: it.price
+          sku: null, name: it.name, qty: it.qty, price: it.price
         })),
         subtotal: summary.itemsTotal,
         delivery_fee: summary.fee + summary.rush,
         total: summary.total,
         payment: { method: paymentMethod, status: "pending", provider_ref: null },
         created_by: "web",
-        route: {
-          eta_minutes: null,
-          distance_km: Number(summary.distanceKm.toFixed(2)),
-          eta_text: eta
-        },
+        route: { eta_minutes: null, distance_km: Number(summary.distanceKm.toFixed(2)), eta_text: eta },
         meta: { rush: !!summary.rush, collection_name: summary.collectionName }
       };
 
-      if(DEMO_MODE){
-        const refStub = Date.now().toString().slice(-6);
-        const internalId = "demo-" + refStub.toLowerCase();
-        const driverPay  = clamp(orderPayload.delivery_fee,25,45);
-        const did = pickDriverId();
-        DEMO_ORDERS_DB[internalId] = {
-          _internal_id: internalId,
-          order_id:     ("YI-" + refStub).toUpperCase(),
-          order_public_id: ("DEMO-" + refStub).toUpperCase(),
-          status: "pending",
-          total: orderPayload.total,
-          delivery_fee: orderPayload.delivery_fee,
-          items: orderPayload.items.map(x=>({name:x.name, qty:x.qty})),
-          meta: {
-            collection_name: orderPayload.meta.collection_name,
-            distance_km: orderPayload.route.distance_km,
-            rush: !!summary.rush
-          },
-          fraud_score: 0.00,
-          driver_id: did,
-          driver_pay_status: 'pending',
-          driver_pay_pending: driverPay,
-          driver_pay_approved: 0
-        };
-        saveOrdersToLS();
-        hydrateState();
-        window.dispatchEvent(new Event('yt-orders-updated'));
+      // Create order on backend
+      let data = null;
+      try {
+        const res = await fetch(`${BASE_API}/orders`, {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify(orderPayload)
+        });
 
-        latestOrderData = {
-          order_public_id: ("DEMO-" + refStub).toUpperCase(),
-          status: "pending",
-          fraud_score: 0.0,
-          total: summary.total,
-          items: summary.items,
-          eta,
-          payment_method: paymentMethod,
-          wa_message:
-            `Yi Thume, my order is:\n` +
-            `Ref: DEMO-${refStub}\n` +
-            `Deliver to: ${custAddr}\n` +
-            `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
-            `Total: R${summary.total}\n` +
-            `Expected: ${eta}\n` +
-            `Payment: ${paymentMethod}\n` +
-            `Please confirm + send payment link.`
-        };
-      } else {
-        let data = null;
-        try{
-          const res = await fetch(`${BASE_API}/orders`, {
-            method:"POST",
-            headers:{ "Content-Type":"application/json" },
-            body: JSON.stringify(orderPayload)
-          });
-          try { data = await res.json(); } catch(_){ data=null; }
+        try { data = await res.json(); } catch(_) { data = null; }
 
-          if (res.status === 409 && data && data.error === "no_driver_available") {
-            alert(data.message || `Sorry, no driver currently available near your area.`);
-            return;
-          }
-          if(!res.ok || !data || !data.ok){
-            console.error("Order failed", res.status, data);
-            alert("Order failed on server.");
-            return;
-          }
-
-          latestOrderData = {
-            order_public_id: data.order_public_id || data.order_id || ("YI-" + Date.now().toString().slice(-6)),
-            status:         data.status || "pending",
-            fraud_score:    data.fraud_score ?? null,
-            total:          summary.total,
-            items:          summary.items,
-            eta,
-            payment_method: paymentMethod,
-            wa_message:     data.wa_message || null
-          };
-
-          await refreshAllData();
-        }catch(err){
-          console.error("Network/Fetch error", err);
-          alert("Network error creating order.");
+        if (res.status === 409 && data && data.error === "no_driver_available") {
+          alert(data.message || `Sorry, no driver currently available near your area.`);
           return;
         }
+        if(!res.ok || !data || !data.ok){
+          console.error("Order failed", res.status, data);
+          alert("Order failed on server.");
+          return;
+        }
+
+        latestOrderData = {
+          order_public_id: data.order_public_id || data.order_id,
+          status:         data.status || "pending",
+          total:          summary.total,
+          items:          summary.items,
+          eta,
+          payment_method: paymentMethod,
+          wa_message:     `Hi, I need support on my order ${data.order_public_id || '—'}.`
+        };
+      } catch(err){
+        console.error("Network/Fetch error", err);
+        alert("Network error creating order.");
+        return;
       }
 
+      appendBot(`<b>Order received ✅</b><br/>We'll WhatsApp you the driver details shortly. You can use the button below any time to contact support.`);
       closeOrder();
       openBot();
 
       appendBot(
         `<b>YiThume</b> 🤖<br/>
-         Thanks for your order!<br/>
          <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
          <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
          <b>Total:</b> R${latestOrderData.total}<br/>
          <b>Estimated window:</b> ${eta}`
       );
 
-      if(latestOrderData.status === "review_required"){
-        appendBot(`<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`);
-      } else {
-        appendBot(`Choose your payment method below and tap <b>Pay</b>.`);
-      }
-
+      appendBot(`Choose your payment method below and tap <b>Pay</b>.`);
       if(botPayChoice) botPayChoice.value = latestOrderData.payment_method;
 
     } finally {
       confirmBtn2.disabled = false;
-      renderStats();
     }
   });
 
-  // ========================================================================
-  // BOT PAY & WHATSAPP
-  // ========================================================================
+  // === BOT PAY & SUPPORT BUTTON =============================================
+  btnFakePayNow?.addEventListener('click', async ()=>{
+    alert('No money taken. Demo only.');
+    closePayModal();
+    // Mark paid in backend so ops sees it
+    try{
+      if(latestOrderData?.order_public_id){
+        await fetch(`${BASE_API}/simulate_payment`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ order_public_id: latestOrderData.order_public_id })
+        }).then(r=>r.json()).catch(()=>({}));
+      }
+    }catch(e){ console.warn('simulate_payment failed', e); }
+
+    botSendWA?.classList.remove('hidden'); // now acts as "Contact support"
+    botNewOrder?.classList.remove('hidden');
+    if(botDemoNote) botDemoNote.hidden = false;
+
+    appendBot(`<b>Payment marked (demo)</b><br/>We’ll send your secure link from our side and message you on WhatsApp.`);
+    botStage = 2;
+  });
+
   botNext?.addEventListener('click', ()=>{
     if(!latestOrderData) return;
-
     const pay = botPayChoice?.value || selectedPay();
     latestOrderData.payment_method = pay;
 
@@ -3182,56 +2471,35 @@ Vehicle: ${vehicle}`;
       if(pay === 'eft'){
         appendBot(
           `<b>Instant EFT (Ozow)</b><br/>
-           We'll WhatsApp you a secure Ozow link.<br/>
-           Use ref <code>${latestOrderData.order_public_id}</code>.`
+           We’ll send you a secure link from our side.<br/>
+           Ref <code>${latestOrderData.order_public_id}</code>.`
         );
       } else if(pay === 'card'){
         appendBot(
-          `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
-           Use ref <code>${latestOrderData.order_public_id}</code>.`
+          `We’ll send you a secure <b>card link</b> (Yoco) from our side.<br/>
+           Ref <code>${latestOrderData.order_public_id}</code>.`
         );
       } else {
         const deposit = Math.ceil(latestOrderData.total*0.5);
         appendBot(
           `<b>50% deposit + COD</b><br/>
-           Pay deposit now: <b>R${deposit}</b>.<br/>
-           Balance due at delivery.<br/>
+           Deposit now: <b>R${deposit}</b> (we’ll send the link).<br/>
            Ref <code>${latestOrderData.order_public_id}</code>.`
         );
       }
-
       appendBot(`This next screen is a demo. No money is taken here.`);
       openPayModal(latestOrderData.order_public_id, latestOrderData.total);
       botStage = 1;
       return;
     }
 
-    appendBot(`Click "Contact support" so we can confirm the order and send the real secure payment link.`);
+    appendBot(`Use the button below any time to <b>Contact support</b> on WhatsApp.`);
   });
 
   botSendWA?.addEventListener('click', () => {
-    if(!latestOrderData){
-      alert("No order data.");
-      return;
-    }
-
-    const msg = latestOrderData.wa_message
-      ? latestOrderData.wa_message
-      : [
-          "Yi Thume, my order is:",
-          `Ref: ${latestOrderData.order_public_id}`,
-          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
-          `Total: R${latestOrderData.total}`,
-          `Expected: ${latestOrderData.eta}`,
-          `Payment: ${latestOrderData.payment_method}`,
-          "Please confirm + send payment link."
-        ].join("\n");
-
+    const msg = latestOrderData?.wa_message || 'Hi, I need support with my order.';
     const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}`;
     window.open(wa,'_blank');
-
-    closeBot();
-    alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
   });
 
   botNewOrder?.addEventListener('click', ()=>{
@@ -3239,24 +2507,39 @@ Vehicle: ${vehicle}`;
     openOrder();
   });
 
-  // ========================================================================
-  // FINAL INIT
-  // ========================================================================
-  renderStoreItems();
-  if (DEMO_MODE) {
-    computeDriverTotalsFromDB();
-    renderDrivers();
-    ensureAdminTabs();
-    setActiveAdminTab(ordersTab);
-    renderStats();
-  } else {
-    refreshAllData().then(()=>{
-      ensureAdminTabs();
-      setActiveAdminTab(ordersTab);
-    });
-  }
+  // === WIRING: Open/Close buttons that were missing ==========================
+  document.getElementById('openOrderBuilder')?.addEventListener('click', openOrder);
+  closeBtn?.addEventListener('click', closeOrder);
+  cancelOrderBuilder?.addEventListener('click', closeOrder);
+
+  document.getElementById('openDriverModal')?.addEventListener('click', openDriverWindow);
+  closeDriver?.addEventListener('click', closeDriverWindow);
+
+  closeDriverDash?.addEventListener('click', closeDriverDashWindow);
+
+  closePayModalBtn?.addEventListener('click', closePayModal);
+  btnCancelPay?.addEventListener('click', closePayModal);
+
+  // === ADMIN ENTRY ===========================================================
+  adminBtn?.addEventListener('click', async ()=>{
+    const pin = prompt('Enter admin PIN:');
+    if(pin && pin.trim() !== ""){
+      window.YT_ADMIN_SECRET = pin.trim(); // used for X-Admin-Secret where needed
+      alert('Admin mode ON');
+      await openOrders();
+    } else {
+      alert('Invalid PIN');
+    }
+  });
+
+  // Ensure wrappers exist early so toggles never blank the panel
+  ensureWrappers();
+
+  // Preload drivers so order rows can show names
+  fetchDrivers();
 });
 </script>
+
 
 
 </body>
