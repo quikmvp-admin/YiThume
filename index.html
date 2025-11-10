@@ -925,30 +925,12 @@ window.addEventListener('DOMContentLoaded', () => {
   // ========================================================================
   // CONFIG
   // ========================================================================
-  //
-  // This frontend talks to the Flask backend:
-  //
-  //  - GET  /api/app/orders/all
-  //  - GET  /api/app/orders?status=...
-  //  - GET  /api/app/drivers
-  //  - GET  /api/app/stats/overview
-  //  - POST /api/app/orders
-  //  - POST /api/app/orders/:id/auto-assign
-  //  - POST /api/app/orders/:id/status
-  //  - POST /api/app/drivers/:id/approve-all-pay
-  //  - POST /api/app/drivers
-  //  - POST /api/app/stores
-  //
-  // All admin stats + driver cards are computed from these endpoints,
-  // backed by your MongoDB collections.
-  // ========================================================================
-
   const BASE_API        = "/api/app";
   const WHATSAPP_NUMBER = "270691456201";
   const ADMIN_WHATSAPP  = "270691456201";
   const ADMIN_PASS      = "1234";
 
-  const DEMO_MODE       = false;
+  const DEMO_MODE       = false; // set true to use local demo data
 
   const BASE_DELIVERY_FEE = 15;
   const PER_KM_PRICE      = 8;
@@ -1034,24 +1016,24 @@ window.addEventListener('DOMContentLoaded', () => {
   let botStage = 0;
 
   const currentOrdersByTab = {};
-  let ALL_ORDERS_MAP   = {};
-  let API_DRIVERS_MAP  = {};
-  let REMOTE_STATS     = null;
-  let HISTORY_ORDERS   = [];
+  let ALL_ORDERS_MAP   = {}; // _internal_id -> order
+  let HISTORY_ORDERS   = []; // sorted desc
+  let DEMO_ORDERS_DB  = {};
+  let DEMO_DRIVERS_DB = {};
+
+  let API_DRIVERS_MAP  = {}; // driver_id/_internal_id -> driver
+  let DRIVERS          = [];
+  let DRIVERS_BY_ID    = {};
+
+  const driverTotals   = { pending: 0, approved: 0 };
 
   let DELIVERY_COORDS   = null;
   let COLLECTION_COORDS = {lat:-33.590, lng:26.890};
 
-  let DEMO_ORDERS_DB  = {};
-  let DEMO_DRIVERS_DB = {};
-
-  function calcDriverPayout(order){
-    const fee = Number(order?.delivery_fee ?? 0);
-    return clamp(fee, 25, 45);
-  }
-
-  const driverTotals = { pending: 0, approved: 0 };
   const storeItems = [];
+
+  // Admin stats DOM refs (for live payouts block)
+  let adminDriversCountEl, adminPayPendingEl, adminPayApprovedEl;
 
   // ========================================================================
   // ELEMENT REFS
@@ -1637,7 +1619,9 @@ window.addEventListener('DOMContentLoaded', () => {
     tabLogin.setAttribute('aria-selected','true');
   });
 
-  // Store modal
+  // ========================================================================
+  // STORE MODAL
+  // ========================================================================
   function renderStoreItems(){
     if(!storeItemsList) return;
     storeItemsList.innerHTML = '';
@@ -1695,7 +1679,7 @@ window.addEventListener('DOMContentLoaded', () => {
           body:JSON.stringify(payload)
         });
         const j = await r.json().catch(()=>({}));
-        if(!r.ok || !j.ok){ alert("Store save failed on server."); }
+        if(!r.ok || j.ok === false){ alert("Store save failed on server."); }
       }catch(err){ console.error("store create failed",err); }
     }
 
@@ -1719,7 +1703,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   });
 
   // ========================================================================
-  // ADMIN DATA EVENTS
+  // DATA EVENTS
   // ========================================================================
   window.addEventListener('yt-orders-updated', ()=>{
     if(ordersPanel && !ordersPanel.classList.contains('hidden')) {
@@ -1730,127 +1714,53 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   });
 
   // ========================================================================
-  // LIVE FETCH HELPERS
+  // LIVE FETCH HELPERS (USE REAL ENDPOINTS YOU PROVIDED)
   // ========================================================================
-  async function fetchOrdersByStatus(status){
-    if(status === 'drivers' || status === 'stats' || status === 'history' || (status||'').startsWith('by_driver:')) {
+  async function fetchAllOrdersFromApi(){
+    try{
+      const r = await fetch(`${BASE_API}/orders`);
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok || j.ok === false) return [];
+      if(Array.isArray(j.orders)) return j.orders;
+      if(Array.isArray(j.data))   return j.data;
+      if(Array.isArray(j))        return j;
       return [];
-    }
-    if(DEMO_MODE){
-      return Object.values(DEMO_ORDERS_DB).filter(o => o.status === status);
-    }
-    try {
-      const res = await fetch(`${BASE_API}/orders?status=${encodeURIComponent(status)}`);
-      const data = await res.json().catch(()=>({}));
-      if(!res.ok || !data || data.ok === false){ return []; }
-      const list = Array.isArray(data.orders)
-        ? data.orders
-        : Array.isArray(data.data)
-          ? data.data
-          : Array.isArray(data)
-            ? data
-            : [];
-      return list;
-    } catch(err){
-      console.error("fetchOrdersByStatus error",err);
+    }catch(e){
+      console.error("fetchAllOrdersFromApi", e);
       return [];
     }
   }
 
-  async function fetchAllOrdersLive(){
-    if(DEMO_MODE){
-      ALL_ORDERS_MAP = {...DEMO_ORDERS_DB};
-      HISTORY_ORDERS = Object.values(DEMO_ORDERS_DB);
-      return;
-    }
-
+  async function fetchDriversFromApi(){
     try{
-      const res = await fetch(`${BASE_API}/orders/all`);
-      if(res.ok){
-        const data = await res.json().catch(()=>({}));
-        let list = [];
-        if(Array.isArray(data.orders)) list = data.orders;
-        else if(Array.isArray(data.data)) list = data.data;
-        else if(Array.isArray(data)) list = data;
-        const map = {};
-        list.forEach(o=>{
-          const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id || Math.random().toString(36).slice(2);
-          map[key] = o;
-        });
-        ALL_ORDERS_MAP = map;
-        HISTORY_ORDERS = list.slice().sort((a,b)=>{
-          const aa = new Date(a.created_at_iso || a.created_at || 0).getTime();
-          const bb = new Date(b.created_at_iso || b.created_at || 0).getTime();
-          return bb-aa;
-        });
-        return;
-      }
-    }catch(err){
-      console.warn("orders/all failed, falling back by-status", err);
-    }
-
-    const statuses = ['pending','assigned','in_transit','delivered'];
-    const all = await Promise.all(statuses.map(s=>fetchOrdersByStatus(s)));
-    const flat = all.flat();
-    const map = {};
-    flat.forEach(o=>{
-      const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id || Math.random().toString(36).slice(2);
-      map[key] = o;
-    });
-    ALL_ORDERS_MAP = map;
-    HISTORY_ORDERS = flat.slice().sort((a,b)=>{
-      const aa = new Date(a.created_at_iso || a.created_at || 0).getTime();
-      const bb = new Date(b.created_at_iso || b.created_at || 0).getTime();
-      return bb-aa;
-    });
-  }
-
-  async function fetchDriversLive(){
-    if(DEMO_MODE){
-      API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
-      return;
-    }
-    try{
-      const res = await fetch(`${BASE_API}/drivers`);
-      const data = await res.json().catch(()=>({}));
-
-      let rows = [];
-      if(Array.isArray(data.drivers)) rows = data.drivers;
-      else if(Array.isArray(data.data)) rows = data.data;
-      else if(Array.isArray(data)) rows = data;
-
-      if(res.ok && data.ok !== false && rows && rows.length){
+      const r = await fetch(`${BASE_API}/drivers`);
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok || j.ok === false){
+        DRIVERS = [];
+        DRIVERS_BY_ID = {};
         API_DRIVERS_MAP = {};
-        rows.forEach(d=>{
-          const key = d._internal_id || d.driver_id || d.id;
-          if(!key) return;
-          API_DRIVERS_MAP[key] = d;
-        });
-      } else {
-        API_DRIVERS_MAP = {};
+        return [];
       }
-    }catch(err){
-      console.error("fetch drivers err", err);
+      const list = Array.isArray(j.drivers) ? j.drivers
+                 : Array.isArray(j.data)    ? j.data
+                 : Array.isArray(j)         ? j
+                 : [];
+      DRIVERS = list;
+      DRIVERS_BY_ID = Object.create(null);
       API_DRIVERS_MAP = {};
-    }
-  }
-
-  async function fetchStatsLive(){
-    if(DEMO_MODE){
-      REMOTE_STATS = null;
-      return;
-    }
-    try{
-      const res = await fetch(`${BASE_API}/stats/overview`);
-      const data = await res.json().catch(()=>({}));
-      if(res.ok && data && data.ok !== false){
-        REMOTE_STATS = data;
-      } else {
-        REMOTE_STATS = null;
+      for(const d of list){
+        const key = d._internal_id || d.driver_id || d.id;
+        if(!key) continue;
+        DRIVERS_BY_ID[key] = d;
+        API_DRIVERS_MAP[key] = d;
       }
-    }catch(err){
-      console.warn("fetch stats err (will compute on frontend)", err);
-      REMOTE_STATS = null;
+      return list;
+    }catch(e){
+      console.error("fetchDriversFromApi", e);
+      DRIVERS = [];
+      DRIVERS_BY_ID = {};
+      API_DRIVERS_MAP = {};
+      return [];
     }
   }
 
@@ -1859,19 +1769,39 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       hydrateState();
       HISTORY_ORDERS = Object.values(DEMO_ORDERS_DB);
     } else {
-      await Promise.all([
-        fetchAllOrdersLive(),
-        fetchDriversLive(),
-        fetchStatsLive()
+      const [orders, drivers] = await Promise.all([
+        fetchAllOrdersFromApi(),
+        fetchDriversFromApi()
       ]);
+
+      const map = {};
+      orders.forEach(o=>{
+        const key =
+          o._internal_id ||
+          o.internal_id ||
+          o.order_public_id ||
+          o.order_id ||
+          Math.random().toString(36).slice(2);
+        map[key] = o;
+      });
+      ALL_ORDERS_MAP = map;
+      HISTORY_ORDERS = orders.slice().sort((a,b)=>{
+        const aa = new Date(a.created_at_iso || a.created_at || 0).getTime();
+        const bb = new Date(b.created_at_iso || b.created_at || 0).getTime();
+        return bb-aa;
+      });
+
+      // API_DRIVERS_MAP already set by fetchDriversFromApi
     }
+
+    computeDriverTotalsFromDB();
     renderOrders();
     renderDrivers();
     renderStats();
   }
 
   // ========================================================================
-  // STATS / KPIs (combined, nice layout)
+  // STATS / KPIs
   // ========================================================================
   function computeDriverTotalsFromDB() {
     let pendingTotal = 0;
@@ -1893,32 +1823,19 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     computeDriverTotalsFromDB();
 
     const orders  = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
-    const drivers = DEMO_MODE ? Object.values(DEMO_DRIVERS_DB) : Object.values(API_DRIVERS_MAP);
+    const drivers = DEMO_MODE ? Object.values(DEMO_DRIVERS_DB) : DRIVERS;
 
     let totalOrders      = orders.length;
-    let totalRevenue     = orders.reduce((s,o)=> s + (o.total || 0), 0);
+    let totalRevenue     = orders.reduce((s,o)=> s + Number(o.total || 0), 0);
     let deliveredOrders  = orders.filter(o=>o.status === 'delivered').length;
     let pendingOrders    = orders.filter(o=>o.status === 'pending').length;
     let inTransitOrders  = orders.filter(o=>o.status === 'in_transit').length;
     let assignedOrders   = orders.filter(o=>o.status === 'assigned').length;
-    let deliveredRevenue = orders.filter(o=>o.status === 'delivered').reduce((s,o)=> s + (o.total || 0), 0);
-    let totalDeliveryFees= orders.reduce((s,o)=> s + (o.delivery_fee || 0), 0);
+    let deliveredRevenue = orders
+      .filter(o=>o.status === 'delivered')
+      .reduce((s,o)=> s + Number(o.total || 0), 0);
+    let totalDeliveryFees= orders.reduce((s,o)=> s + Number(o.delivery_fee || 0), 0);
     let activeDrivers    = drivers.length;
-
-    if(!DEMO_MODE && REMOTE_STATS){
-      const RS = REMOTE_STATS;
-      if(Number.isFinite(RS.total_orders))       totalOrders       = RS.total_orders;
-      if(Number.isFinite(RS.revenue))            totalRevenue      = RS.revenue;
-      if(Number.isFinite(RS.delivered_orders))   deliveredOrders   = RS.delivered_orders;
-      if(Number.isFinite(RS.pending_orders))     pendingOrders     = RS.pending_orders;
-      if(Number.isFinite(RS.in_transit_orders))  inTransitOrders   = RS.in_transit_orders;
-      if(Number.isFinite(RS.assigned_orders))    assignedOrders    = RS.assigned_orders;
-      if(Number.isFinite(RS.delivered_revenue))  deliveredRevenue  = RS.delivered_revenue;
-      if(Number.isFinite(RS.delivery_fees))      totalDeliveryFees = RS.delivery_fees;
-      if(Number.isFinite(RS.drivers))            activeDrivers     = RS.drivers;
-      if(Number.isFinite(RS.driver_payout_pending))  driverTotals.pending  = RS.driver_payout_pending;
-      if(Number.isFinite(RS.driver_payout_approved)) driverTotals.approved = RS.driver_payout_approved;
-    }
 
     const avgOrderValue  = totalOrders ? Math.round(totalRevenue / totalOrders) : 0;
     const avgDeliveryFee = totalOrders ? Math.round(totalDeliveryFees / totalOrders) : 0;
@@ -1937,11 +1854,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         const qty  = Number(i.qty || 1);
         itemCounts[name] = (itemCounts[name] || 0) + qty;
       });
-    });
-    let popularItem = '—';
-    let popularItemQty = 0;
-    Object.entries(itemCounts).forEach(([name,qty]) => {
-      if (qty > popularItemQty) { popularItemQty = qty; popularItem = name; }
     });
     const topProducts = Object.entries(itemCounts)
       .sort((a,b)=>b[1]-a[1])
@@ -1965,17 +1877,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       pendingOrders,
       assignedOrders,
       inTransitOrders,
-      totalRevenue: Math.round(totalRevenue),
-      deliveredRevenue: Math.round(deliveredRevenue),
-      totalDeliveryFees: Math.round(totalDeliveryFees),
+      totalRevenue:       Math.round(totalRevenue),
+      deliveredRevenue:   Math.round(deliveredRevenue),
+      totalDeliveryFees:  Math.round(totalDeliveryFees),
       avgOrderValue,
       avgDeliveryFee,
       activeDrivers,
       driverAttachRate,
       rushOrders,
       fraudFlagged,
-      popularItem,
-      popularItemQty,
       topProducts,
       topAreas,
       driverPayoutPending:  driverTotals.pending,
@@ -1983,7 +1893,26 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     };
   }
 
+  function recalcAdminPayoutWidgets(){
+    if(!adminDriversCountEl && !adminPayPendingEl && !adminPayApprovedEl) return;
+
+    const orders  = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
+    const drivers = DEMO_MODE ? Object.values(DEMO_DRIVERS_DB) : DRIVERS;
+
+    let pending = 0;
+    let approved = 0;
+    orders.forEach(o=>{
+      if(o.driver_pay_status === 'pending')  pending  += Number(o.driver_pay_pending  || 0);
+      if(o.driver_pay_status === 'approved') approved += Number(o.driver_pay_approved || 0);
+    });
+
+    if(adminDriversCountEl) adminDriversCountEl.textContent = String(drivers.length);
+    if(adminPayPendingEl)   adminPayPendingEl.textContent   = 'R' + Math.round(pending);
+    if(adminPayApprovedEl)  adminPayApprovedEl.textContent  = 'R' + Math.round(approved);
+  }
+
   function renderStats(){
+    // Ensure a single stats container exists
     if(!statsContainer){
       if(!ordersPanel) return;
       statsContainer = document.createElement('div');
@@ -1991,6 +1920,24 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       statsContainer.className = 'mt-4';
       ordersPanel.appendChild(statsContainer);
     }
+
+    // Also ensure adminStatsWrap-style elements for payouts (optional)
+    if(!document.getElementById('adminStatsWrap')){
+      const wrap = document.createElement('div');
+      wrap.id = 'adminStatsWrap';
+      wrap.className = 'hidden'; // keep hidden, but we reuse its payout labels
+      wrap.innerHTML = `
+        <div>
+          <div id="adminDriversCount"></div>
+          <div id="adminPayPending"></div>
+          <div id="adminPayApproved"></div>
+        </div>
+      `;
+      (ordersPanel || document.body).appendChild(wrap);
+    }
+    adminDriversCountEl = document.getElementById('adminDriversCount');
+    adminPayPendingEl   = document.getElementById('adminPayPending');
+    adminPayApprovedEl  = document.getElementById('adminPayApproved');
 
     try{
       const s = computeStats();
@@ -2048,7 +1995,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             </div>
             <div class="text-[9px] text-slate-500">
               Approved payout:
-              <span class="font-semibold text-slate-900">R${s.driverPayoutApproved || 0}</span>
+              <span class="font-semibold text-slate-900>R${s.driverPayoutApproved || 0}</span>
             </div>
           </div>
         </div>
@@ -2089,6 +2036,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           </div>
         </div>
       `;
+
+      recalcAdminPayoutWidgets();
     }catch(err){
       console.error("renderStats error", err);
       statsContainer.innerHTML =
@@ -2097,7 +2046,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   // ========================================================================
-  // ADMIN TABS (INCLUDING HISTORY & DRIVERS/STATS VIEWS)
+  // ADMIN TABS (Pending / Drivers / Stats / History)
   // ========================================================================
   function ensureAdminTabs(){
     let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
@@ -2125,8 +2074,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     ];
 
     const host = ordersTabsContainer || ordersList?.parentElement || ordersPanel || document.body;
-
     const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
+
     wanted.forEach(([label,key])=>{
       if(!haveKeys.has(key)){
         host.appendChild(makeTabBtn(label, key));
@@ -2163,7 +2112,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     if (ordersWrapper)  ordersWrapper.classList.toggle('hidden', showDrivers || showStats);
     if (driversWrapper) driversWrapper.classList.toggle('hidden', !showDrivers);
-
     if (statsContainer) statsContainer.classList.toggle('hidden', !showStats);
 
     if(showDrivers){
@@ -2215,7 +2163,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     if(DEMO_MODE){
       mutateOrder(internalId, (o)=>{
         if(!o.driver_id){ o.driver_id = pickDriverId(); }
-        const pay = calcDriverPayout(o);
+        const pay = clamp(o.delivery_fee || 0,25,45);
         o.driver_pay_status   = 'pending';
         o.driver_pay_pending  = pay;
         o.driver_pay_approved = 0;
@@ -2252,7 +2200,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     if(DEMO_MODE){
       mutateOrder(internalId, (o)=>{
-        const pay = calcDriverPayout(o);
+        const pay = clamp(o.delivery_fee || 0,25,45);
         o.status = 'delivered';
         o.driver_pay_status   = 'approved';
         o.driver_pay_approved = pay;
@@ -2295,7 +2243,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       if (DEMO_MODE){
         mutateOrder(internalId, (o)=>{
           if(!o.driver_id){ o.driver_id = pickDriverId(); }
-          const pay = calcDriverPayout(o);
+          const pay = clamp(o.delivery_fee || 0,25,45);
           o.driver_pay_status  = 'pending';
           o.driver_pay_pending = pay;
           o.status             = 'assigned';
@@ -2330,11 +2278,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
   // ========================================================================
-  // ORDER LIST RENDERING (INCLUDING HISTORY & BY-DRIVER)
+  // ORDER LIST RENDERING (INCLUDING HISTORY & BY DRIVER)
   // ========================================================================
   async function renderOrders(){
     if(!ordersList) return;
 
+    // By-driver tab
     if((ordersTab||'').startsWith('by_driver:')){
       const did = ordersTab.split(':',2)[1];
       const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
@@ -2342,18 +2291,16 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         const assigned = o.assigned_driver_id || o.driver_id;
         return assigned === did;
       });
-
       currentOrdersByTab[ordersTab] = data;
       ordersList.innerHTML = data.length
         ? ''
         : `<div class="text-sm text-slate-500 p-4">No orders for that driver.</div>`;
-      for(const o of data){
-        ordersList.appendChild(buildOrderRow(o));
-      }
+      data.forEach(o => ordersList.appendChild(buildOrderRow(o)));
       wireOrderRowButtons(ordersList);
       return;
     }
 
+    // History tab
     if(ordersTab === 'history'){
       const source = DEMO_MODE
         ? Object.values(DEMO_ORDERS_DB)
@@ -2366,11 +2313,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       });
 
       currentOrdersByTab[ordersTab] = data;
-
       ordersList.innerHTML = data.length
         ? ''
         : `<div class="text-sm text-slate-500 p-4">No orders found in history.</div>`;
-
       data.forEach(o=>{
         const row = buildOrderRow(o);
         row.classList.add('opacity-90');
@@ -2380,9 +2325,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
+    // Status tabs
     const data = DEMO_MODE
       ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status===ordersTab)
-      : await fetchOrdersByStatus(ordersTab);
+      : Object.values(ALL_ORDERS_MAP).filter(o=>o.status===ordersTab);
 
     currentOrdersByTab[ordersTab] = data;
 
@@ -2390,9 +2336,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ? ''
       : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
 
-    for(const o of data){
-      ordersList.appendChild(buildOrderRow(o));
-    }
+    data.forEach(o=> ordersList.appendChild(buildOrderRow(o)));
     wireOrderRowButtons(ordersList);
   }
 
@@ -2459,8 +2403,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         <div class="text-[11px] leading-snug text-slate-500 mt-1">
           ${driverPayText} • ${driverPayStatusText}
         </div>
-        ${
-          createdText
+        ${ createdText
             ? `<div class="text-[9px] text-slate-400 mt-0.5">Created: ${salesSafe(createdText)}</div>`
             : ''
         }
@@ -2532,15 +2475,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       if(o.status === 'in_transit') in_transit++;
       if(o.status === 'delivered'){
         delivered++;
-        deliveredRevenue += (o.total || 0);
+        deliveredRevenue += Number(o.total || 0);
         deliveredRefs.push(o.order_public_id || o.order_id || o._internal_id || '—');
       }
       if(Number.isFinite(o.delivery_fee)){
-        totalFee += o.delivery_fee;
+        totalFee += Number(o.delivery_fee);
         feeCount++;
       }
-      if(o.driver_pay_status === 'pending')  pendingPay  += (o.driver_pay_pending  || 0);
-      if(o.driver_pay_status === 'approved') approvedPay += (o.driver_pay_approved || 0);
+      if(o.driver_pay_status === 'pending')  pendingPay  += Number(o.driver_pay_pending  || 0);
+      if(o.driver_pay_status === 'approved') approvedPay += Number(o.driver_pay_approved || 0);
     });
 
     const avgFee = feeCount ? Math.round(totalFee / feeCount) : 0;
@@ -2597,12 +2540,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             </div>
             <div class="font-semibold text-slate-900">${salesSafe(dr.name || '')}</div>
           </div>
-          <div class="text-[10px] text-slate-500">
-            📞 ${salesSafe(dr.phone || '—')}
-          </div>
-          <div class="text-[10px] text-slate-500">
-            📍 ${salesSafe(area)}
-          </div>
+          <div class="text-[10px] text-slate-500">📞 ${salesSafe(dr.phone || '—')}</div>
+          <div class="text-[10px] text-slate-500">📍 ${salesSafe(area)}</div>
         </div>
 
         <div class="grid grid-cols-3 gap-2 text-[9px] mt-1">
@@ -2671,6 +2610,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     driversList.appendChild(wrapper);
 
+    // Approve payouts
     driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
       btn.addEventListener('click', async ()=>{
         const did = btn.getAttribute('data-id');
@@ -2713,6 +2653,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       });
     });
 
+    // View orders for driver
     driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const did = btn.getAttribute('data-id');
@@ -2723,7 +2664,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   // ========================================================================
-  // MAP
+  // MAP (unchanged core, uses COLLECTIONS + customer coords)
   // ========================================================================
   (function initMapSafely(){
     const heroEl  = document.getElementById('heroMap');
@@ -2944,7 +2885,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           try { heroMap.invalidateSize(); } catch(_){}
         });
 
-        // DRIVER SIGNUP (Map-linked)
+        // Driver signup via map
         formSignup?.addEventListener('submit', async e=>{
           e.preventDefault();
           const name    = document.getElementById('drvName')?.value.trim();
@@ -3124,7 +3065,7 @@ Vehicle: ${vehicle}`;
             alert(data.message || `Sorry, no driver currently available near your area.`);
             return;
           }
-          if(!res.ok || !data || data.ok === false){
+          if(!res.ok || data?.ok === false){
             console.error("Order failed", res.status, data);
             alert("Order failed on server.");
             return;
