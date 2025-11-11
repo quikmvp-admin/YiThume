@@ -1748,7 +1748,7 @@ window.addEventListener('yt-orders-updated', ()=>{
 });
 
 // ========================================================================
-// ADMIN STATS (LIVE FROM API)  — YOUR SNIPPET, WIRED IN
+// ADMIN STATS (live from API) — YOUR SNIPPET (slightly extended)
 // ========================================================================
 async function fetchAllOrders(){
   try{
@@ -1815,7 +1815,7 @@ function recalcAdminPayoutWidgets(){
 }
 
 async function renderAdminStats(){
-  // Ensure stats container
+  // Ensure stats container exists
   if(!statsContainer){
     statsContainer = document.createElement('div');
     statsContainer.id = 'statsContainer';
@@ -1831,7 +1831,7 @@ async function renderAdminStats(){
   if(!document.getElementById('adminStatsWrap')){
     const stats = document.createElement('div');
     stats.id = 'adminStatsWrap';
-    // visible; Stats tab controls visibility via statsContainer
+    stats.className = ''; // visible; Stats tab toggles container
     stats.innerHTML = `
       <div class="grid gap-3 sm:grid-cols-3">
         <div class="border rounded-xl p-3 flex flex-col">
@@ -1871,7 +1871,6 @@ async function renderAdminStats(){
     adminPayApprovedEl  = document.getElementById('adminPayApproved');
   }
 
-  // Pull fresh orders
   const orders = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : await fetchAllOrders();
   const totalOrders = orders.length;
   const revenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
@@ -1907,14 +1906,12 @@ async function renderAdminStats(){
       : '<li class="text-slate-500">No data yet</li>';
   }
 
-  // Update drivers & payout widgets
   if(!DEMO_MODE){
     await fetchDrivers();
   }
   recalcAdminPayoutWidgets();
 }
 
-// Wrapper so any existing calls still work
 function renderStats(){
   renderAdminStats();
 }
@@ -3068,31 +3065,33 @@ async function refreshAllData(){
 }
 
 // ========================================================================
-// FINAL INIT
+// FINAL INIT (inside DOMContentLoaded)
 // ========================================================================
 renderStoreItems();
 if (DEMO_MODE) {
   const map = {};
-  Object.values(DEMO_ORDERS_DB).forEach(o => {
+  Object.values(DEMO_ORDERS_DB).forEach(o=>{
     const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id;
-    if (key) map[key] = o;
+    if(key) map[key] = o;
   });
   ALL_ORDERS_MAP = map;
   DRIVERS = Object.values(DEMO_DRIVERS_DB);
-  API_DRIVERS_MAP = { ...DEMO_DRIVERS_DB };
+  API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
   ensureAdminTabs();
   setActiveAdminTab(ordersTab);
   renderOrders();
   renderDrivers();
   renderStats();
 } else {
-  refreshAllData().then(() => {
+  refreshAllData().then(()=>{
     ensureAdminTabs();
     setActiveAdminTab(ordersTab);
   });
 }
-});
+
+}); // end DOMContentLoaded
 </script>
+
 
 
 
