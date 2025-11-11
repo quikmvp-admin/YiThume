@@ -925,18 +925,18 @@ window.addEventListener('DOMContentLoaded', () => {
   // ========================================================================
   // CONFIG & GLOBALS
   // ========================================================================
-  const BASE_API = "/api/app";
+  const BASE_API        = "/api/app";
   const WHATSAPP_NUMBER = "270691456201";
-  const ADMIN_WHATSAPP = "270691456201";
-  const ADMIN_PASS = "1234";
+  const ADMIN_WHATSAPP  = "270691456201";
+  const ADMIN_PASS      = "1234";
 
-  const DEMO_MODE = false; // true = local demo mode
+  const DEMO_MODE       = false; // true = local demo mode
 
   const BASE_DELIVERY_FEE = 15;
-  const PER_KM_PRICE = 8;
-  const RUSH_FEE = 30;
+  const PER_KM_PRICE      = 8;
+  const RUSH_FEE          = 30;
 
-  const LS_ORDERS = "YT_DEMO_ORDERS_V1";
+  const LS_ORDERS  = "YT_DEMO_ORDERS_V1";
   const LS_DRIVERS = "YT_DEMO_DRIVERS_V1";
 
   const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
@@ -946,8 +946,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ========================================================================
   const waText = (str) => encodeURIComponent(str);
   const digits = (val) => (val || "").replace(/\D+/g, "");
-  const clamp = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
-  const pad2 = (n)=> String(n).padStart(2,'0');
+  const clamp  = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const pad2   = (n) => String(n).padStart(2, '0');
 
   const kmBetween = (a,b)=>{
     if(!a||!b) return 0;
@@ -982,10 +982,7 @@ window.addEventListener('DOMContentLoaded', () => {
     el.classList.remove('hidden');
     el.classList.add('flex');
     lockScroll();
-    setTimeout(()=>{
-      const ff = firstFocusable(el);
-      if(ff) ff.focus();
-    }, 0);
+    setTimeout(()=>{ const ff = firstFocusable(el); if(ff) ff.focus(); }, 0);
   }
   function closeFlex(el){
     if(!el) return;
@@ -1019,20 +1016,20 @@ window.addEventListener('DOMContentLoaded', () => {
   let botStage = 0;
 
   const currentOrdersByTab = {};
-  let ALL_ORDERS_MAP = {}; // _internal_id -> order
-  let DEMO_ORDERS_DB = {};
-  let DEMO_DRIVERS_DB = {};
+  let ALL_ORDERS_MAP   = {}; // _internal_id -> order
+  let DEMO_ORDERS_DB   = {};
+  let DEMO_DRIVERS_DB  = {};
 
-  let API_DRIVERS_MAP = {}; // driver_id/_internal_id -> driver
-  let DRIVERS = []; // for stats & drivers cards
-  let DRIVERS_BY_ID = {};
+  let API_DRIVERS_MAP  = {}; // driver_id/_internal_id -> driver
+  let DRIVERS          = []; // live drivers list
+  let DRIVERS_BY_ID    = {};
 
-  let REMOTE_STATS = null; // reserved
+  let REMOTE_STATS     = null; // optional if you add /stats/overview
 
   const driverTotals = { pending: 0, approved: 0 };
 
-  let DELIVERY_COORDS = null;
-  let COLLECTION_COORDS = {lat:-33.590, lng:26.890};
+  let DELIVERY_COORDS   = null;
+  let COLLECTION_COORDS = { lat:-33.590, lng:26.890 };
 
   const storeItems = [];
 
@@ -1054,92 +1051,92 @@ window.addEventListener('DOMContentLoaded', () => {
   // ========================================================================
   // ELEMENT REFS
   // ========================================================================
-  const mobileBtn = document.getElementById('mobileMenuBtn');
-  const mobileDropdown = document.getElementById('mobileNavDropdown');
-  const mobileIconOpen = document.getElementById('mobileMenuIconOpen');
-  const mobileIconClose = document.getElementById('mobileMenuIconClose');
+  const mobileBtn        = document.getElementById('mobileMenuBtn');
+  const mobileDropdown   = document.getElementById('mobileNavDropdown');
+  const mobileIconOpen   = document.getElementById('mobileMenuIconOpen');
+  const mobileIconClose  = document.getElementById('mobileMenuIconClose');
 
-  const modal = document.getElementById('orderBuilder');
-  const closeBtn = document.getElementById('closeOrderBuilder');
+  const modal            = document.getElementById('orderBuilder');
+  const closeBtn         = document.getElementById('closeOrderBuilder');
   const cancelOrderBuilder = document.getElementById('cancelOrderBuilder');
-  const itemsList = document.getElementById('itemsList');
+  const itemsList        = document.getElementById('itemsList');
 
-  const zoneSelect = document.getElementById('zoneSelect');
-  const rushToggle = document.getElementById('rushToggle');
-  const totalEl = document.getElementById('orderTotal');
-  const rushNote = document.getElementById('rushNote');
-  const depositBanner = document.getElementById('depositBanner');
-  const depositAmtEl = document.getElementById('depositAmt');
-  const custNameEl = document.getElementById('custName');
-  const custPhoneEl = document.getElementById('custPhone');
-  const custAddrEl = document.getElementById('custAddress');
+  const zoneSelect       = document.getElementById('zoneSelect');
+  const rushToggle       = document.getElementById('rushToggle');
+  const totalEl          = document.getElementById('orderTotal');
+  const rushNote         = document.getElementById('rushNote');
+  const depositBanner    = document.getElementById('depositBanner');
+  const depositAmtEl     = document.getElementById('depositAmt');
+  const custNameEl       = document.getElementById('custName');
+  const custPhoneEl      = document.getElementById('custPhone');
+  const custAddrEl       = document.getElementById('custAddress');
 
-  const adminBtn = document.getElementById('adminLoginBtn');
+  const adminBtn         = document.getElementById('adminLoginBtn');
 
-  const confirmBtn2 = document.getElementById('confirmOrderBtn');
-  const botModal = document.getElementById('botChat');
-  const botFeed = document.getElementById('botFeed');
-  const botNext = document.getElementById('botNext');
-  const botSendWA = document.getElementById('botSendWA');
-  const botNewOrder = document.getElementById('botNewOrder');
-  const botPayChoice = document.getElementById('botPayChoice');
-  const botDemoNote = document.getElementById('botDemoNote');
+  const confirmBtn2      = document.getElementById('confirmOrderBtn');
+  const botModal         = document.getElementById('botChat');
+  const botFeed          = document.getElementById('botFeed');
+  const botNext          = document.getElementById('botNext');
+  const botSendWA       = document.getElementById('botSendWA');
+  const botNewOrder     = document.getElementById('botNewOrder');
+  const botPayChoice    = document.getElementById('botPayChoice');
+  const botDemoNote     = document.getElementById('botDemoNote');
 
-  const payModal = document.getElementById('payModal');
-  const payOrderRef = document.getElementById('payOrderRef');
-  const payAmountEl = document.getElementById('payAmount');
+  const payModal         = document.getElementById('payModal');
+  const payOrderRef      = document.getElementById('payOrderRef');
+  const payAmountEl      = document.getElementById('payAmount');
   const closePayModalBtn = document.getElementById('closePayModal');
-  const btnFakePayNow = document.getElementById('btnFakePayNow');
-  const btnCancelPay = document.getElementById('btnCancelPay');
+  const btnFakePayNow    = document.getElementById('btnFakePayNow');
+  const btnCancelPay     = document.getElementById('btnCancelPay');
 
-  const driverModal = document.getElementById('driverModal');
-  const closeDriver = document.getElementById('closeDriverModal');
-  const tabSignup = document.getElementById('tabSignup');
-  const tabLogin = document.getElementById('tabLogin');
-  const formSignup = document.getElementById('driverFormSignup');
-  const formLogin = document.getElementById('driverFormLogin');
+  const driverModal      = document.getElementById('driverModal');
+  const closeDriver      = document.getElementById('closeDriverModal');
+  const tabSignup        = document.getElementById('tabSignup');
+  const tabLogin         = document.getElementById('tabLogin');
+  const formSignup       = document.getElementById('driverFormSignup');
+  const formLogin        = document.getElementById('driverFormLogin');
 
-  const driverDashModal = document.getElementById('driverDashModal');
-  const closeDriverDash = document.getElementById('closeDriverDash');
-  const driverPayoutPendingEl = document.getElementById('driverPayoutPending');
+  const driverDashModal  = document.getElementById('driverDashModal');
+  const closeDriverDash  = document.getElementById('closeDriverDash');
+  const driverPayoutPendingEl  = document.getElementById('driverPayoutPending');
   const driverPayoutApprovedEl = document.getElementById('driverPayoutApproved');
-  const driverNextWindowEl = document.getElementById('driverNextWindow');
-  const driverZoneDisplayEl = document.getElementById('driverZoneDisplay');
-  const driverRadiusDisplayEl = document.getElementById('driverRadiusDisplay');
+  const driverNextWindowEl     = document.getElementById('driverNextWindow');
+  const driverZoneDisplayEl    = document.getElementById('driverZoneDisplay');
+  const driverRadiusDisplayEl  = document.getElementById('driverRadiusDisplay');
 
-  const ordersPanel = document.getElementById('ordersPanel');
-  const ordersList = document.getElementById('ordersList');
-  const ordersClose = document.getElementById('closeOrdersPanel');
-  const ordersAssign = document.getElementById('ordersAssign');
-  const ordersRefresh = document.getElementById('ordersRefresh');
+  const ordersPanel      = document.getElementById('ordersPanel');
+  const ordersList       = document.getElementById('ordersList');
+  const ordersClose      = document.getElementById('closeOrdersPanel');
+  const ordersAssign     = document.getElementById('ordersAssign');
+  const ordersRefresh    = document.getElementById('ordersRefresh');
 
-  const driversList = document.getElementById('driversList');
-  const driversRefresh = document.getElementById('driversRefresh');
+  const driversList      = document.getElementById('driversList');
+  const driversRefresh   = document.getElementById('driversRefresh');
 
   const ordersTabsContainer = document.getElementById('ordersTabs');
-  let statsContainer = document.getElementById('statsContainer'); // will be replaced/created
+  let statsContainer     = document.getElementById('statsContainer'); // created if missing
 
-  const storeModal = document.getElementById('storeModal');
-  const openStoreFooter = document.getElementById('openStoreModalFooter');
+  const storeModal       = document.getElementById('storeModal');
+  const openStoreFooter  = document.getElementById('openStoreModalFooter');
   const closeStoreModalBtn = document.getElementById('closeStoreModal');
-  const cancelStoreBtn = document.getElementById('cancelStore');
-  const submitStoreBtn = document.getElementById('submitStore');
-  const addStoreItemBtn = document.getElementById('addStoreItem');
-  const storeItemsList = document.getElementById('storeItemsList');
-  const storeNameEl = document.getElementById('storeName');
-  const storePhoneEl = document.getElementById('storePhone');
-  const storeZoneEl = document.getElementById('storeZone');
+  const cancelStoreBtn   = document.getElementById('cancelStore');
+  const submitStoreBtn   = document.getElementById('submitStore');
+  const addStoreItemBtn  = document.getElementById('addStoreItem');
+  const storeItemsList   = document.getElementById('storeItemsList');
+  const storeNameEl      = document.getElementById('storeName');
+  const storePhoneEl     = document.getElementById('storePhone');
+  const storeZoneEl      = document.getElementById('storeZone');
 
   // ========================================================================
   // COLLECTION POINTS
   // ========================================================================
   const COLLECTIONS = [
-    { id:'DEPOT-PA',  name:'Port Alfred Depot',         lat:-33.590, lng:26.890 },
-    { id:'DEPOT-KENT',name:'Kenton-on-Sea Depot',       lat:-33.686, lng:26.668 },
-    { id:'DEPOT-GHT', name:'Makhanda / Grahamstown',    lat:-33.310, lng:26.520 },
-    { id:'DEPOT-ALC', name:'Alice Depot',               lat:-32.789, lng:26.834 },
-    { id:'DEPOT-GQ',  name:'Gqeberha (Port Elizabeth)', lat:-33.958, lng:25.602 },
-    { id:'DEPOT-PTA', name:'Pretoria (Main Depot)',     lat:-25.746, lng:28.188 }
+    { id:'DEPOT-PA',   name:'Port Alfred Depot',            lat:-33.590, lng:26.890 },
+    { id:'DEPOT-KENT', name:'Kenton-on-Sea Depot',          lat:-33.686, lng:26.668 },
+    { id:'DEPOT-GHT',  name:'Makhanda / Grahamstown',       lat:-33.310, lng:26.520 },
+    { id:'DEPOT-ALC',  name:'Alice Depot',                  lat:-32.789, lng:26.834 },
+    { id:'DEPOT-GQ',   name:'Gqeberha (Port Elizabeth)',    lat:-33.958, lng:25.602 },
+    { id:'DEPOT-PTA',  name:'Pretoria (Main Depot)',        lat:-25.746, lng:28.188 }
   ];
 
   function ensureCollectionSelectPopulated(){
@@ -1166,10 +1163,10 @@ window.addEventListener('DOMContentLoaded', () => {
   // ========================================================================
   const CATALOG = [
     {name:'Panado 500mg (24s)', price:35},
-    {name:'Allergex 10mg (10s)',price:30},
-    {name:'Cough Syrup 100ml',  price:55},
-    {name:'Electrolyte Sachet', price:15},
-    {name:'Bandages (set)',     price:25}
+    {name:'Allergex 10mg (10s)', price:30},
+    {name:'Cough Syrup 100ml',   price:55},
+    {name:'Electrolyte Sachet',  price:15},
+    {name:'Bandages (set)',      price:25}
   ];
 
   // ========================================================================
@@ -1254,11 +1251,11 @@ window.addEventListener('DOMContentLoaded', () => {
         const did = ord.driver_id;
         if(did && DEMO_DRIVERS_DB[did]){
           const dr = DEMO_DRIVERS_DB[did];
-          if(ord.status === 'assigned')    dr.stats.assigned++;
-          if(ord.status === 'in_transit')  dr.stats.in_transit++;
-          if(ord.status === 'delivered')   dr.stats.delivered++;
+          if(ord.status === 'assigned')   dr.stats.assigned++;
+          if(ord.status === 'in_transit') dr.stats.in_transit++;
+          if(ord.status === 'delivered')  dr.stats.delivered++;
           if(ord.driver_pay_status === 'pending')
-            dr.payout_pending += (ord.driver_pay_pending||0);
+            dr.payout_pending  += (ord.driver_pay_pending||0);
           if(ord.driver_pay_status === 'approved')
             dr.payout_approved += (ord.driver_pay_approved||0);
         }
@@ -1276,24 +1273,24 @@ window.addEventListener('DOMContentLoaded', () => {
     if(!itemsList) return;
     itemsList.innerHTML = '';
     CATALOG.forEach((item,idx)=>{
-      const row=document.createElement('div');
-      row.className='flex items-center justify-between gap-3 border rounded-lg p-2';
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between gap-3 border rounded-lg p-2';
       row.innerHTML = `
-<label class="flex items-center gap-2">
-  <input type="checkbox" data-idx="${idx}" class="itemCheck h-4 w-4" aria-label="Select ${item.name}"/>
-  <span>${item.name}</span>
-</label>
-<div class="flex items-center gap-2">
-  <span class="text-slate-500">R${item.price}</span>
-  <input
-    type="number"
-    min="1"
-    value="1"
-    aria-label="Quantity for ${item.name}"
-    data-idx="${idx}"
-    class="itemQty w-14 border rounded-lg p-1"
-  />
-</div>`;
+        <label class="flex items-center gap-2">
+          <input type="checkbox" data-idx="${idx}" class="itemCheck h-4 w-4" aria-label="Select ${item.name}"/>
+          <span>${item.name}</span>
+        </label>
+        <div class="flex items-center gap-2">
+          <span class="text-slate-500">R${item.price}</span>
+          <input
+            type="number"
+            min="1"
+            value="1"
+            aria-label="Quantity for ${item.name}"
+            data-idx="${idx}"
+            class="itemQty w-14 border rounded-lg p-1"
+          />
+        </div>`;
       itemsList.appendChild(row);
     });
   }
@@ -1453,10 +1450,7 @@ window.addEventListener('DOMContentLoaded', () => {
     botFeed.innerHTML = "";
     openFlex(botModal);
   };
-  const closeBot = ()=>{
-    if(botFeed) botFeed.innerHTML='';
-    closeFlex(botModal);
-  };
+  const closeBot = ()=>{ if(botFeed) botFeed.innerHTML=''; closeFlex(botModal); };
 
   const openPayModal = (orderRef, amount)=>{
     if(!payModal) return;
@@ -1484,7 +1478,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const closeOrders= ()=> closeFlex(ordersPanel);
 
   const openDriverDash = ()=>{
-    if(driverPayoutPendingEl) driverPayoutPendingEl.textContent = String(driverTotals.pending);
+    if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent  = String(driverTotals.pending);
     if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
     openFlex(driverDashModal);
   };
@@ -1495,9 +1489,9 @@ window.addEventListener('DOMContentLoaded', () => {
     const wrap=document.createElement('div');
     wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
     wrap.innerHTML = `
-<div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
-  ${msg}
-</div>`;
+      <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
+        ${msg}
+      </div>`;
     botFeed.appendChild(wrap);
     botFeed.scrollTop = botFeed.scrollHeight;
   }
@@ -1663,12 +1657,12 @@ window.addEventListener('DOMContentLoaded', () => {
       const row = document.createElement('div');
       row.className = "flex items-center justify-between border rounded-lg p-2";
       row.innerHTML = `
-<div class="text-sm">
-  <div class="font-medium">${it.name}</div>
-  <div class="text-xs text-slate-500">R${it.price}</div>
-</div>
-<button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline" aria-label="Remove ${it.name}">remove</button>
-`;
+        <div class="text-sm">
+          <div class="font-medium">${it.name}</div>
+          <div class="text-xs text-slate-500">R${it.price}</div>
+        </div>
+        <button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline" aria-label="Remove ${it.name}">remove</button>
+      `;
       storeItemsList.appendChild(row);
     });
 
@@ -1748,7 +1742,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   });
 
   // ========================================================================
-  // ADMIN STATS (live from API)
+  // ADMIN STATS (LIVE FROM API)
   // ========================================================================
   async function fetchAllOrders(){
     try{
@@ -1766,18 +1760,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     try{
       const r = await fetch(`${BASE_API}/drivers`);
       const j = await r.json().catch(()=>({}));
-      if(!r.ok || !j.ok) {
-        DRIVERS = [];
-        DRIVERS_BY_ID = {};
-        API_DRIVERS_MAP = {};
-        return;
-      }
+      if(!r.ok || !j.ok) { DRIVERS=[]; DRIVERS_BY_ID={}; API_DRIVERS_MAP={}; return; }
       DRIVERS = Array.isArray(j.drivers) ? j.drivers : [];
       DRIVERS_BY_ID = Object.create(null);
-      API_DRIVERS_MAP = Object.create(null);
+      API_DRIVERS_MAP = {};
       for(const d of DRIVERS){
-        if(!d) continue;
-        const key = d._internal_id || d.driver_id;
+        const key = d._internal_id || d.driver_id || d.id;
         if(key){
           DRIVERS_BY_ID[key] = d;
           API_DRIVERS_MAP[key] = d;
@@ -1785,9 +1773,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
     }catch(e){
       console.error("fetchDrivers", e);
-      DRIVERS = [];
-      DRIVERS_BY_ID = {};
-      API_DRIVERS_MAP = {};
+      DRIVERS=[]; DRIVERS_BY_ID={}; API_DRIVERS_MAP={};
     }
   }
 
@@ -1809,109 +1795,128 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
     });
 
-    adminPayPendingEl.textContent = `R${Math.round(pending)}`;
+    adminPayPendingEl.textContent  = `R${Math.round(pending)}`;
     adminPayApprovedEl.textContent = `R${Math.round(approved)}`;
   }
 
   async function renderAdminStats(){
-    // Build wrapper once
+    if(!ordersPanel) return;
+
+    // Ensure stats container
     if(!statsContainer){
       statsContainer = document.createElement('div');
       statsContainer.id = 'statsContainer';
-      statsContainer.className = 'mt-4 hidden';
-      (ordersPanel || document.body).appendChild(statsContainer);
+      statsContainer.className = 'mt-4';
+      ordersPanel.appendChild(statsContainer);
     }
 
+    // Ensure layout
     if(!document.getElementById('adminStatsWrap')){
-      const stats = document.createElement('div');
-      stats.id = 'adminStatsWrap';
-      stats.innerHTML = `
-        <div class="grid gap-3 sm:grid-cols-3">
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-            <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
+      statsContainer.innerHTML = `
+        <div id="adminStatsWrap" class="space-y-4">
+          <div class="grid gap-3 sm:grid-cols-3">
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+              <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Revenue</div>
+              <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Drivers &amp; Payouts</div>
+              <div class="text-sm">
+                Drivers: <b id="adminDriversCount">0</b>
+              </div>
+              <div class="text-xs text-slate-500 mt-2">
+                Pending: <b id="adminPayPending">R0</b>
+              </div>
+              <div class="text-xs text-slate-500">
+                Approved: <b id="adminPayApproved">R0</b>
+              </div>
+            </div>
           </div>
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Revenue</div>
-            <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
-          </div>
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Drivers</div>
-            <div class="text-sm"><b id="adminDriversCount">0</b></div>
-            <div class="text-xs text-slate-500 mt-2">Payouts</div>
-            <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
-            <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
-          </div>
-        </div>
-        <div class="grid gap-3 sm:grid-cols-2 mt-4">
-          <div class="border rounded-xl p-3">
-            <div class="text-sm font-medium mb-2">Top Products</div>
-            <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
-          </div>
-          <div class="border rounded-xl p-3">
-            <div class="text-sm font-medium mb-2">Top Areas</div>
-            <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
+          <div class="grid gap-3 sm:grid-cols-2 mt-2">
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Top Products</div>
+              <ul id="adminTopProducts" class="space-y-1 text-sm"></ul>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Top Areas</div>
+              <ul id="adminTopAreas" class="space-y-1 text-sm"></ul>
+            </div>
           </div>
         </div>
       `;
-      statsContainer.appendChild(stats);
     }
 
-    adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
-    adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
-    adminTopProductsEl  = document.getElementById('adminTopProducts');
-    adminTopAreasEl     = document.getElementById('adminTopAreas');
-    adminDriversCountEl = document.getElementById('adminDriversCount');
-    adminPayPendingEl   = document.getElementById('adminPayPending');
-    adminPayApprovedEl  = document.getElementById('adminPayApproved');
+    adminStatsOrdersEl   = document.getElementById('adminStatsOrders');
+    adminStatsRevenueEl  = document.getElementById('adminStatsRevenue');
+    adminTopProductsEl   = document.getElementById('adminTopProducts');
+    adminTopAreasEl      = document.getElementById('adminTopAreas');
+    adminDriversCountEl  = document.getElementById('adminDriversCount');
+    adminPayPendingEl    = document.getElementById('adminPayPending');
+    adminPayApprovedEl   = document.getElementById('adminPayApproved');
 
-    const orders = DEMO_MODE
-      ? Object.values(DEMO_ORDERS_DB)
-      : await fetchAllOrders();
+    // Pull fresh data
+    const orders = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : await fetchAllOrders();
+    if(!DEMO_MODE){
+      const map = {};
+      orders.forEach(o=>{
+        const key =
+          o._internal_id || o.internal_id ||
+          o.order_public_id || o.order_id ||
+          Math.random().toString(36).slice(2);
+        map[key] = o;
+      });
+      ALL_ORDERS_MAP = map;
+    }
+
+    await fetchDrivers();
 
     const totalOrders = orders.length;
     const revenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
 
     if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
-    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${revenue}`;
+    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${Math.round(revenue)}`;
 
     // Top products
     const prodMap = new Map();
     orders.forEach(o=>{
       (o.items||[]).forEach(it=>{
-        if(!it) return;
-        prodMap.set(it.name, (prodMap.get(it.name)||0) + (it.qty||1));
+        if(!it || !it.name) return;
+        prodMap.set(it.name, (prodMap.get(it.name)||0) + Number(it.qty||1));
       });
     });
-    const topProducts = Array.from(prodMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const topProducts = Array.from(prodMap.entries())
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0,5);
     if(adminTopProductsEl){
       adminTopProductsEl.innerHTML = topProducts.length
         ? topProducts.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
         : '<li class="text-slate-500">No data yet</li>';
     }
 
-    // Top areas
+    // Top areas (by meta.collection_name)
     const areaMap = new Map();
     orders.forEach(o=>{
-      const k = (o.meta && o.meta.collection_name) || '—';
+      const k = o.meta?.collection_name || '—';
       areaMap.set(k, (areaMap.get(k)||0)+1);
     });
-    const topAreas = Array.from(areaMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const topAreas = Array.from(areaMap.entries())
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0,5);
     if(adminTopAreasEl){
       adminTopAreasEl.innerHTML = topAreas.length
         ? topAreas.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
-        : '<li class="text-slate-500">No data yet</li>`;
+        : '<li class="text-slate-500">No data yet</li>';
     }
 
-    if(!DEMO_MODE){
-      await fetchDrivers();
-    }
     recalcAdminPayoutWidgets();
   }
 
-  // Wrapper so existing calls still work
   function renderStats(){
-    return renderAdminStats();
+    renderAdminStats();
   }
 
   // ========================================================================
@@ -1972,12 +1977,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     });
 
     const showDrivers = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
-    const showStats = (tabKey === 'stats');
+    const showStats   = (tabKey === 'stats');
 
-    const ordersWrapper = ordersList?.parentElement;
+    const ordersWrapper  = ordersList?.parentElement;
     const driversWrapper = driversList?.parentElement;
 
-    if (ordersWrapper) ordersWrapper.classList.toggle('hidden', showDrivers || showStats);
+    if (ordersWrapper)  ordersWrapper.classList.toggle('hidden', showDrivers || showStats);
     if (driversWrapper) driversWrapper.classList.toggle('hidden', !showDrivers);
     if (statsContainer) statsContainer.classList.toggle('hidden', !showStats);
 
@@ -2034,8 +2039,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       mutateOrder(internalId, (o)=>{
         if(!o.driver_id){ o.driver_id = pickDriverId(); }
         const pay = calcDriverPayout(o);
-        o.driver_pay_status = 'pending';
-        o.driver_pay_pending = pay;
+        o.driver_pay_status   = 'pending';
+        o.driver_pay_pending  = pay;
         o.driver_pay_approved = 0;
         if(o.status === 'pending') o.status = 'assigned';
       });
@@ -2071,9 +2076,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     if(DEMO_MODE){
       mutateOrder(internalId, (o)=>{
         const pay = calcDriverPayout(o);
-        o.status = 'delivered';
-        o.driver_pay_status = 'approved';
-        o.driver_pay_approved = pay;
+        o.status             = 'delivered';
+        o.driver_pay_status  = 'approved';
+        o.driver_pay_approved= pay;
         o.driver_pay_pending = 0;
       });
       renderOrders(); renderDrivers(); renderStats();
@@ -2114,9 +2119,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         mutateOrder(internalId, (o)=>{
           if(!o.driver_id){ o.driver_id = pickDriverId(); }
           const pay = calcDriverPayout(o);
-          o.driver_pay_status = 'pending';
-          o.driver_pay_pending = pay;
-          o.status = 'assigned';
+          o.driver_pay_status   = 'pending';
+          o.driver_pay_pending  = pay;
+          o.status              = 'assigned';
           results.push(`✅ (demo) ${internalId} -> ${o.driver_id} (R${pay})`);
         });
         continue;
@@ -2153,7 +2158,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   async function renderOrders(){
     if(!ordersList) return;
 
-    // by driver tab
+    // "by driver" tab
     if((ordersTab||'').startsWith('by_driver:')){
       const did = ordersTab.split(':',2)[1];
       const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
@@ -2173,10 +2178,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
-    // status tabs
-    const data = DEMO_MODE
-      ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status===ordersTab)
-      : Object.values(ALL_ORDERS_MAP).filter(o=>o.status===ordersTab);
+    // Status tabs
+    const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
+    const data = src.filter(o => o.status === ordersTab);
 
     currentOrdersByTab[ordersTab] = data;
 
@@ -2200,8 +2204,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       : "";
 
     const driverMaps = DEMO_MODE ? DEMO_DRIVERS_DB : API_DRIVERS_MAP;
-    const driverKey = o.assigned_driver_id || o.driver_id || null;
-    let driverName = '—';
+    const driverKey  = o.assigned_driver_id || o.driver_id || null;
+    let driverName   = '—';
 
     if(driverKey && driverMaps[driverKey]){
       driverName = driverMaps[driverKey].name || driverMaps[driverKey].driver_id || driverKey;
@@ -2212,16 +2216,16 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     let driverPayText = "Driver pay: R0";
     let driverPayStatusText = "Pay: –";
     if(o.driver_pay_status === "pending"){
-      driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
+      driverPayText       = `Driver pay: R${o.driver_pay_pending || 0}`;
       driverPayStatusText = "Pay: pending";
     } else if(o.driver_pay_status === "approved"){
-      driverPayText = `Driver pay: R${o.driver_pay_approved || 0}`;
+      driverPayText       = `Driver pay: R${o.driver_pay_approved || 0}`;
       driverPayStatusText = "Pay: approved";
     }
 
     const isDelivered = o.status === "delivered";
-    const canAssign = (o.status === "pending" || o.status === "review_required") && !isDelivered;
-    const canDeliver = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
+    const canAssign   = (o.status === "pending" || o.status === "review_required") && !isDelivered;
+    const canDeliver  = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
 
     const createdRaw =
       o.created_at_iso || o.created_at || o.createdAt || (o.meta && o.meta.created_at);
@@ -2235,45 +2239,45 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     row.setAttribute('data-order-status', o.status || '');
 
     row.innerHTML = `
-<div class="flex-1 min-w-0">
-  <div class="font-medium flex flex-wrap items-center gap-1">
-    <span>Ref ${salesSafe(refDisplay)}</span>
-    <span>• Total R${o.total}</span>
-    ${kmText}
-  </div>
-  <div class="text-xs text-slate-500 break-words">${salesSafe(itemsText || '')}</div>
-  <div class="text-xs text-slate-500">
-    Status: <b>${salesSafe(o.status || '')}</b> • Driver: ${salesSafe(driverName)}${fraudDisplay}
-  </div>
-  <div class="text-[11px] leading-snug text-slate-500 mt-1">
-    ${driverPayText} • ${driverPayStatusText}
-  </div>
-  ${ createdText
-    ? `<div class="text-[9px] text-slate-400 mt-0.5">Created: ${salesSafe(createdText)}</div>`
-    : ''
-  }
-</div>
-<div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
-  <button
-    class="btn-assign px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-    ${(!canAssign || !internalId) ? 'disabled' : ''}
-    data-id="${internalId || ''}">
-    Assign
-  </button>
-  <button
-    class="btn-start px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-    ${(o.status !== 'assigned' || !internalId) ? 'disabled' : ''}
-    data-id="${internalId || ''}">
-    Start trip
-  </button>
-  <button
-    class="btn-delivered px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
-    ${(!canDeliver || !internalId) ? 'disabled' : ''}
-    data-id="${internalId || ''}">
-    Delivered
-  </button>
-</div>
-`;
+      <div class="flex-1 min-w-0">
+        <div class="font-medium flex flex-wrap items-center gap-1">
+          <span>Ref ${salesSafe(refDisplay)}</span>
+          <span>• Total R${o.total}</span>
+          ${kmText}
+        </div>
+        <div class="text-xs text-slate-500 break-words">${salesSafe(itemsText || '')}</div>
+        <div class="text-xs text-slate-500">
+          Status: <b>${salesSafe(o.status || '')}</b> • Driver: ${salesSafe(driverName)}${fraudDisplay}
+        </div>
+        <div class="text-[11px] leading-snug text-slate-500 mt-1">
+          ${driverPayText} • ${driverPayStatusText}
+        </div>
+        ${ createdText
+          ? `<div class="text-[9px] text-slate-400 mt-0.5">Created: ${salesSafe(createdText)}</div>`
+          : ''
+        }
+      </div>
+      <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
+        <button
+          class="btn-assign px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          ${(!canAssign || !internalId) ? 'disabled' : ''}
+          data-id="${internalId || ''}">
+          Assign
+        </button>
+        <button
+          class="btn-start px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          ${(o.status !== 'assigned' || !internalId) ? 'disabled' : ''}
+          data-id="${internalId || ''}">
+          Start trip
+        </button>
+        <button
+          class="btn-delivered px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          ${(!canDeliver || !internalId) ? 'disabled' : ''}
+          data-id="${internalId || ''}">
+          Delivered
+        </button>
+      </div>
+    `;
     return row;
   }
 
@@ -2375,75 +2379,78 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         'bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-col gap-2 text-xs';
 
       card.innerHTML = `
-<div class="flex flex-col gap-1">
-  <div class="flex flex-wrap items-baseline gap-2">
-    <div class="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
-      #${salesSafe(labelId)}
-    </div>
-    <div class="font-semibold text-slate-900">${salesSafe(dr.name || '')}</div>
-  </div>
-  <div class="text-[10px] text-slate-500">📞 ${salesSafe(dr.phone || '—')}</div>
-  <div class="text-[10px] text-slate-500">📍 ${salesSafe(area)}</div>
-</div>
+        <div class="flex flex-col gap-1">
+          <div class="flex flex-wrap items-baseline gap-2">
+            <div class="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
+              #${salesSafe(labelId)}
+            </div>
+            <div class="font-semibold text-slate-900">${salesSafe(dr.name || '')}</div>
+          </div>
+          <div class="text-[10px] text-slate-500">📞 ${salesSafe(dr.phone || '—')}</div>
+          <div class="text-[10px] text-slate-500">📍 ${salesSafe(area)}</div>
+        </div>
 
-<div class="grid grid-cols-3 gap-2 text-[9px] mt-1">
-  <div class="bg-slate-50 rounded-xl px-2 py-1">
-    <div class="text-slate-500">Delivered</div>
-    <div class="text-sm font-semibold text-emerald-700">${stats.delivered}</div>
-  </div>
-  <div class="bg-slate-50 rounded-xl px-2 py-1">
-    <div class="text-slate-500">Assigned</div>
-    <div class="text-sm font-semibold text-slate-800">${stats.assigned}</div>
-  </div>
-  <div class="bg-slate-50 rounded-xl px-2 py-1">
-    <div class="text-slate-500">In transit</div>
-    <div class="text-sm font-semibold text-slate-800">${stats.in_transit}</div>
-  </div>
-</div>
+        <div class="grid grid-cols-3 gap-2 text-[9px] mt-1">
+          <div class="bg-slate-50 rounded-xl px-2 py-1">
+            <div class="text-slate-500">Delivered</div>
+            <div class="text-sm font-semibold text-emerald-700">${stats.delivered}</div>
+          </div>
+          <div class="bg-slate-50 rounded-xl px-2 py-1">
+            <div class="text-slate-500">Assigned</div>
+            <div class="text-sm font-semibold text-slate-800">${stats.assigned}</div>
+          </div>
+          <div class="bg-slate-50 rounded-xl px-2 py-1">
+            <div class="text-slate-500">In transit</div>
+            <div class="text-sm font-semibold text-slate-800">${stats.in_transit}</div>
+          </div>
+        </div>
 
-<div class="text-[9px] text-slate-500">
-  Delivered value:
-  <span class="font-semibold text-slate-900">R${stats.deliveredRevenue}</span>
-  &nbsp;• Avg fee:
-  <span class="font-semibold text-slate-900">R${stats.avgFee}</span>
-</div>
+        <div class="text-[9px] text-slate-500">
+          Delivered value:
+          <span class="font-semibold text-slate-900">R${stats.deliveredRevenue}</span>
+          &nbsp;• Avg fee:
+          <span class="font-semibold text-slate-900">R${stats.avgFee}</span>
+        </div>
 
-<div class="text-[9px] text-slate-500">
-  Pending pay:
-  <span class="font-semibold text-amber-600">R${stats.pendingPay}</span>
-  &nbsp;• Approved:
-  <span class="font-semibold text-emerald-700">R${stats.approvedPay}</span>
-</div>
+        <div class="text-[9px] text-slate-500">
+          Pending pay:
+          <span class="font-semibold text-amber-600">R${stats.pendingPay}</span>
+          &nbsp;• Approved:
+          <span class="font-semibold text-emerald-700">R${stats.approvedPay}</span>
+        </div>
 
-${stats.lastDeliveries.length
-  ? `<div class="text-[8px] text-slate-400">
-      Recent refs:
-      ${stats.lastDeliveries.map(x=>`<code>${salesSafe(x)}</code>`).join(', ')}
-    </div>`
-  : ''}
+        ${
+          stats.lastDeliveries.length
+            ? `<div class="text-[8px] text-slate-400">
+                Recent refs:
+                ${stats.lastDeliveries.map(x=>`<code>${salesSafe(x)}</code>`).join(', ')}
+              </div>`
+            : ''
+        }
 
-<div class="mt-2 flex flex-wrap gap-2">
-  <button
-    class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-    data-id="${salesSafe(driverKey)}">
-    View Orders
-  </button>
-  <button
-    class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-    data-id="${salesSafe(driverKey)}">
-    Approve All Pay
-  </button>
-  ${dr.phone
-    ? `<a
-        class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-        href="https://wa.me/${salesSafe(dr.phone)}"
-        target="_blank" rel="noopener">
-        WhatsApp
-      </a>`
-    : ''
-  }
-</div>
-`;
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button
+            class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
+            data-id="${salesSafe(driverKey)}">
+            View Orders
+          </button>
+          <button
+            class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+            data-id="${salesSafe(driverKey)}">
+            Approve All Pay
+          </button>
+          ${
+            dr.phone
+              ? `<a
+                  class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
+                  href="https://wa.me/${salesSafe(dr.phone)}"
+                  target="_blank" rel="noopener">
+                  WhatsApp
+                </a>`
+              : ''
+          }
+        </div>
+      `;
       wrapper.appendChild(card);
     }
 
@@ -2460,9 +2467,9 @@ ${stats.lastDeliveries.length
             const assigned = o.assigned_driver_id || o.driver_id;
             if(assigned===did && o.driver_pay_status==='pending'){
               const amount = o.driver_pay_pending || 0;
-              o.driver_pay_status = 'approved';
+              o.driver_pay_status   = 'approved';
               o.driver_pay_approved = amount;
-              o.driver_pay_pending = 0;
+              o.driver_pay_pending  = 0;
               count++;
             }
           });
@@ -2550,9 +2557,9 @@ ${stats.lastDeliveries.length
       const lens=[0];
       let acc=0;
       for(let i=1;i<latlngs.length;i++){
-        const a = {lat:latlngs[i-1][0], lng:latlngs[i-1][1]};
-        const b = {lat:latlngs[i][0], lng:latlngs[i][1]};
-        acc += kmBetween(a,b);
+        const A = {lat:latlngs[i-1][0], lng:latlngs[i-1][1]};
+        const B = {lat:latlngs[i][0],   lng:latlngs[i][1]};
+        acc += kmBetween(A,B);
         lens.push(acc);
       }
       return { lensKm:lens, totalKm:acc };
@@ -2593,7 +2600,8 @@ ${stats.lastDeliveries.length
       if(!DELIVERY_COORDS){
         heroMap.setView(centerLatLng, centerZoom);
         COLLECTIONS.slice(0,3).forEach(c=>{
-          L.marker([c.lat, c.lng], { icon: pkgIcon(), title: c.name }).addTo(heroMap).bindTooltip(c.name);
+          L.marker([c.lat, c.lng], { icon: pkgIcon(), title: c.name })
+            .addTo(heroMap).bindTooltip(c.name);
         });
         spawnLocalTraffic({lat:centerLatLng[0], lng:centerLatLng[1]}, 4);
         return;
@@ -2606,7 +2614,8 @@ ${stats.lastDeliveries.length
       }
       const depot = best.c;
 
-      document.getElementById('coverageBadge')?.classList.add('bg-[rgba(15,23,42,.75)]');
+      document.getElementById('coverageBadge')
+        ?.classList.add('bg-[rgba(15,23,42,.75)]');
 
       L.marker([depot.lat,depot.lng], { icon: pkgIcon(), title: depot.name })
         .addTo(heroMap).bindTooltip(depot.name);
@@ -2728,10 +2737,10 @@ ${stats.lastDeliveries.length
         // Driver signup via map
         formSignup?.addEventListener('submit', async e=>{
           e.preventDefault();
-          const name = document.getElementById('drvName')?.value.trim();
-          const phone = digits(document.getElementById('drvPhone')?.value.trim());
+          const name   = document.getElementById('drvName')?.value.trim();
+          const phone  = digits(document.getElementById('drvPhone')?.value.trim());
           const radius = Math.max(1, Number(document.getElementById('drvRadius')?.value || 10));
-          const vehicle = document.getElementById('drvVehicle')?.value.trim() || 'Car';
+          const vehicle= document.getElementById('drvVehicle')?.value.trim() || 'Car';
           if(!name || !phone){
             alert("Please enter name and phone.");
             return;
@@ -2848,8 +2857,8 @@ Vehicle: ${vehicle}`;
       if(DEMO_MODE){
         const refStub = Date.now().toString().slice(-6);
         const internalId = "demo-" + refStub.toLowerCase();
-        const driverPay = clamp(orderPayload.delivery_fee,25,45);
-        const did = pickDriverId();
+        const driverPay  = clamp(orderPayload.delivery_fee,25,45);
+        const did        = pickDriverId();
         DEMO_ORDERS_DB[internalId] = {
           _internal_id: internalId,
           order_id: ("YI-" + refStub).toUpperCase(),
@@ -2882,14 +2891,14 @@ Vehicle: ${vehicle}`;
           eta,
           payment_method: paymentMethod,
           wa_message:
-            `Yi Thume, my order is:\n` +
-            `Ref: DEMO-${refStub}\n` +
-            `Deliver to: ${custAddr}\n` +
-            `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
-            `Total: R${summary.total}\n` +
-            `Expected: ${eta}\n` +
-            `Payment: ${paymentMethod}\n` +
-            `Please confirm + send payment link.`
+`Yi Thume, my order is:
+Ref: DEMO-${refStub}
+Deliver to: ${custAddr}
+Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}
+Total: R${summary.total}
+Expected: ${eta}
+Payment: ${paymentMethod}
+Please confirm + send payment link.`
         };
       } else {
         let data = null;
@@ -2934,7 +2943,7 @@ Vehicle: ${vehicle}`;
       openBot();
 
       appendBot(
-        `<b>YiThume</b> 🤖<br/>
+`<b>YiThume</b> 🤖<br/>
 Thanks for your order!<br/>
 <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
 <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
@@ -2968,21 +2977,20 @@ Thanks for your order!<br/>
     if(botStage === 0){
       if(pay === 'eft'){
         appendBot(
-          `<b>Instant EFT (Ozow)</b><br/>
+`<b>Instant EFT (Ozow)</b><br/>
 We'll WhatsApp you a secure Ozow link.<br/>
 Use ref <code>${latestOrderData.order_public_id}</code>.`
         );
       } else if(pay === 'card'){
         appendBot(
-          `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
+`We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
 Use ref <code>${latestOrderData.order_public_id}</code>.`
         );
       } else {
         const deposit = Math.ceil(latestOrderData.total*0.5);
         appendBot(
-          `<b>50% deposit + COD</b><br/>
+`<b>50% deposit + COD</b><br/>
 Pay deposit now: <b>R${deposit}</b>.<br/>
-Balance due at delivery.<br/>
 Ref <code>${latestOrderData.order_public_id}</code>.`
         );
       }
@@ -3074,6 +3082,7 @@ Ref <code>${latestOrderData.order_public_id}</code>.`
     });
     ALL_ORDERS_MAP = map;
     DRIVERS = Object.values(DEMO_DRIVERS_DB);
+    DRIVERS_BY_ID = {};
     API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
     ensureAdminTabs();
     setActiveAdminTab(ordersTab);
@@ -3088,6 +3097,7 @@ Ref <code>${latestOrderData.order_public_id}</code>.`
   }
 });
 </script>
+
 
 
 </body>
