@@ -922,363 +922,363 @@
 </div>
 <script>
 window.addEventListener('DOMContentLoaded', () => {
-// ========================================================================
-// CONFIG & GLOBALS
-// ========================================================================
-const BASE_API = "/api/app";
-const WHATSAPP_NUMBER = "270691456201";
-const ADMIN_WHATSAPP = "270691456201";
-const ADMIN_PASS = "1234";
+  // ========================================================================
+  // CONFIG & GLOBALS
+  // ========================================================================
+  const BASE_API = "/api/app";
+  const WHATSAPP_NUMBER = "270691456201";
+  const ADMIN_WHATSAPP = "270691456201";
+  const ADMIN_PASS = "1234";
 
-const DEMO_MODE = false; // true = local demo mode
+  const DEMO_MODE = false; // true = local demo mode
 
-const BASE_DELIVERY_FEE = 15;
-const PER_KM_PRICE = 8;
-const RUSH_FEE = 30;
+  const BASE_DELIVERY_FEE = 15;
+  const PER_KM_PRICE = 8;
+  const RUSH_FEE = 30;
 
-const LS_ORDERS = "YT_DEMO_ORDERS_V1";
-const LS_DRIVERS = "YT_DEMO_DRIVERS_V1";
+  const LS_ORDERS = "YT_DEMO_ORDERS_V1";
+  const LS_DRIVERS = "YT_DEMO_DRIVERS_V1";
 
-const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
+  const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
 
-// ========================================================================
-// HELPERS
-// ========================================================================
-const waText = (str) => encodeURIComponent(str);
-const digits = (val) => (val || "").replace(/\D+/g, "");
-const clamp = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
-const pad2 = (n)=> String(n).padStart(2,'0');
+  // ========================================================================
+  // HELPERS
+  // ========================================================================
+  const waText = (str) => encodeURIComponent(str);
+  const digits = (val) => (val || "").replace(/\D+/g, "");
+  const clamp = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
+  const pad2 = (n)=> String(n).padStart(2,'0');
 
-const kmBetween = (a,b)=>{
-  if(!a||!b) return 0;
-  const R = 6371;
-  const dLat = (b.lat-a.lat)*Math.PI/180;
-  const dLng = (b.lng-a.lng)*Math.PI/180;
-  const s1 = Math.sin(dLat/2)**2 +
-    Math.cos(a.lat*Math.PI/180) *
-    Math.cos(b.lat*Math.PI/180) *
-    Math.sin(dLng/2)**2;
-  return 2*R*Math.asin(Math.sqrt(s1));
-};
+  const kmBetween = (a,b)=>{
+    if(!a||!b) return 0;
+    const R = 6371;
+    const dLat = (b.lat-a.lat)*Math.PI/180;
+    const dLng = (b.lng-a.lng)*Math.PI/180;
+    const s1 = Math.sin(dLat/2)**2 +
+      Math.cos(a.lat*Math.PI/180) *
+      Math.cos(b.lat*Math.PI/180) *
+      Math.sin(dLng/2)**2;
+    return 2*R*Math.asin(Math.sqrt(s1));
+  };
 
-function salesSafe(str){
-  return (str || '').toString().replace(/[<>&]/g, c => (
-    c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'
-  ));
-}
-
-// ========================================================================
-// BODY SCROLL LOCK + FOCUS RESTORE
-// ========================================================================
-const lastFocus = new Map();
-const firstFocusable = (el) =>
-  el?.querySelector?.('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-const lockScroll = () => document.body.classList.add('overflow-locked');
-const unlockScroll = () => document.body.classList.remove('overflow-locked');
-
-function openFlex(el){
-  if(!el) return;
-  lastFocus.set(el, document.activeElement);
-  el.classList.remove('hidden');
-  el.classList.add('flex');
-  lockScroll();
-  setTimeout(()=>{
-    const ff = firstFocusable(el);
-    if(ff) ff.focus();
-  }, 0);
-}
-function closeFlex(el){
-  if(!el) return;
-  el.classList.add('hidden');
-  el.classList.remove('flex');
-  unlockScroll();
-  const prev = lastFocus.get(el);
-  if(prev && typeof prev.focus === 'function') prev.focus();
-}
-
-document.addEventListener('keydown', (e)=>{
-  if(e.key !== 'Escape') return;
-  const modals = [
-    document.getElementById('ordersPanel'),
-    document.getElementById('storeModal'),
-    document.getElementById('driverDashModal'),
-    document.getElementById('driverModal'),
-    document.getElementById('payModal'),
-    document.getElementById('botChat'),
-    document.getElementById('orderBuilder')
-  ];
-  for(const m of modals){
-    if(m && !m.classList.contains('hidden')) { closeFlex(m); break; }
+  function salesSafe(str){
+    return (str || '').toString().replace(/[<>&]/g, c => (
+      c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'
+    ));
   }
-});
 
-// ========================================================================
-// RUNTIME / GLOBAL STATE
-// ========================================================================
-let latestOrderData = null;
-let botStage = 0;
+  // ========================================================================
+  // BODY SCROLL LOCK + FOCUS RESTORE
+  // ========================================================================
+  const lastFocus = new Map();
+  const firstFocusable = (el) =>
+    el?.querySelector?.('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  const lockScroll = () => document.body.classList.add('overflow-locked');
+  const unlockScroll = () => document.body.classList.remove('overflow-locked');
 
-const currentOrdersByTab = {};
-let ALL_ORDERS_MAP = {}; // _internal_id -> order
-let DEMO_ORDERS_DB = {};
-let DEMO_DRIVERS_DB = {};
+  function openFlex(el){
+    if(!el) return;
+    lastFocus.set(el, document.activeElement);
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+    lockScroll();
+    setTimeout(()=>{
+      const ff = firstFocusable(el);
+      if(ff) ff.focus();
+    }, 0);
+  }
+  function closeFlex(el){
+    if(!el) return;
+    el.classList.add('hidden');
+    el.classList.remove('flex');
+    unlockScroll();
+    const prev = lastFocus.get(el);
+    if(prev && typeof prev.focus === 'function') prev.focus();
+  }
 
-let API_DRIVERS_MAP = {}; // driver_id/_internal_id -> driver
-let DRIVERS = []; // for stats & drivers cards
-let DRIVERS_BY_ID = {};
-
-let REMOTE_STATS = null; // reserved
-
-const driverTotals = { pending: 0, approved: 0 };
-
-let DELIVERY_COORDS = null;
-let COLLECTION_COORDS = {lat:-33.590, lng:26.890};
-
-const storeItems = [];
-
-// Admin stats DOM refs
-let adminStatsOrdersEl,
-    adminStatsRevenueEl,
-    adminTopProductsEl,
-    adminTopAreasEl,
-    adminDriversCountEl,
-    adminPayPendingEl,
-    adminPayApprovedEl;
-
-// ========================================================================
-// YEAR
-// ========================================================================
-const yearEl = document.getElementById('year');
-if (yearEl) yearEl.textContent = new Date().getFullYear();
-
-// ========================================================================
-// ELEMENT REFS
-// ========================================================================
-const mobileBtn = document.getElementById('mobileMenuBtn');
-const mobileDropdown = document.getElementById('mobileNavDropdown');
-const mobileIconOpen = document.getElementById('mobileMenuIconOpen');
-const mobileIconClose = document.getElementById('mobileMenuIconClose');
-
-const modal = document.getElementById('orderBuilder');
-const closeBtn = document.getElementById('closeOrderBuilder');
-const cancelOrderBuilder = document.getElementById('cancelOrderBuilder');
-const itemsList = document.getElementById('itemsList');
-
-const zoneSelect = document.getElementById('zoneSelect');
-const rushToggle = document.getElementById('rushToggle');
-const totalEl = document.getElementById('orderTotal');
-const rushNote = document.getElementById('rushNote');
-const depositBanner = document.getElementById('depositBanner');
-const depositAmtEl = document.getElementById('depositAmt');
-const custNameEl = document.getElementById('custName');
-const custPhoneEl = document.getElementById('custPhone');
-const custAddrEl = document.getElementById('custAddress');
-
-const adminBtn = document.getElementById('adminLoginBtn');
-
-const confirmBtn2 = document.getElementById('confirmOrderBtn');
-const botModal = document.getElementById('botChat');
-const botFeed = document.getElementById('botFeed');
-const botNext = document.getElementById('botNext');
-const botSendWA = document.getElementById('botSendWA');
-const botNewOrder = document.getElementById('botNewOrder');
-const botPayChoice = document.getElementById('botPayChoice');
-const botDemoNote = document.getElementById('botDemoNote');
-
-const payModal = document.getElementById('payModal');
-const payOrderRef = document.getElementById('payOrderRef');
-const payAmountEl = document.getElementById('payAmount');
-const closePayModalBtn = document.getElementById('closePayModal');
-const btnFakePayNow = document.getElementById('btnFakePayNow');
-const btnCancelPay = document.getElementById('btnCancelPay');
-
-const driverModal = document.getElementById('driverModal');
-const closeDriver = document.getElementById('closeDriverModal');
-const tabSignup = document.getElementById('tabSignup');
-const tabLogin = document.getElementById('tabLogin');
-const formSignup = document.getElementById('driverFormSignup');
-const formLogin = document.getElementById('driverFormLogin');
-
-const driverDashModal = document.getElementById('driverDashModal');
-const closeDriverDash = document.getElementById('closeDriverDash');
-const driverPayoutPendingEl = document.getElementById('driverPayoutPending');
-const driverPayoutApprovedEl = document.getElementById('driverPayoutApproved');
-const driverNextWindowEl = document.getElementById('driverNextWindow');
-const driverZoneDisplayEl = document.getElementById('driverZoneDisplay');
-const driverRadiusDisplayEl = document.getElementById('driverRadiusDisplay');
-
-const ordersPanel = document.getElementById('ordersPanel');
-const ordersList = document.getElementById('ordersList');
-const ordersClose = document.getElementById('closeOrdersPanel');
-const ordersAssign = document.getElementById('ordersAssign');
-const ordersRefresh = document.getElementById('ordersRefresh');
-
-const driversList = document.getElementById('driversList');
-const driversRefresh = document.getElementById('driversRefresh');
-
-const ordersTabsContainer = document.getElementById('ordersTabs');
-let statsContainer = document.getElementById('statsContainer'); // (created if missing)
-
-const storeModal = document.getElementById('storeModal');
-const openStoreFooter = document.getElementById('openStoreModalFooter');
-const closeStoreModalBtn = document.getElementById('closeStoreModal');
-const cancelStoreBtn = document.getElementById('cancelStore');
-const submitStoreBtn = document.getElementById('submitStore');
-const addStoreItemBtn = document.getElementById('addStoreItem');
-const storeItemsList = document.getElementById('storeItemsList');
-const storeNameEl = document.getElementById('storeName');
-const storePhoneEl = document.getElementById('storePhone');
-const storeZoneEl = document.getElementById('storeZone');
-
-// ========================================================================
-// COLLECTION POINTS
-// ========================================================================
-const COLLECTIONS = [
-  { id:'DEPOT-PA',  name:'Port Alfred Depot',         lat:-33.590, lng:26.890 },
-  { id:'DEPOT-KENT',name:'Kenton-on-Sea Depot',       lat:-33.686, lng:26.668 },
-  { id:'DEPOT-GHT', name:'Makhanda / Grahamstown',    lat:-33.310, lng:26.520 },
-  { id:'DEPOT-ALC', name:'Alice Depot',               lat:-32.789, lng:26.834 },
-  { id:'DEPOT-GQ',  name:'Gqeberha (Port Elizabeth)', lat:-33.958, lng:25.602 },
-  { id:'DEPOT-PTA', name:'Pretoria (Main Depot)',     lat:-25.746, lng:28.188 }
-];
-
-function ensureCollectionSelectPopulated(){
-  if(!zoneSelect) return;
-  if(zoneSelect.dataset.enhanced === '1') return;
-  zoneSelect.innerHTML = '';
-  COLLECTIONS.forEach((c,i)=>{
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = c.name;
-    opt.dataset.lat = String(c.lat);
-    opt.dataset.lng = String(c.lng);
-    if(i===0){
-      opt.selected = true;
-      COLLECTION_COORDS = {lat:c.lat, lng:c.lng};
+  document.addEventListener('keydown', (e)=>{
+    if(e.key !== 'Escape') return;
+    const modals = [
+      document.getElementById('ordersPanel'),
+      document.getElementById('storeModal'),
+      document.getElementById('driverDashModal'),
+      document.getElementById('driverModal'),
+      document.getElementById('payModal'),
+      document.getElementById('botChat'),
+      document.getElementById('orderBuilder')
+    ];
+    for(const m of modals){
+      if(m && !m.classList.contains('hidden')) { closeFlex(m); break; }
     }
-    zoneSelect.appendChild(opt);
   });
-  zoneSelect.dataset.enhanced = '1';
-}
 
-// ========================================================================
-// CATALOG
-// ========================================================================
-const CATALOG = [
-  {name:'Panado 500mg (24s)', price:35},
-  {name:'Allergex 10mg (10s)',price:30},
-  {name:'Cough Syrup 100ml',  price:55},
-  {name:'Electrolyte Sachet', price:15},
-  {name:'Bandages (set)',     price:25}
-];
+  // ========================================================================
+  // RUNTIME / GLOBAL STATE
+  // ========================================================================
+  let latestOrderData = null;
+  let botStage = 0;
 
-// ========================================================================
-// DEMO PERSISTENCE
-// ========================================================================
-function saveOrdersToLS(){
-  try{ localStorage.setItem(LS_ORDERS, JSON.stringify(DEMO_ORDERS_DB)); }catch(_){}
-}
-function saveDriversToLS(){
-  try{ localStorage.setItem(LS_DRIVERS, JSON.stringify(DEMO_DRIVERS_DB)); }catch(_){}
-}
-function loadOrdersFromLS(){
-  let parsed=null;
-  try{ parsed = JSON.parse(localStorage.getItem(LS_ORDERS)||'null'); }catch(_){}
-  return (parsed && typeof parsed==='object') ? parsed : null;
-}
-function loadDriversFromLS(){
-  let parsed=null;
-  try{ parsed = JSON.parse(localStorage.getItem(LS_DRIVERS)||'null'); }catch(_){}
-  return (parsed && typeof parsed==='object') ? parsed : null;
-}
+  const currentOrdersByTab = {};
+  let ALL_ORDERS_MAP = {}; // _internal_id -> order
+  let DEMO_ORDERS_DB = {};
+  let DEMO_DRIVERS_DB = {};
 
-function seedIfEmpty(){
-  if(!DEMO_DRIVERS_DB || Object.keys(DEMO_DRIVERS_DB).length===0){
-    DEMO_DRIVERS_DB = {
-      "DRV-100001": {
-        driver_id:"DRV-100001", name:"Sipho N", phone:"27810000001", vehicle:"Bike",
-        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0
-      },
-      "DRV-100002": {
-        driver_id:"DRV-100002", name:"Anele M", phone:"27810000002", vehicle:"Car",
-        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0
-      },
-      "DRV-100003": {
-        driver_id:"DRV-100003", name:"Thandi D", phone:"27810000003", vehicle:"Car",
-        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0
+  let API_DRIVERS_MAP = {}; // driver_id/_internal_id -> driver
+  let DRIVERS = []; // for stats & drivers cards
+  let DRIVERS_BY_ID = {};
+
+  let REMOTE_STATS = null; // reserved
+
+  const driverTotals = { pending: 0, approved: 0 };
+
+  let DELIVERY_COORDS = null;
+  let COLLECTION_COORDS = {lat:-33.590, lng:26.890};
+
+  const storeItems = [];
+
+  // Admin stats DOM refs
+  let adminStatsOrdersEl,
+      adminStatsRevenueEl,
+      adminTopProductsEl,
+      adminTopAreasEl,
+      adminDriversCountEl,
+      adminPayPendingEl,
+      adminPayApprovedEl;
+
+  // ========================================================================
+  // YEAR
+  // ========================================================================
+  const yearEl = document.getElementById('year');
+  if (yearEl) yearEl.textContent = new Date().getFullYear();
+
+  // ========================================================================
+  // ELEMENT REFS
+  // ========================================================================
+  const mobileBtn = document.getElementById('mobileMenuBtn');
+  const mobileDropdown = document.getElementById('mobileNavDropdown');
+  const mobileIconOpen = document.getElementById('mobileMenuIconOpen');
+  const mobileIconClose = document.getElementById('mobileMenuIconClose');
+
+  const modal = document.getElementById('orderBuilder');
+  const closeBtn = document.getElementById('closeOrderBuilder');
+  const cancelOrderBuilder = document.getElementById('cancelOrderBuilder');
+  const itemsList = document.getElementById('itemsList');
+
+  const zoneSelect = document.getElementById('zoneSelect');
+  const rushToggle = document.getElementById('rushToggle');
+  const totalEl = document.getElementById('orderTotal');
+  const rushNote = document.getElementById('rushNote');
+  const depositBanner = document.getElementById('depositBanner');
+  const depositAmtEl = document.getElementById('depositAmt');
+  const custNameEl = document.getElementById('custName');
+  const custPhoneEl = document.getElementById('custPhone');
+  const custAddrEl = document.getElementById('custAddress');
+
+  const adminBtn = document.getElementById('adminLoginBtn');
+
+  const confirmBtn2 = document.getElementById('confirmOrderBtn');
+  const botModal = document.getElementById('botChat');
+  const botFeed = document.getElementById('botFeed');
+  const botNext = document.getElementById('botNext');
+  const botSendWA = document.getElementById('botSendWA');
+  const botNewOrder = document.getElementById('botNewOrder');
+  const botPayChoice = document.getElementById('botPayChoice');
+  const botDemoNote = document.getElementById('botDemoNote');
+
+  const payModal = document.getElementById('payModal');
+  const payOrderRef = document.getElementById('payOrderRef');
+  const payAmountEl = document.getElementById('payAmount');
+  const closePayModalBtn = document.getElementById('closePayModal');
+  const btnFakePayNow = document.getElementById('btnFakePayNow');
+  const btnCancelPay = document.getElementById('btnCancelPay');
+
+  const driverModal = document.getElementById('driverModal');
+  const closeDriver = document.getElementById('closeDriverModal');
+  const tabSignup = document.getElementById('tabSignup');
+  const tabLogin = document.getElementById('tabLogin');
+  const formSignup = document.getElementById('driverFormSignup');
+  const formLogin = document.getElementById('driverFormLogin');
+
+  const driverDashModal = document.getElementById('driverDashModal');
+  const closeDriverDash = document.getElementById('closeDriverDash');
+  const driverPayoutPendingEl = document.getElementById('driverPayoutPending');
+  const driverPayoutApprovedEl = document.getElementById('driverPayoutApproved');
+  const driverNextWindowEl = document.getElementById('driverNextWindow');
+  const driverZoneDisplayEl = document.getElementById('driverZoneDisplay');
+  const driverRadiusDisplayEl = document.getElementById('driverRadiusDisplay');
+
+  const ordersPanel = document.getElementById('ordersPanel');
+  const ordersList = document.getElementById('ordersList');
+  const ordersClose = document.getElementById('closeOrdersPanel');
+  const ordersAssign = document.getElementById('ordersAssign');
+  const ordersRefresh = document.getElementById('ordersRefresh');
+
+  const driversList = document.getElementById('driversList');
+  const driversRefresh = document.getElementById('driversRefresh');
+
+  const ordersTabsContainer = document.getElementById('ordersTabs');
+  let statsContainer = document.getElementById('statsContainer'); // will be replaced/created
+
+  const storeModal = document.getElementById('storeModal');
+  const openStoreFooter = document.getElementById('openStoreModalFooter');
+  const closeStoreModalBtn = document.getElementById('closeStoreModal');
+  const cancelStoreBtn = document.getElementById('cancelStore');
+  const submitStoreBtn = document.getElementById('submitStore');
+  const addStoreItemBtn = document.getElementById('addStoreItem');
+  const storeItemsList = document.getElementById('storeItemsList');
+  const storeNameEl = document.getElementById('storeName');
+  const storePhoneEl = document.getElementById('storePhone');
+  const storeZoneEl = document.getElementById('storeZone');
+
+  // ========================================================================
+  // COLLECTION POINTS
+  // ========================================================================
+  const COLLECTIONS = [
+    { id:'DEPOT-PA',  name:'Port Alfred Depot',         lat:-33.590, lng:26.890 },
+    { id:'DEPOT-KENT',name:'Kenton-on-Sea Depot',       lat:-33.686, lng:26.668 },
+    { id:'DEPOT-GHT', name:'Makhanda / Grahamstown',    lat:-33.310, lng:26.520 },
+    { id:'DEPOT-ALC', name:'Alice Depot',               lat:-32.789, lng:26.834 },
+    { id:'DEPOT-GQ',  name:'Gqeberha (Port Elizabeth)', lat:-33.958, lng:25.602 },
+    { id:'DEPOT-PTA', name:'Pretoria (Main Depot)',     lat:-25.746, lng:28.188 }
+  ];
+
+  function ensureCollectionSelectPopulated(){
+    if(!zoneSelect) return;
+    if(zoneSelect.dataset.enhanced === '1') return;
+    zoneSelect.innerHTML = '';
+    COLLECTIONS.forEach((c,i)=>{
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      opt.dataset.lat = String(c.lat);
+      opt.dataset.lng = String(c.lng);
+      if(i===0){
+        opt.selected = true;
+        COLLECTION_COORDS = {lat:c.lat, lng:c.lng};
       }
-    };
-  }
-  if(!DEMO_ORDERS_DB || Object.keys(DEMO_ORDERS_DB).length===0){
-    const o = (id, total, delivery_fee, status, driver_id=null) => ({
-      _internal_id: id,
-      order_id: id.replace("demo-","YI-").toUpperCase(),
-      order_public_id: id.toUpperCase(),
-      status,
-      total,
-      delivery_fee,
-      items: [
-        {name:"Panado 500mg (24s)",qty:1},
-        {name:"Cough Syrup 100ml",qty:1}
-      ],
-      meta: { collection_name: 'Port Alfred Depot', distance_km: 3.2 },
-      fraud_score: 0.04,
-      driver_id,
-      driver_pay_status: status === 'delivered' ? 'approved' : 'pending',
-      driver_pay_pending: status === 'delivered' ? 0 : clamp(delivery_fee,25,45),
-      driver_pay_approved: status === 'delivered' ? clamp(delivery_fee,25,45) : 0
+      zoneSelect.appendChild(opt);
     });
-    DEMO_ORDERS_DB = {
-      "demo-abc123": o("demo-abc123",180,35,"pending",   "DRV-100001"),
-      "demo-def456": o("demo-def456",240,45,"assigned",  "DRV-100002"),
-      "demo-ghi789": o("demo-ghi789",120,25,"in_transit","DRV-100002"),
-      "demo-jkl012": o("demo-jkl012",220,30,"delivered", "DRV-100003")
-    };
+    zoneSelect.dataset.enhanced = '1';
   }
-}
 
-function hydrateState(){
-  if(DEMO_MODE){
-    const o = loadOrdersFromLS();
-    const d = loadDriversFromLS();
-    DEMO_ORDERS_DB = o || {};
-    DEMO_DRIVERS_DB = d || {};
-    seedIfEmpty();
+  // ========================================================================
+  // CATALOG
+  // ========================================================================
+  const CATALOG = [
+    {name:'Panado 500mg (24s)', price:35},
+    {name:'Allergex 10mg (10s)',price:30},
+    {name:'Cough Syrup 100ml',  price:55},
+    {name:'Electrolyte Sachet', price:15},
+    {name:'Bandages (set)',     price:25}
+  ];
 
-    Object.values(DEMO_DRIVERS_DB).forEach(dr=>{
-      dr.stats = {assigned:0,in_transit:0,delivered:0};
-      dr.payout_pending = 0;
-      dr.payout_approved= 0;
-    });
-    Object.values(DEMO_ORDERS_DB).forEach(ord=>{
-      const did = ord.driver_id;
-      if(did && DEMO_DRIVERS_DB[did]){
-        const dr = DEMO_DRIVERS_DB[did];
-        if(ord.status === 'assigned')    dr.stats.assigned++;
-        if(ord.status === 'in_transit')  dr.stats.in_transit++;
-        if(ord.status === 'delivered')   dr.stats.delivered++;
-        if(ord.driver_pay_status === 'pending')
-          dr.payout_pending += (ord.driver_pay_pending||0);
-        if(ord.driver_pay_status === 'approved')
-          dr.payout_approved += (ord.driver_pay_approved||0);
-      }
-    });
-    saveOrdersToLS();
-    saveDriversToLS();
+  // ========================================================================
+  // DEMO PERSISTENCE
+  // ========================================================================
+  function saveOrdersToLS(){
+    try{ localStorage.setItem(LS_ORDERS, JSON.stringify(DEMO_ORDERS_DB)); }catch(_){}
   }
-}
-hydrateState();
+  function saveDriversToLS(){
+    try{ localStorage.setItem(LS_DRIVERS, JSON.stringify(DEMO_DRIVERS_DB)); }catch(_){}
+  }
+  function loadOrdersFromLS(){
+    let parsed=null;
+    try{ parsed = JSON.parse(localStorage.getItem(LS_ORDERS)||'null'); }catch(_){}
+    return (parsed && typeof parsed==='object') ? parsed : null;
+  }
+  function loadDriversFromLS(){
+    let parsed=null;
+    try{ parsed = JSON.parse(localStorage.getItem(LS_DRIVERS)||'null'); }catch(_){}
+    return (parsed && typeof parsed==='object') ? parsed : null;
+  }
 
-// ========================================================================
-// CUSTOMER UI: items + totals
-// ========================================================================
-function renderItems(){
-  if(!itemsList) return;
-  itemsList.innerHTML = '';
-  CATALOG.forEach((item,idx)=>{
-    const row=document.createElement('div');
-    row.className='flex items-center justify-between gap-3 border rounded-lg p-2';
-    row.innerHTML = `
+  function seedIfEmpty(){
+    if(!DEMO_DRIVERS_DB || Object.keys(DEMO_DRIVERS_DB).length===0){
+      DEMO_DRIVERS_DB = {
+        "DRV-100001": {
+          driver_id:"DRV-100001", name:"Sipho N", phone:"27810000001", vehicle:"Bike",
+          stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0
+        },
+        "DRV-100002": {
+          driver_id:"DRV-100002", name:"Anele M", phone:"27810000002", vehicle:"Car",
+          stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0
+        },
+        "DRV-100003": {
+          driver_id:"DRV-100003", name:"Thandi D", phone:"27810000003", vehicle:"Car",
+          stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0
+        }
+      };
+    }
+    if(!DEMO_ORDERS_DB || Object.keys(DEMO_ORDERS_DB).length===0){
+      const o = (id, total, delivery_fee, status, driver_id=null) => ({
+        _internal_id: id,
+        order_id: id.replace("demo-","YI-").toUpperCase(),
+        order_public_id: id.toUpperCase(),
+        status,
+        total,
+        delivery_fee,
+        items: [
+          {name:"Panado 500mg (24s)",qty:1},
+          {name:"Cough Syrup 100ml",qty:1}
+        ],
+        meta: { collection_name: 'Port Alfred Depot', distance_km: 3.2 },
+        fraud_score: 0.04,
+        driver_id,
+        driver_pay_status: status === 'delivered' ? 'approved' : 'pending',
+        driver_pay_pending: status === 'delivered' ? 0 : clamp(delivery_fee,25,45),
+        driver_pay_approved: status === 'delivered' ? clamp(delivery_fee,25,45) : 0
+      });
+      DEMO_ORDERS_DB = {
+        "demo-abc123": o("demo-abc123",180,35,"pending",   "DRV-100001"),
+        "demo-def456": o("demo-def456",240,45,"assigned",  "DRV-100002"),
+        "demo-ghi789": o("demo-ghi789",120,25,"in_transit","DRV-100002"),
+        "demo-jkl012": o("demo-jkl012",220,30,"delivered", "DRV-100003")
+      };
+    }
+  }
+
+  function hydrateState(){
+    if(DEMO_MODE){
+      const o = loadOrdersFromLS();
+      const d = loadDriversFromLS();
+      DEMO_ORDERS_DB = o || {};
+      DEMO_DRIVERS_DB = d || {};
+      seedIfEmpty();
+
+      Object.values(DEMO_DRIVERS_DB).forEach(dr=>{
+        dr.stats = {assigned:0,in_transit:0,delivered:0};
+        dr.payout_pending = 0;
+        dr.payout_approved= 0;
+      });
+      Object.values(DEMO_ORDERS_DB).forEach(ord=>{
+        const did = ord.driver_id;
+        if(did && DEMO_DRIVERS_DB[did]){
+          const dr = DEMO_DRIVERS_DB[did];
+          if(ord.status === 'assigned')    dr.stats.assigned++;
+          if(ord.status === 'in_transit')  dr.stats.in_transit++;
+          if(ord.status === 'delivered')   dr.stats.delivered++;
+          if(ord.driver_pay_status === 'pending')
+            dr.payout_pending += (ord.driver_pay_pending||0);
+          if(ord.driver_pay_status === 'approved')
+            dr.payout_approved += (ord.driver_pay_approved||0);
+        }
+      });
+      saveOrdersToLS();
+      saveDriversToLS();
+    }
+  }
+  hydrateState();
+
+  // ========================================================================
+  // CUSTOMER UI: items + totals
+  // ========================================================================
+  function renderItems(){
+    if(!itemsList) return;
+    itemsList.innerHTML = '';
+    CATALOG.forEach((item,idx)=>{
+      const row=document.createElement('div');
+      row.className='flex items-center justify-between gap-3 border rounded-lg p-2';
+      row.innerHTML = `
 <label class="flex items-center gap-2">
   <input type="checkbox" data-idx="${idx}" class="itemCheck h-4 w-4" aria-label="Select ${item.name}"/>
   <span>${item.name}</span>
@@ -1294,572 +1294,569 @@ function renderItems(){
     class="itemQty w-14 border rounded-lg p-1"
   />
 </div>`;
-    itemsList.appendChild(row);
+      itemsList.appendChild(row);
+    });
+  }
+
+  document.getElementById('addCustomItem')?.addEventListener('click', ()=>{
+    const name = prompt('Item name?');
+    if(!name) return;
+    const p = Number(prompt('Price (R)?'));
+    if(!Number.isFinite(p) || p<=0) return;
+    CATALOG.push({name,price:p});
+    renderItems();
   });
-}
 
-document.getElementById('addCustomItem')?.addEventListener('click', ()=>{
-  const name = prompt('Item name?');
-  if(!name) return;
-  const p = Number(prompt('Price (R)?'));
-  if(!Number.isFinite(p) || p<=0) return;
-  CATALOG.push({name,price:p});
-  renderItems();
-});
+  const selectedPay = () => {
+    const el = document.querySelector('input[name="pay"]:checked');
+    return el ? el.value : 'card';
+  };
 
-const selectedPay = () => {
-  const el = document.querySelector('input[name="pay"]:checked');
-  return el ? el.value : 'card';
-};
+  function tryGetCustomerCoords(){
+    return new Promise((resolve)=>{
+      if(!navigator.geolocation){ return resolve(null); }
+      navigator.geolocation.getCurrentPosition(
+        pos=> resolve({lat:pos.coords.latitude, lng:pos.coords.longitude}),
+        ()=> resolve(null),
+        { enableHighAccuracy:true, timeout:2500 }
+      );
+    });
+  }
 
-function tryGetCustomerCoords(){
-  return new Promise((resolve)=>{
-    if(!navigator.geolocation){ return resolve(null); }
-    navigator.geolocation.getCurrentPosition(
-      pos=> resolve({lat:pos.coords.latitude, lng:pos.coords.longitude}),
-      ()=> resolve(null),
-      { enableHighAccuracy:true, timeout:2500 }
-    );
-  });
-}
+  async function osrmDistanceMeters(a,b){
+    try{
+      const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`;
+      const r = await fetch(url);
+      const j = await r.json();
+      const meters = j?.routes?.[0]?.distance;
+      if(Number.isFinite(meters)){ return meters; }
+    }catch(_){}
+    return kmBetween(a,b)*1000;
+  }
 
-async function osrmDistanceMeters(a,b){
-  try{
-    const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`;
-    const r = await fetch(url);
-    const j = await r.json();
-    const meters = j?.routes?.[0]?.distance;
-    if(Number.isFinite(meters)){ return meters; }
-  }catch(_){}
-  return kmBetween(a,b)*1000;
-}
+  async function computeTotal(){
+    ensureCollectionSelectPopulated();
 
-async function computeTotal(){
-  ensureCollectionSelectPopulated();
+    if(!totalEl || !rushNote){
+      return {
+        items:[], itemsTotal:0, fee:0, rush:0, total:0,
+        collectionName:'Port Alfred Depot',
+        hubLat:COLLECTION_COORDS.lat, hubLng:COLLECTION_COORDS.lng, distanceKm:0
+      };
+    }
 
-  if(!totalEl || !rushNote){
+    const items = Array.from(document.querySelectorAll('.itemCheck'))
+      .filter(c => c.checked)
+      .map(c => {
+        const i = Number(c.dataset.idx);
+        const qtyInput = document.querySelector(`.itemQty[data-idx="${i}"]`);
+        const qty = Math.max(1, Number(qtyInput?.value || 1));
+        return { name: CATALOG[i].name, price: Number(CATALOG[i].price), qty };
+      });
+
+    const itemsTotal = items.reduce((sum,it)=> sum + (it.price * it.qty), 0);
+
+    const opt = zoneSelect?.options?.[zoneSelect.selectedIndex] || {};
+    const hubLat = Number(opt?.dataset?.lat ?? COLLECTION_COORDS.lat);
+    const hubLng = Number(opt?.dataset?.lng ?? COLLECTION_COORDS.lng);
+    const collectionName = opt?.textContent || 'Port Alfred Depot';
+    COLLECTION_COORDS = {lat:hubLat, lng:hubLng};
+
+    if(!DELIVERY_COORDS){
+      DELIVERY_COORDS = await tryGetCustomerCoords();
+    }
+
+    let distanceKm = 0;
+    if(DELIVERY_COORDS){
+      const meters = await osrmDistanceMeters(COLLECTION_COORDS, DELIVERY_COORDS);
+      distanceKm = Math.max(0, meters/1000);
+    } else {
+      distanceKm = 3;
+    }
+
+    const rushFee = rushToggle?.checked ? RUSH_FEE : 0;
+    rushNote.textContent = rushFee ? ' + rush' : '';
+
+    const deliveryFee = Math.round(BASE_DELIVERY_FEE + (PER_KM_PRICE * distanceKm));
+    const total = itemsTotal + deliveryFee + rushFee;
+    totalEl.textContent = String(total);
+
     return {
-      items:[], itemsTotal:0, fee:0, rush:0, total:0,
-      collectionName:'Port Alfred Depot',
-      hubLat:COLLECTION_COORDS.lat, hubLng:COLLECTION_COORDS.lng, distanceKm:0
+      items, itemsTotal,
+      fee: deliveryFee,
+      rush: rushFee,
+      total,
+      collectionName,
+      hubLat, hubLng,
+      distanceKm
     };
   }
 
-  const items = Array.from(document.querySelectorAll('.itemCheck'))
-    .filter(c => c.checked)
-    .map(c => {
-      const i = Number(c.dataset.idx);
-      const qtyInput = document.querySelector(`.itemQty[data-idx="${i}"]`);
-      const qty = Math.max(1, Number(qtyInput?.value || 1));
-      return { name: CATALOG[i].name, price: Number(CATALOG[i].price), qty };
-    });
+  function nextETA(rush){
+    const now = new Date();
+    const windows = [[8,10],[12,14],[16,18]];
+    const allowed = new Set([0,3,4,5,6]);
+    const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  const itemsTotal = items.reduce((sum,it)=> sum + (it.price * it.qty), 0);
+    const fmt = (date,[h1,h2])=>{
+      const sameDay = (date.toDateString()===new Date().toDateString());
+      if (sameDay){
+        return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
+      }
+      return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
+    };
 
-  const opt = zoneSelect?.options?.[zoneSelect.selectedIndex] || {};
-  const hubLat = Number(opt?.dataset?.lat ?? COLLECTION_COORDS.lat);
-  const hubLng = Number(opt?.dataset?.lng ?? COLLECTION_COORDS.lng);
-  const collectionName = opt?.textContent || 'Port Alfred Depot';
-  COLLECTION_COORDS = {lat:hubLat, lng:hubLng};
-
-  if(!DELIVERY_COORDS){
-    DELIVERY_COORDS = await tryGetCustomerCoords();
+    if (allowed.has(now.getDay())){
+      for(const w of windows){
+        if(now.getHours()<w[1]) return fmt(now,w);
+      }
+    }
+    for(let i=1;i<=7;i++){
+      const d = new Date(now);
+      d.setDate(now.getDate()+i);
+      if(allowed.has(d.getDay())){
+        return fmt(d,windows[0]);
+      }
+    }
+    return 'TBC';
   }
 
-  let distanceKm = 0;
-  if(DELIVERY_COORDS){
-    const meters = await osrmDistanceMeters(COLLECTION_COORDS, DELIVERY_COORDS);
-    distanceKm = Math.max(0, meters/1000);
-  } else {
-    distanceKm = 3;
+  function toggleDepositBanner(total){
+    const pay=selectedPay();
+    if(!depositBanner || !depositAmtEl) return;
+    if(pay==='deposit_cod'){
+      depositAmtEl.textContent = Math.ceil(total*0.5);
+      depositBanner.classList.remove('hidden');
+    } else {
+      depositBanner.classList.add('hidden');
+    }
   }
 
-  const rushFee = rushToggle?.checked ? RUSH_FEE : 0;
-  rushNote.textContent = rushFee ? ' + rush' : '';
-
-  const deliveryFee = Math.round(BASE_DELIVERY_FEE + (PER_KM_PRICE * distanceKm));
-  const total = itemsTotal + deliveryFee + rushFee;
-  totalEl.textContent = String(total);
-
-  return {
-    items, itemsTotal,
-    fee: deliveryFee,
-    rush: rushFee,
-    total,
-    collectionName,
-    hubLat, hubLng,
-    distanceKm
+  // ========================================================================
+  // MODALS & NAV
+  // ========================================================================
+  const openOrder = async ()=>{
+    openFlex(modal);
+    const s = await computeTotal();
+    toggleDepositBanner(s.total);
   };
-}
+  const closeOrder = ()=> closeFlex(modal);
 
-function nextETA(rush){
-  const now = new Date();
-  const windows = [[8,10],[12,14],[16,18]];
-  const allowed = new Set([0,3,4,5,6]);
-  const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-
-  const fmt = (date,[h1,h2])=>{
-    const sameDay = (date.toDateString()===new Date().toDateString());
-    if (sameDay){
-      return `${pad2(h1)}:00–${pad2(h2)}:00 ${rush?'today (rush)':'today'}`;
-    }
-    return `${dayNames[date.getDay()]} ${pad2(h1)}:00–${pad2(h2)}:00`;
+  const openBot = ()=>{
+    botStage = 0;
+    if(!botNext || !botSendWA || !botNewOrder || !botDemoNote || !botFeed) return;
+    botNext.disabled = false;
+    botNext.textContent = "Pay";
+    botSendWA.classList.add('hidden');
+    botNewOrder.classList.add('hidden');
+    botDemoNote.hidden = true;
+    botFeed.innerHTML = "";
+    openFlex(botModal);
+  };
+  const closeBot = ()=>{
+    if(botFeed) botFeed.innerHTML='';
+    closeFlex(botModal);
   };
 
-  if (allowed.has(now.getDay())){
-    for(const w of windows){
-      if(now.getHours()<w[1]) return fmt(now,w);
-    }
-  }
-  for(let i=1;i<=7;i++){
-    const d = new Date(now);
-    d.setDate(now.getDate()+i);
-    if(allowed.has(d.getDay())){
-      return fmt(d,windows[0]);
-    }
-  }
-  return 'TBC';
-}
+  const openPayModal = (orderRef, amount)=>{
+    if(!payModal) return;
+    if(payOrderRef) payOrderRef.textContent = orderRef || '--';
+    if(payAmountEl) payAmountEl.textContent = amount || '0';
+    openFlex(payModal);
+  };
+  const closePayModal = ()=> closeFlex(payModal);
 
-function toggleDepositBanner(total){
-  const pay=selectedPay();
-  if(!depositBanner || !depositAmtEl) return;
-  if(pay==='deposit_cod'){
-    depositAmtEl.textContent = Math.ceil(total*0.5);
-    depositBanner.classList.remove('hidden');
-  } else {
-    depositBanner.classList.add('hidden');
-  }
-}
+  const openDriverWindow = ()=> openFlex(driverModal);
+  const closeDriverWindow = ()=> closeFlex(driverModal);
 
-// ========================================================================
-// MODALS & NAV
-// ========================================================================
-const openOrder = async ()=>{
-  openFlex(modal);
-  const s = await computeTotal();
-  toggleDepositBanner(s.total);
-};
-const closeOrder = ()=> closeFlex(modal);
+  const openStore = ()=> openFlex(storeModal);
+  const closeStore= ()=> closeFlex(storeModal);
 
-const openBot = ()=>{
-  botStage = 0;
-  if(!botNext || !botSendWA || !botNewOrder || !botDemoNote || !botFeed) return;
-  botNext.disabled = false;
-  botNext.textContent = "Pay";
-  botSendWA.classList.add('hidden');
-  botNewOrder.classList.add('hidden');
-  botDemoNote.hidden = true;
-  botFeed.innerHTML = "";
-  openFlex(botModal);
-};
-const closeBot = ()=>{
-  if(botFeed) botFeed.innerHTML='';
-  closeFlex(botModal);
-};
+  let ordersTab = 'pending';
 
-const openPayModal = (orderRef, amount)=>{
-  if(!payModal) return;
-  if(payOrderRef) payOrderRef.textContent = orderRef || '--';
-  if(payAmountEl) payAmountEl.textContent = amount || '0';
-  openFlex(payModal);
-};
-const closePayModal = ()=> closeFlex(payModal);
+  const openOrders = ()=>{
+    if(!ordersPanel) return;
+    openFlex(ordersPanel);
+    ensureAdminTabs();
+    setActiveAdminTab(ordersTab);
+    refreshAllData();
+  };
+  const closeOrders= ()=> closeFlex(ordersPanel);
 
-const openDriverWindow = ()=> openFlex(driverModal);
-const closeDriverWindow = ()=> closeFlex(driverModal);
+  const openDriverDash = ()=>{
+    if(driverPayoutPendingEl) driverPayoutPendingEl.textContent = String(driverTotals.pending);
+    if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
+    openFlex(driverDashModal);
+  };
+  const closeDriverDashWindow = ()=> closeFlex(driverDashModal);
 
-const openStore = ()=> openFlex(storeModal);
-const closeStore= ()=> closeFlex(storeModal);
-
-let ordersTab = 'pending';
-
-const openOrders = ()=>{
-  if(!ordersPanel) return;
-  openFlex(ordersPanel);
-  ensureAdminTabs();
-  setActiveAdminTab(ordersTab);
-  refreshAllData();
-};
-const closeOrders= ()=> closeFlex(ordersPanel);
-
-const openDriverDash = ()=>{
-  if(driverPayoutPendingEl) driverPayoutPendingEl.textContent = String(driverTotals.pending);
-  if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
-  openFlex(driverDashModal);
-};
-const closeDriverDashWindow = ()=> closeFlex(driverDashModal);
-
-function appendBot(msg,who='bot'){
-  if(!botFeed) return;
-  const wrap=document.createElement('div');
-  wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
-  wrap.innerHTML = `
+  function appendBot(msg,who='bot'){
+    if(!botFeed) return;
+    const wrap=document.createElement('div');
+    wrap.className = `flex ${who==='bot'?'justify-start':'justify-end'}`;
+    wrap.innerHTML = `
 <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm ${who==='bot'?'bg-slate-100':'bg-emerald-600 text-white'}">
   ${msg}
 </div>`;
-  botFeed.appendChild(wrap);
-  botFeed.scrollTop = botFeed.scrollHeight;
-}
-
-// ========================================================================
-// MOBILE NAV
-// ========================================================================
-function toggleMobileMenu() {
-  if(!mobileDropdown || !mobileBtn || !mobileIconOpen || !mobileIconClose) return;
-  const isHidden = mobileDropdown.classList.contains('hidden');
-  if (isHidden) {
-    mobileDropdown.classList.remove('hidden');
-    mobileIconOpen.classList.add('hidden');
-    mobileIconClose.classList.remove('hidden');
-    mobileBtn.setAttribute('aria-expanded', 'true');
-  } else {
-    mobileDropdown.classList.add('hidden');
-    mobileIconOpen.classList.remove('hidden');
-    mobileIconClose.classList.add('hidden');
-    mobileBtn.setAttribute('aria-expanded', 'false');
+    botFeed.appendChild(wrap);
+    botFeed.scrollTop = botFeed.scrollHeight;
   }
-}
-mobileBtn?.addEventListener('click', toggleMobileMenu);
 
-document.querySelectorAll('#mobileNavDropdown .mobile-nav-link').forEach(el => {
-  el.addEventListener('click', () => {
+  // ========================================================================
+  // MOBILE NAV
+  // ========================================================================
+  function toggleMobileMenu() {
     if(!mobileDropdown || !mobileBtn || !mobileIconOpen || !mobileIconClose) return;
-    mobileDropdown.classList.add('hidden');
-    mobileIconOpen.classList.remove('hidden');
-    mobileIconClose.classList.add('hidden');
-    mobileBtn.setAttribute('aria-expanded', 'false');
+    const isHidden = mobileDropdown.classList.contains('hidden');
+    if (isHidden) {
+      mobileDropdown.classList.remove('hidden');
+      mobileIconOpen.classList.add('hidden');
+      mobileIconClose.classList.remove('hidden');
+      mobileBtn.setAttribute('aria-expanded', 'true');
+    } else {
+      mobileDropdown.classList.add('hidden');
+      mobileIconOpen.classList.remove('hidden');
+      mobileIconClose.classList.add('hidden');
+      mobileBtn.setAttribute('aria-expanded', 'false');
+    }
+  }
+  mobileBtn?.addEventListener('click', toggleMobileMenu);
+
+  document.querySelectorAll('#mobileNavDropdown .mobile-nav-link').forEach(el => {
+    el.addEventListener('click', () => {
+      if(!mobileDropdown || !mobileBtn || !mobileIconOpen || !mobileIconClose) return;
+      mobileDropdown.classList.add('hidden');
+      mobileIconOpen.classList.remove('hidden');
+      mobileIconClose.classList.add('hidden');
+      mobileBtn.setAttribute('aria-expanded', 'false');
+    });
   });
-});
 
-document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{
-  document.getElementById('openOrderBuilder')?.click();
-});
-document.getElementById('openDriverModalTopMobile')?.addEventListener('click', ()=>{
-  document.getElementById('openDriverModal')?.click();
-});
-document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{
-  adminBtn?.click();
-});
-document.getElementById('openDriverModalSection')?.addEventListener('click', ()=>{
-  document.getElementById('openDriverModal')?.click();
-});
+  document.getElementById('openOrderBuilderTopMobile')?.addEventListener('click', ()=>{
+    document.getElementById('openOrderBuilder')?.click();
+  });
+  document.getElementById('openDriverModalTopMobile')?.addEventListener('click', ()=>{
+    document.getElementById('openDriverModal')?.click();
+  });
+  document.getElementById('adminLoginBtnMobile')?.addEventListener('click', ()=>{
+    adminBtn?.click();
+  });
+  document.getElementById('openDriverModalSection')?.addEventListener('click', ()=>{
+    document.getElementById('openDriverModal')?.click();
+  });
 
-// ========================================================================
-// INIT CUSTOMER UI
-// ========================================================================
-renderItems();
-ensureCollectionSelectPopulated();
-computeTotal();
-
-zoneSelect?.addEventListener('change', async ()=>{
-  const s = await computeTotal(); toggleDepositBanner(s.total);
-});
-rushToggle?.addEventListener('change', async ()=>{
-  const s = await computeTotal(); toggleDepositBanner(s.total);
-});
-document.addEventListener('change', async e=>{
-  const t = e.target;
-  if(
-    (t?.classList && t.classList.contains('itemCheck')) ||
-    (t?.classList && t.classList.contains('itemQty')) ||
-    t?.name === 'pay'
-  ){
-    const s = await computeTotal(); toggleDepositBanner(s.total);
-  }
-});
-
-[custNameEl, custPhoneEl, custAddrEl].forEach((el)=>{
-  if(!el) return;
-  const key = 'yt_'+el.id;
-  const saved = localStorage.getItem(key);
-  if(saved) el.value = saved;
-  el.addEventListener('input', ()=> localStorage.setItem(key, el.value));
-});
-
-// Store items add
-addStoreItemBtn?.addEventListener('click', e=>{
-  e.preventDefault();
-  const name = prompt('Item name');
-  const priceVal = prompt('Price (R)');
-  const price = Number(priceVal);
-  if(!name || !Number.isFinite(price) || price<=0){ return; }
-  CATALOG.push({name,price});
-  storeItems.push({name,price});
+  // ========================================================================
+  // INIT CUSTOMER UI
+  // ========================================================================
   renderItems();
-  computeTotal().then(s=>toggleDepositBanner(s.total));
-});
+  ensureCollectionSelectPopulated();
+  computeTotal();
 
-// ========================================================================
-// MODAL / ADMIN BTN WIRING
-// ========================================================================
-document.getElementById('closeBot')?.addEventListener('click', closeBot);
-closeBtn?.addEventListener('click', closeOrder);
-cancelOrderBuilder?.addEventListener('click', closeOrder);
-closePayModalBtn?.addEventListener('click', closePayModal);
-btnCancelPay?.addEventListener('click', closePayModal);
-closeDriver?.addEventListener('click', closeDriverWindow);
-closeDriverDash?.addEventListener('click', closeDriverDashWindow);
-ordersClose?.addEventListener('click', closeOrders);
+  zoneSelect?.addEventListener('change', async ()=>{
+    const s = await computeTotal(); toggleDepositBanner(s.total);
+  });
+  rushToggle?.addEventListener('change', async ()=>{
+    const s = await computeTotal(); toggleDepositBanner(s.total);
+  });
+  document.addEventListener('change', async e=>{
+    const t = e.target;
+    if(
+      (t?.classList && t.classList.contains('itemCheck')) ||
+      (t?.classList && t.classList.contains('itemQty')) ||
+      t?.name === 'pay'
+    ){
+      const s = await computeTotal(); toggleDepositBanner(s.total);
+    }
+  });
 
-adminBtn?.addEventListener('click', (e)=>{
-  e.preventDefault();
-  const pw = prompt("Enter admin PIN:");
-  if (pw === null) return;
-  if (pw === ADMIN_PASS) {
-    openOrders();
-  } else {
-    alert("Incorrect PIN");
-  }
-});
+  [custNameEl, custPhoneEl, custAddrEl].forEach((el)=>{
+    if(!el) return;
+    const key = 'yt_'+el.id;
+    const saved = localStorage.getItem(key);
+    if(saved) el.value = saved;
+    el.addEventListener('input', ()=> localStorage.setItem(key, el.value));
+  });
 
-window.addEventListener('yt-open-orders', openOrders);
+  // Store items add
+  addStoreItemBtn?.addEventListener('click', e=>{
+    e.preventDefault();
+    const name = prompt('Item name');
+    const priceVal = prompt('Price (R)');
+    const price = Number(priceVal);
+    if(!name || !Number.isFinite(price) || price<=0){ return; }
+    CATALOG.push({name,price});
+    storeItems.push({name,price});
+    renderItems();
+    computeTotal().then(s=>toggleDepositBanner(s.total));
+  });
 
-btnFakePayNow?.addEventListener('click', ()=>{
-  alert('No money taken. Demo only.');
-  closePayModal();
+  // ========================================================================
+  // MODAL / ADMIN BTN WIRING
+  // ========================================================================
+  document.getElementById('closeBot')?.addEventListener('click', closeBot);
+  closeBtn?.addEventListener('click', closeOrder);
+  cancelOrderBuilder?.addEventListener('click', closeOrder);
+  closePayModalBtn?.addEventListener('click', closePayModal);
+  btnCancelPay?.addEventListener('click', closePayModal);
+  closeDriver?.addEventListener('click', closeDriverWindow);
+  closeDriverDash?.addEventListener('click', closeDriverDashWindow);
+  ordersClose?.addEventListener('click', closeOrders);
 
-  botSendWA?.classList.remove('hidden');
-  botNewOrder?.classList.remove('hidden');
-  if(botDemoNote) botDemoNote.hidden = false;
+  adminBtn?.addEventListener('click', (e)=>{
+    e.preventDefault();
+    const pw = prompt("Enter admin PIN:");
+    if (pw === null) return;
+    if (pw === ADMIN_PASS) {
+      openOrders();
+    } else {
+      alert("Incorrect PIN");
+    }
+  });
 
-  appendBot(`<b>Payment marked (demo)</b><br/>We'll WhatsApp you the real secure link next.`, 'bot');
-  botStage = 2;
-});
+  window.addEventListener('yt-open-orders', openOrders);
 
-['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'].forEach(id=>{
-  const el=document.getElementById(id);
-  if(el) el.addEventListener('click', openOrder);
-});
-['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
-  const el=document.getElementById(id);
-  if(el) el.addEventListener('click', openDriverWindow);
-});
+  btnFakePayNow?.addEventListener('click', ()=>{
+    alert('No money taken. Demo only.');
+    closePayModal();
 
-tabSignup?.addEventListener('click',()=>{
-  tabSignup.classList.add('bg-emerald-600','text-white');
-  tabLogin.classList.remove('bg-emerald-600','text-white');
-  formSignup?.classList.remove('hidden');
-  formLogin?.classList.add('hidden');
-  tabSignup.setAttribute('aria-selected','true');
-  tabLogin.setAttribute('aria-selected','false');
-});
-tabLogin?.addEventListener('click',()=>{
-  tabLogin.classList.add('bg-emerald-600','text-white');
-  tabSignup.classList.remove('bg-emerald-600','text-white');
-  formSignup?.classList.add('hidden');
-  formLogin?.classList.remove('hidden');
-  tabSignup.setAttribute('aria-selected','false');
-  tabLogin.setAttribute('aria-selected','true');
-});
+    botSendWA?.classList.remove('hidden');
+    botNewOrder?.classList.remove('hidden');
+    if(botDemoNote) botDemoNote.hidden = false;
 
-// ========================================================================
-// STORE MODAL
-// ========================================================================
-function renderStoreItems(){
-  if(!storeItemsList) return;
-  storeItemsList.innerHTML = '';
-  storeItems.forEach((it,idx)=>{
-    const row = document.createElement('div');
-    row.className = "flex items-center justify-between border rounded-lg p-2";
-    row.innerHTML = `
+    appendBot(`<b>Payment marked (demo)</b><br/>We'll WhatsApp you the real secure link next.`, 'bot');
+    botStage = 2;
+  });
+
+  ['openOrderBuilder','openOrderBuilderTop','openOrderBuilderFooter'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('click', openOrder);
+  });
+  ['openDriverModal','openDriverModalTop','openDriverModalFooter'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('click', openDriverWindow);
+  });
+
+  tabSignup?.addEventListener('click',()=>{
+    tabSignup.classList.add('bg-emerald-600','text-white');
+    tabLogin.classList.remove('bg-emerald-600','text-white');
+    formSignup?.classList.remove('hidden');
+    formLogin?.classList.add('hidden');
+    tabSignup.setAttribute('aria-selected','true');
+    tabLogin.setAttribute('aria-selected','false');
+  });
+  tabLogin?.addEventListener('click',()=>{
+    tabLogin.classList.add('bg-emerald-600','text-white');
+    tabSignup.classList.remove('bg-emerald-600','text-white');
+    formSignup?.classList.add('hidden');
+    formLogin?.classList.remove('hidden');
+    tabSignup.setAttribute('aria-selected','false');
+    tabLogin.setAttribute('aria-selected','true');
+  });
+
+  // ========================================================================
+  // STORE MODAL
+  // ========================================================================
+  function renderStoreItems(){
+    if(!storeItemsList) return;
+    storeItemsList.innerHTML = '';
+    storeItems.forEach((it,idx)=>{
+      const row = document.createElement('div');
+      row.className = "flex items-center justify-between border rounded-lg p-2";
+      row.innerHTML = `
 <div class="text-sm">
   <div class="font-medium">${it.name}</div>
   <div class="text-xs text-slate-500">R${it.price}</div>
 </div>
 <button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline" aria-label="Remove ${it.name}">remove</button>
 `;
-    storeItemsList.appendChild(row);
-  });
-
-  storeItemsList.querySelectorAll('.removeStoreItem').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const i = Number(btn.getAttribute('data-idx'));
-      storeItems.splice(i,1);
-      renderStoreItems();
+      storeItemsList.appendChild(row);
     });
-  });
-}
 
-openStoreFooter?.addEventListener('click', openStore);
-closeStoreModalBtn?.addEventListener('click', closeStore);
-cancelStoreBtn?.addEventListener('click', closeStore);
-
-submitStoreBtn?.addEventListener('click', async ()=>{
-  const storeName = storeNameEl?.value.trim();
-  const storePhone = digits(storePhoneEl?.value.trim());
-  const zone = storeZoneEl?.value || 'A';
-  if(!storeName || !storePhone){
-    alert("Please add store name & WhatsApp.");
-    return;
-  }
-  if(storeItems.length === 0){
-    if(!confirm("No items added yet. Submit anyway?")) return;
-  }
-
-  const payload = {
-    name: storeName,
-    owner_name: storeName,
-    phone: storePhone,
-    zone,
-    address: {}
-  };
-
-  if(!DEMO_MODE){
-    try{
-      const r = await fetch(`${BASE_API}/stores`, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(payload)
+    storeItemsList.querySelectorAll('.removeStoreItem').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const i = Number(btn.getAttribute('data-idx'));
+        storeItems.splice(i,1);
+        renderStoreItems();
       });
-      const j = await r.json().catch(()=>({}));
-      if(!r.ok || j.ok === false){ alert("Store save failed on server."); }
-    }catch(err){ console.error("store create failed",err); }
+    });
   }
 
-  const adminMsg =
+  openStoreFooter?.addEventListener('click', openStore);
+  closeStoreModalBtn?.addEventListener('click', closeStore);
+  cancelStoreBtn?.addEventListener('click', closeStore);
+
+  submitStoreBtn?.addEventListener('click', async ()=>{
+    const storeName = storeNameEl?.value.trim();
+    const storePhone = digits(storePhoneEl?.value.trim());
+    const zone = storeZoneEl?.value || 'A';
+    if(!storeName || !storePhone){
+      alert("Please add store name & WhatsApp.");
+      return;
+    }
+    if(storeItems.length === 0){
+      if(!confirm("No items added yet. Submit anyway?")) return;
+    }
+
+    const payload = {
+      name: storeName,
+      owner_name: storeName,
+      phone: storePhone,
+      zone,
+      address: {}
+    };
+
+    if(!DEMO_MODE){
+      try{
+        const r = await fetch(`${BASE_API}/stores`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(payload)
+        });
+        const j = await r.json().catch(()=>({}));
+        if(!r.ok || j.ok === false){ alert("Store save failed on server."); }
+      }catch(err){ console.error("store create failed",err); }
+    }
+
+    const adminMsg =
 `New store signup:
 Name: ${storeName}
 Phone: ${storePhone}
 Items:
 ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
-  window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(adminMsg)}`,'_blank');
+    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(adminMsg)}`,'_blank');
 
-  alert("Thanks! We'll review your store.");
-  closeStore();
+    alert("Thanks! We'll review your store.");
+    closeStore();
 
-  if(storeNameEl) storeNameEl.value = '';
-  if(storePhoneEl) storePhoneEl.value = '';
-  if(storeZoneEl) storeZoneEl.value = 'A';
-  storeItems.splice(0,storeItems.length);
-  renderStoreItems();
-});
+    if(storeNameEl) storeNameEl.value = '';
+    if(storePhoneEl) storePhoneEl.value = '';
+    if(storeZoneEl) storeZoneEl.value = 'A';
+    storeItems.splice(0,storeItems.length);
+    renderStoreItems();
+  });
 
-// ========================================================================
-// DATA EVENTS
-// ========================================================================
-window.addEventListener('yt-orders-updated', ()=>{
-  if(ordersPanel && !ordersPanel.classList.contains('hidden')) {
-    renderOrders();
-    renderDrivers();
-    renderStats();
-  }
-});
-
-// ========================================================================
-// ADMIN STATS (live from API)  — USING YOUR SNIPPET
-// ========================================================================
-async function fetchAllOrders(){
-  try{
-    const r = await fetch(`${BASE_API}/orders`);
-    const j = await r.json().catch(()=>({}));
-    if(!r.ok || !j.ok) return [];
-    return Array.isArray(j.orders) ? j.orders : [];
-  }catch(e){
-    console.error("fetchAllOrders", e);
-    return [];
-  }
-}
-
-async function fetchDrivers(){
-  try{
-    const r = await fetch(`${BASE_API}/drivers`);
-    const j = await r.json().catch(()=>({}));
-    if(!r.ok || !j.ok) {
-      DRIVERS = [];
-      DRIVERS_BY_ID = {};
-      API_DRIVERS_MAP = {};
-      return;
-    }
-    DRIVERS = Array.isArray(j.drivers) ? j.drivers : [];
-    DRIVERS_BY_ID = Object.create(null);
-    API_DRIVERS_MAP = Object.create(null);
-    for(const d of DRIVERS){
-      if(!d) continue;
-      const key = d._internal_id || d.driver_id;
-      if(key){
-        DRIVERS_BY_ID[key] = d;
-        API_DRIVERS_MAP[key] = d;
-      }
-    }
-  }catch(e){
-    console.error("fetchDrivers", e);
-    DRIVERS = [];
-    DRIVERS_BY_ID = {};
-    API_DRIVERS_MAP = {};
-  }
-}
-
-function recalcAdminPayoutWidgets(){
-  if(!adminDriversCountEl || !adminPayPendingEl || !adminPayApprovedEl) return;
-
-  adminDriversCountEl.textContent = String(DRIVERS.length || 0);
-
-  let pending = 0;
-  let approved = 0;
-  const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
-
-  Object.values(source).forEach(o=>{
-    if(o.driver_pay_status === 'pending'){
-      pending += Number(o.driver_pay_pending || 0);
-    }
-    if(o.driver_pay_status === 'approved'){
-      approved += Number(o.driver_pay_approved || 0);
+  // ========================================================================
+  // DATA EVENTS
+  // ========================================================================
+  window.addEventListener('yt-orders-updated', ()=>{
+    if(ordersPanel && !ordersPanel.classList.contains('hidden')) {
+      renderOrders();
+      renderDrivers();
+      renderStats();
     }
   });
 
-  adminPayPendingEl.textContent = `R${Math.round(pending)}`;
-  adminPayApprovedEl.textContent = `R${Math.round(approved)}`;
-}
-
-async function renderAdminStats(){
-  // Ensure stats container exists for Stats tab
-  if(!statsContainer){
-    statsContainer = document.createElement('div');
-    statsContainer.id = 'statsContainer';
-    statsContainer.className = 'mt-4 hidden';
-    (ordersPanel || document.body).appendChild(statsContainer);
+  // ========================================================================
+  // ADMIN STATS (live from API)
+  // ========================================================================
+  async function fetchAllOrders(){
+    try{
+      const r = await fetch(`${BASE_API}/orders`);
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok || !j.ok) return [];
+      return Array.isArray(j.orders) ? j.orders : [];
+    }catch(e){
+      console.error("fetchAllOrders", e);
+      return [];
+    }
   }
 
-  adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
-  adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
-  adminTopProductsEl  = document.getElementById('adminTopProducts');
-  adminTopAreasEl     = document.getElementById('adminTopAreas');
+  async function fetchDrivers(){
+    try{
+      const r = await fetch(`${BASE_API}/drivers`);
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok || !j.ok) {
+        DRIVERS = [];
+        DRIVERS_BY_ID = {};
+        API_DRIVERS_MAP = {};
+        return;
+      }
+      DRIVERS = Array.isArray(j.drivers) ? j.drivers : [];
+      DRIVERS_BY_ID = Object.create(null);
+      API_DRIVERS_MAP = Object.create(null);
+      for(const d of DRIVERS){
+        if(!d) continue;
+        const key = d._internal_id || d.driver_id;
+        if(key){
+          DRIVERS_BY_ID[key] = d;
+          API_DRIVERS_MAP[key] = d;
+        }
+      }
+    }catch(e){
+      console.error("fetchDrivers", e);
+      DRIVERS = [];
+      DRIVERS_BY_ID = {};
+      API_DRIVERS_MAP = {};
+    }
+  }
 
-  if(!document.getElementById('adminStatsWrap')){
-    const stats = document.createElement('div');
-    stats.id = 'adminStatsWrap';
-    stats.innerHTML = `
-      <div class="grid gap-3 sm:grid-cols-3">
-        <div class="border rounded-xl p-3 flex flex-col">
-          <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-          <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
+  function recalcAdminPayoutWidgets(){
+    if(!adminDriversCountEl || !adminPayPendingEl || !adminPayApprovedEl) return;
+
+    adminDriversCountEl.textContent = String(DRIVERS.length || 0);
+
+    let pending = 0;
+    let approved = 0;
+    const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
+
+    Object.values(source).forEach(o=>{
+      if(o.driver_pay_status === 'pending'){
+        pending += Number(o.driver_pay_pending || 0);
+      }
+      if(o.driver_pay_status === 'approved'){
+        approved += Number(o.driver_pay_approved || 0);
+      }
+    });
+
+    adminPayPendingEl.textContent = `R${Math.round(pending)}`;
+    adminPayApprovedEl.textContent = `R${Math.round(approved)}`;
+  }
+
+  async function renderAdminStats(){
+    // Build wrapper once
+    if(!statsContainer){
+      statsContainer = document.createElement('div');
+      statsContainer.id = 'statsContainer';
+      statsContainer.className = 'mt-4 hidden';
+      (ordersPanel || document.body).appendChild(statsContainer);
+    }
+
+    if(!document.getElementById('adminStatsWrap')){
+      const stats = document.createElement('div');
+      stats.id = 'adminStatsWrap';
+      stats.innerHTML = `
+        <div class="grid gap-3 sm:grid-cols-3">
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+            <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
+          </div>
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Revenue</div>
+            <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
+          </div>
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Drivers</div>
+            <div class="text-sm"><b id="adminDriversCount">0</b></div>
+            <div class="text-xs text-slate-500 mt-2">Payouts</div>
+            <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
+            <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
+          </div>
         </div>
-        <div class="border rounded-xl p-3 flex flex-col">
-          <div class="text-xs text-slate-500 mb-1">Revenue</div>
-          <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
+        <div class="grid gap-3 sm:grid-cols-2 mt-4">
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Products</div>
+            <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
+          </div>
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Areas</div>
+            <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
+          </div>
         </div>
-        <div class="border rounded-xl p-3 flex flex-col">
-          <div class="text-xs text-slate-500 mb-1">Drivers</div>
-          <div class="text-sm"><b id="adminDriversCount">0</b></div>
-          <div class="text-xs text-slate-500 mt-2">Payouts</div>
-          <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
-          <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
-        </div>
-      </div>
-      <div class="grid gap-3 sm:grid-cols-2 mt-4">
-        <div class="border rounded-xl p-3">
-          <div class="text-sm font-medium mb-2">Top Products</div>
-          <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
-        </div>
-        <div class="border rounded-xl p-3">
-          <div class="text-sm font-medium mb-2">Top Areas</div>
-          <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
-        </div>
-      </div>
-    `;
-    statsContainer.appendChild(stats);
+      `;
+      statsContainer.appendChild(stats);
+    }
+
     adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
     adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
     adminTopProductsEl  = document.getElementById('adminTopProducts');
@@ -1867,263 +1864,187 @@ async function renderAdminStats(){
     adminDriversCountEl = document.getElementById('adminDriversCount');
     adminPayPendingEl   = document.getElementById('adminPayPending');
     adminPayApprovedEl  = document.getElementById('adminPayApproved');
-  }
 
-  const orders = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : await fetchAllOrders();
-  const totalOrders = orders.length;
-  const revenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
+    const orders = DEMO_MODE
+      ? Object.values(DEMO_ORDERS_DB)
+      : await fetchAllOrders();
 
-  if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
-  if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${revenue}`;
+    const totalOrders = orders.length;
+    const revenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
 
-  // Top products
-  const prodMap = new Map();
-  orders.forEach(o=>{
-    (o.items||[]).forEach(it=>{
-      if(!it) return;
-      prodMap.set(it.name, (prodMap.get(it.name)||0) + (it.qty||1));
+    if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
+    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${revenue}`;
+
+    // Top products
+    const prodMap = new Map();
+    orders.forEach(o=>{
+      (o.items||[]).forEach(it=>{
+        if(!it) return;
+        prodMap.set(it.name, (prodMap.get(it.name)||0) + (it.qty||1));
+      });
     });
-  });
-  const topProducts = Array.from(prodMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  if(adminTopProductsEl){
-    adminTopProductsEl.innerHTML = topProducts.length
-      ? topProducts.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
-      : '<li class="text-slate-500">No data yet</li>';
-  }
-
-  // Top areas
-  const areaMap = new Map();
-  orders.forEach(o=>{
-    const k = o.meta?.collection_name || '—';
-    areaMap.set(k, (areaMap.get(k)||0)+1);
-  });
-  const topAreas = Array.from(areaMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  if(adminTopAreasEl){
-    adminTopAreasEl.innerHTML = topAreas.length
-      ? topAreas.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
-      : '<li class="text-slate-500">No data yet</li>`;
-  }
-
-  if(!DEMO_MODE){
-    await fetchDrivers();
-  }
-  recalcAdminPayoutWidgets();
-}
-
-// Wrapper so any existing calls still work
-function renderStats(){
-  renderAdminStats();
-}
-
-// ========================================================================
-// ADMIN TABS
-// ========================================================================
-function ensureAdminTabs(){
-  let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
-
-  function makeTabBtn(label, tabKey){
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'yt-o-tab px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 text-xs';
-    btn.dataset.oTab = tabKey;
-    btn.setAttribute('role','tab');
-    btn.setAttribute('aria-selected','false');
-    btn.textContent = label;
-    btn.addEventListener('click', ()=> setActiveAdminTab(tabKey));
-    return btn;
-  }
-
-  const wanted = [
-    ['Pending','pending'],
-    ['Assigned','assigned'],
-    ['In Transit','in_transit'],
-    ['Delivered','delivered'],
-    ['Drivers','drivers'],
-    ['Stats','stats']
-  ];
-
-  const host = ordersTabsContainer || ordersList?.parentElement || ordersPanel || document.body;
-  const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
-
-  wanted.forEach(([label,key])=>{
-    if(!haveKeys.has(key)){
-      host.appendChild(makeTabBtn(label, key));
+    const topProducts = Array.from(prodMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    if(adminTopProductsEl){
+      adminTopProductsEl.innerHTML = topProducts.length
+        ? topProducts.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
+        : '<li class="text-slate-500">No data yet</li>';
     }
-  });
 
-  tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
-  tabButtons.forEach(b=>{
-    if(!b.dataset.wired){
-      b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
-      b.dataset.wired = '1';
-    }
-  });
-}
-
-function setActiveAdminTab(tabKey){
-  ordersTab = tabKey;
-
-  document.querySelectorAll('.yt-o-tab').forEach(x=>{
-    x.classList.remove('bg-emerald-600','text-white');
-    x.setAttribute('aria-selected','false');
-    if(x.dataset.oTab === tabKey){
-      x.classList.add('bg-emerald-600','text-white');
-      x.setAttribute('aria-selected','true');
-    }
-  });
-
-  const showDrivers = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
-  const showStats = (tabKey === 'stats');
-
-  const ordersWrapper = ordersList?.parentElement;
-  const driversWrapper = driversList?.parentElement;
-
-  if (ordersWrapper) ordersWrapper.classList.toggle('hidden', showDrivers || showStats);
-  if (driversWrapper) driversWrapper.classList.toggle('hidden', !showDrivers);
-  if (statsContainer) statsContainer.classList.toggle('hidden', !showStats);
-
-  if(showDrivers){
-    renderDrivers();
-  } else if(showStats){
-    renderAdminStats();
-  } else {
-    renderOrders();
-  }
-}
-
-function hardRefresh(){
-  refreshAllData();
-  setActiveAdminTab(ordersTab);
-}
-ordersRefresh?.addEventListener('click', hardRefresh);
-driversRefresh?.addEventListener('click', hardRefresh);
-
-// ========================================================================
-// ORDER / DRIVER ACTIONS
-// ========================================================================
-let rrIdx = 0;
-function pickDriverId(){
-  const ids = DEMO_MODE ? Object.keys(DEMO_DRIVERS_DB) : Object.keys(API_DRIVERS_MAP);
-  if(ids.length===0) return null;
-  const id = ids[rrIdx % ids.length];
-  rrIdx++;
-  return id;
-}
-
-function mutateOrder(internalId, mut){
-  if(DEMO_MODE){
-    const o = DEMO_ORDERS_DB[internalId];
-    if(!o) return null;
-    mut(o);
-    saveOrdersToLS();
-    hydrateState();
-    window.dispatchEvent(new Event('yt-orders-updated'));
-    return o;
-  }
-  return null;
-}
-
-function calcDriverPayout(order){
-  const fee = Number(order?.delivery_fee ?? 0);
-  return clamp(fee, 25, 45);
-}
-
-async function assignOneOrder(internalId){
-  if(!internalId){ alert("Missing order id."); return; }
-
-  if(DEMO_MODE){
-    mutateOrder(internalId, (o)=>{
-      if(!o.driver_id){ o.driver_id = pickDriverId(); }
-      const pay = calcDriverPayout(o);
-      o.driver_pay_status = 'pending';
-      o.driver_pay_pending = pay;
-      o.driver_pay_approved = 0;
-      if(o.status === 'pending') o.status = 'assigned';
+    // Top areas
+    const areaMap = new Map();
+    orders.forEach(o=>{
+      const k = (o.meta && o.meta.collection_name) || '—';
+      areaMap.set(k, (areaMap.get(k)||0)+1);
     });
-    renderOrders(); renderDrivers(); renderStats();
-    alert(`[DEMO] Assigned ${internalId}.`);
-    return;
+    const topAreas = Array.from(areaMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    if(adminTopAreasEl){
+      adminTopAreasEl.innerHTML = topAreas.length
+        ? topAreas.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
+        : '<li class="text-slate-500">No data yet</li>`;
+    }
+
+    if(!DEMO_MODE){
+      await fetchDrivers();
+    }
+    recalcAdminPayoutWidgets();
   }
 
-  try{
-    const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"}
-    });
-    const data = await res.json().catch(()=>({}));
+  // Wrapper so existing calls still work
+  function renderStats(){
+    return renderAdminStats();
+  }
 
-    if(res.ok && data && data.ok){
-      alert(`Assigned: ${internalId} -> ${data.driver_id || 'driver?'}`);
-    } else if (res.status === 409 && data && data.error === "no_driver_available") {
-      alert(`No driver available for ${internalId}`);
+  // ========================================================================
+  // ADMIN TABS
+  // ========================================================================
+  function ensureAdminTabs(){
+    let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
+
+    function makeTabBtn(label, tabKey){
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'yt-o-tab px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 text-xs';
+      btn.dataset.oTab = tabKey;
+      btn.setAttribute('role','tab');
+      btn.setAttribute('aria-selected','false');
+      btn.textContent = label;
+      btn.addEventListener('click', ()=> setActiveAdminTab(tabKey));
+      return btn;
+    }
+
+    const wanted = [
+      ['Pending','pending'],
+      ['Assigned','assigned'],
+      ['In Transit','in_transit'],
+      ['Delivered','delivered'],
+      ['Drivers','drivers'],
+      ['Stats','stats']
+    ];
+
+    const host = ordersTabsContainer || ordersList?.parentElement || ordersPanel || document.body;
+    const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
+
+    wanted.forEach(([label,key])=>{
+      if(!haveKeys.has(key)){
+        host.appendChild(makeTabBtn(label, key));
+      }
+    });
+
+    tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
+    tabButtons.forEach(b=>{
+      if(!b.dataset.wired){
+        b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
+        b.dataset.wired = '1';
+      }
+    });
+  }
+
+  function setActiveAdminTab(tabKey){
+    ordersTab = tabKey;
+
+    document.querySelectorAll('.yt-o-tab').forEach(x=>{
+      x.classList.remove('bg-emerald-600','text-white');
+      x.setAttribute('aria-selected','false');
+      if(x.dataset.oTab === tabKey){
+        x.classList.add('bg-emerald-600','text-white');
+        x.setAttribute('aria-selected','true');
+      }
+    });
+
+    const showDrivers = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
+    const showStats = (tabKey === 'stats');
+
+    const ordersWrapper = ordersList?.parentElement;
+    const driversWrapper = driversList?.parentElement;
+
+    if (ordersWrapper) ordersWrapper.classList.toggle('hidden', showDrivers || showStats);
+    if (driversWrapper) driversWrapper.classList.toggle('hidden', !showDrivers);
+    if (statsContainer) statsContainer.classList.toggle('hidden', !showStats);
+
+    if(showDrivers){
+      renderDrivers();
+    } else if(showStats){
+      renderAdminStats();
     } else {
-      alert(`Failed to assign ${internalId} (${res.status})`);
+      renderOrders();
     }
-  }catch(err){
-    console.error("assignOneOrder err",err);
-    alert(`Network error assigning ${internalId}`);
-  }
-  refreshAllData();
-}
-
-async function markDelivered(internalId){
-  if(!internalId){ alert("Missing order id."); return; }
-
-  if(DEMO_MODE){
-    mutateOrder(internalId, (o)=>{
-      const pay = calcDriverPayout(o);
-      o.status = 'delivered';
-      o.driver_pay_status = 'approved';
-      o.driver_pay_approved = pay;
-      o.driver_pay_pending = 0;
-    });
-    renderOrders(); renderDrivers(); renderStats();
-    alert(`[DEMO] Delivered ${internalId}.`);
-    return;
   }
 
-  try{
-    const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({status:"delivered"})
-    });
-    const data = await res.json().catch(()=>({}));
-    if(res.ok && data && data.ok){
-      alert(`Marked delivered: ${internalId}`);
-    } else {
-      alert(`Failed to mark delivered (${res.status})`);
+  function hardRefresh(){
+    refreshAllData();
+    setActiveAdminTab(ordersTab);
+  }
+  ordersRefresh?.addEventListener('click', hardRefresh);
+  driversRefresh?.addEventListener('click', hardRefresh);
+
+  // ========================================================================
+  // ORDER / DRIVER ACTIONS
+  // ========================================================================
+  let rrIdx = 0;
+  function pickDriverId(){
+    const ids = DEMO_MODE ? Object.keys(DEMO_DRIVERS_DB) : Object.keys(API_DRIVERS_MAP);
+    if(ids.length===0) return null;
+    const id = ids[rrIdx % ids.length];
+    rrIdx++;
+    return id;
+  }
+
+  function mutateOrder(internalId, mut){
+    if(DEMO_MODE){
+      const o = DEMO_ORDERS_DB[internalId];
+      if(!o) return null;
+      mut(o);
+      saveOrdersToLS();
+      hydrateState();
+      window.dispatchEvent(new Event('yt-orders-updated'));
+      return o;
     }
-  }catch(err){
-    console.error("markDelivered err",err);
-    alert(`Network error marking delivered ${internalId}`);
+    return null;
   }
-  refreshAllData();
-}
 
-async function autoAssignForAll(){
-  const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
-  const ids = Object.values(source)
-    .filter(o => o.status === 'pending')
-    .map(o => o._internal_id || o.internal_id);
+  function calcDriverPayout(order){
+    const fee = Number(order?.delivery_fee ?? 0);
+    return clamp(fee, 25, 45);
+  }
 
-  if (ids.length === 0){ alert("No pending orders to assign."); return; }
+  async function assignOneOrder(internalId){
+    if(!internalId){ alert("Missing order id."); return; }
 
-  const results = [];
-  for (const internalId of ids){
-    if (DEMO_MODE){
+    if(DEMO_MODE){
       mutateOrder(internalId, (o)=>{
         if(!o.driver_id){ o.driver_id = pickDriverId(); }
         const pay = calcDriverPayout(o);
         o.driver_pay_status = 'pending';
         o.driver_pay_pending = pay;
-        o.status = 'assigned';
-        results.push(`✅ (demo) ${internalId} -> ${o.driver_id} (R${pay})`);
+        o.driver_pay_approved = 0;
+        if(o.status === 'pending') o.status = 'assigned';
       });
-      continue;
+      renderOrders(); renderDrivers(); renderStats();
+      alert(`[DEMO] Assigned ${internalId}.`);
+      return;
     }
 
-    try {
+    try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
         method: "POST",
         headers: {"Content-Type":"application/json"}
@@ -2131,111 +2052,189 @@ async function autoAssignForAll(){
       const data = await res.json().catch(()=>({}));
 
       if(res.ok && data && data.ok){
-        const driverId = data.driver_id || "driver?";
-        results.push(`✅ ${internalId} → ${driverId}`);
+        alert(`Assigned: ${internalId} -> ${data.driver_id || 'driver?'}`);
       } else if (res.status === 409 && data && data.error === "no_driver_available") {
-        results.push(`⚠️ ${internalId}: no driver`);
+        alert(`No driver available for ${internalId}`);
       } else {
-        results.push(`❌ ${internalId}: failed (${res.status})`);
+        alert(`Failed to assign ${internalId} (${res.status})`);
       }
-    } catch (err){
-      console.error("autoAssignForAll error", err);
-      results.push(`❌ ${internalId}: network error`);
+    }catch(err){
+      console.error("assignOneOrder err",err);
+      alert(`Network error assigning ${internalId}`);
     }
+    refreshAllData();
   }
-  alert(results.join("\n"));
-  refreshAllData();
-}
-ordersAssign?.addEventListener('click', autoAssignForAll);
 
-// ========================================================================
-// ORDER LIST RENDERING
-// ========================================================================
-async function renderOrders(){
-  if(!ordersList) return;
+  async function markDelivered(internalId){
+    if(!internalId){ alert("Missing order id."); return; }
 
-  // by driver tab
-  if((ordersTab||'').startsWith('by_driver:')){
-    const did = ordersTab.split(':',2)[1];
-    const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
-    const data = src.filter(o => {
-      const assigned = o.assigned_driver_id || o.driver_id;
-      return assigned === did;
-    });
+    if(DEMO_MODE){
+      mutateOrder(internalId, (o)=>{
+        const pay = calcDriverPayout(o);
+        o.status = 'delivered';
+        o.driver_pay_status = 'approved';
+        o.driver_pay_approved = pay;
+        o.driver_pay_pending = 0;
+      });
+      renderOrders(); renderDrivers(); renderStats();
+      alert(`[DEMO] Delivered ${internalId}.`);
+      return;
+    }
+
+    try{
+      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/status`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({status:"delivered"})
+      });
+      const data = await res.json().catch(()=>({}));
+      if(res.ok && data && data.ok){
+        alert(`Marked delivered: ${internalId}`);
+      } else {
+        alert(`Failed to mark delivered (${res.status})`);
+      }
+    }catch(err){
+      console.error("markDelivered err",err);
+      alert(`Network error marking delivered ${internalId}`);
+    }
+    refreshAllData();
+  }
+
+  async function autoAssignForAll(){
+    const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
+    const ids = Object.values(source)
+      .filter(o => o.status === 'pending')
+      .map(o => o._internal_id || o.internal_id);
+
+    if (ids.length === 0){ alert("No pending orders to assign."); return; }
+
+    const results = [];
+    for (const internalId of ids){
+      if (DEMO_MODE){
+        mutateOrder(internalId, (o)=>{
+          if(!o.driver_id){ o.driver_id = pickDriverId(); }
+          const pay = calcDriverPayout(o);
+          o.driver_pay_status = 'pending';
+          o.driver_pay_pending = pay;
+          o.status = 'assigned';
+          results.push(`✅ (demo) ${internalId} -> ${o.driver_id} (R${pay})`);
+        });
+        continue;
+      }
+
+      try {
+        const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"}
+        });
+        const data = await res.json().catch(()=>({}));
+
+        if(res.ok && data && data.ok){
+          const driverId = data.driver_id || "driver?";
+          results.push(`✅ ${internalId} → ${driverId}`);
+        } else if (res.status === 409 && data && data.error === "no_driver_available") {
+          results.push(`⚠️ ${internalId}: no driver`);
+        } else {
+          results.push(`❌ ${internalId}: failed (${res.status})`);
+        }
+      } catch (err){
+        console.error("autoAssignForAll error", err);
+        results.push(`❌ ${internalId}: network error`);
+      }
+    }
+    alert(results.join("\n"));
+    refreshAllData();
+  }
+  ordersAssign?.addEventListener('click', autoAssignForAll);
+
+  // ========================================================================
+  // ORDER LIST RENDERING
+  // ========================================================================
+  async function renderOrders(){
+    if(!ordersList) return;
+
+    // by driver tab
+    if((ordersTab||'').startsWith('by_driver:')){
+      const did = ordersTab.split(':',2)[1];
+      const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
+      const data = src.filter(o => {
+        const assigned = o.assigned_driver_id || o.driver_id;
+        return assigned === did;
+      });
+
+      currentOrdersByTab[ordersTab] = data;
+
+      ordersList.innerHTML = data.length
+        ? ''
+        : `<div class="text-sm text-slate-500 p-4">No orders for that driver.</div>`;
+
+      data.forEach(o => ordersList.appendChild(buildOrderRow(o)));
+      wireOrderRowButtons(ordersList);
+      return;
+    }
+
+    // status tabs
+    const data = DEMO_MODE
+      ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status===ordersTab)
+      : Object.values(ALL_ORDERS_MAP).filter(o=>o.status===ordersTab);
 
     currentOrdersByTab[ordersTab] = data;
 
     ordersList.innerHTML = data.length
       ? ''
-      : `<div class="text-sm text-slate-500 p-4">No orders for that driver.</div>`;
+      : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
 
     data.forEach(o => ordersList.appendChild(buildOrderRow(o)));
     wireOrderRowButtons(ordersList);
-    return;
   }
 
-  // status tabs
-  const data = DEMO_MODE
-    ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status===ordersTab)
-    : Object.values(ALL_ORDERS_MAP).filter(o=>o.status===ordersTab);
+  function buildOrderRow(o){
+    const itemsText = (o.items || []).map(i=>`${i.name} x${i.qty}`).join(', ');
+    const internalId = o._internal_id || o.internal_id || null;
+    const refDisplay = o.order_public_id || o.order_id || internalId || "REF?";
+    const kmText = (o.meta && Number.isFinite(o.meta.distance_km))
+      ? ` • ${Number(o.meta.distance_km).toFixed(1)} km`
+      : "";
+    const fraudDisplay = (typeof o.fraud_score === "number")
+      ? ` • Fraud: ${Number(o.fraud_score).toFixed(2)}`
+      : "";
 
-  currentOrdersByTab[ordersTab] = data;
+    const driverMaps = DEMO_MODE ? DEMO_DRIVERS_DB : API_DRIVERS_MAP;
+    const driverKey = o.assigned_driver_id || o.driver_id || null;
+    let driverName = '—';
 
-  ordersList.innerHTML = data.length
-    ? ''
-    : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
+    if(driverKey && driverMaps[driverKey]){
+      driverName = driverMaps[driverKey].name || driverMaps[driverKey].driver_id || driverKey;
+    } else if(o.driver_id && driverMaps[o.driver_id]){
+      driverName = driverMaps[o.driver_id].name || o.driver_id;
+    }
 
-  data.forEach(o => ordersList.appendChild(buildOrderRow(o)));
-  wireOrderRowButtons(ordersList);
-}
+    let driverPayText = "Driver pay: R0";
+    let driverPayStatusText = "Pay: –";
+    if(o.driver_pay_status === "pending"){
+      driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
+      driverPayStatusText = "Pay: pending";
+    } else if(o.driver_pay_status === "approved"){
+      driverPayText = `Driver pay: R${o.driver_pay_approved || 0}`;
+      driverPayStatusText = "Pay: approved";
+    }
 
-function buildOrderRow(o){
-  const itemsText = (o.items || []).map(i=>`${i.name} x${i.qty}`).join(', ');
-  const internalId = o._internal_id || o.internal_id || null;
-  const refDisplay = o.order_public_id || o.order_id || internalId || "REF?";
-  const kmText = (o.meta && Number.isFinite(o.meta.distance_km))
-    ? ` • ${Number(o.meta.distance_km).toFixed(1)} km`
-    : "";
-  const fraudDisplay = (typeof o.fraud_score === "number")
-    ? ` • Fraud: ${Number(o.fraud_score).toFixed(2)}`
-    : "";
+    const isDelivered = o.status === "delivered";
+    const canAssign = (o.status === "pending" || o.status === "review_required") && !isDelivered;
+    const canDeliver = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
 
-  const driverMaps = DEMO_MODE ? DEMO_DRIVERS_DB : API_DRIVERS_MAP;
-  const driverKey = o.assigned_driver_id || o.driver_id || null;
-  let driverName = '—';
+    const createdRaw =
+      o.created_at_iso || o.created_at || o.createdAt || (o.meta && o.meta.created_at);
+    const createdText = createdRaw
+      ? new Date(createdRaw).toLocaleString()
+      : '';
 
-  if(driverKey && driverMaps[driverKey]){
-    driverName = driverMaps[driverKey].name || driverMaps[driverKey].driver_id || driverKey;
-  } else if(o.driver_id && driverMaps[o.driver_id]){
-    driverName = driverMaps[o.driver_id].name || o.driver_id;
-  }
+    const row = document.createElement('div');
+    row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
+    row.setAttribute('data-order-id', internalId || '');
+    row.setAttribute('data-order-status', o.status || '');
 
-  let driverPayText = "Driver pay: R0";
-  let driverPayStatusText = "Pay: –";
-  if(o.driver_pay_status === "pending"){
-    driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
-    driverPayStatusText = "Pay: pending";
-  } else if(o.driver_pay_status === "approved"){
-    driverPayText = `Driver pay: R${o.driver_pay_approved || 0}`;
-    driverPayStatusText = "Pay: approved";
-  }
-
-  const isDelivered = o.status === "delivered";
-  const canAssign = (o.status === "pending" || o.status === "review_required") && !isDelivered;
-  const canDeliver = (o.status === "assigned" || o.status === "in_transit") && !isDelivered;
-
-  const createdRaw =
-    o.created_at_iso || o.created_at || o.createdAt || (o.meta && o.meta.created_at);
-  const createdText = createdRaw
-    ? new Date(createdRaw).toLocaleString()
-    : '';
-
-  const row = document.createElement('div');
-  row.className = 'p-3 flex flex-col sm:flex-row sm:items-center gap-3 border-b border-slate-200';
-  row.setAttribute('data-order-id', internalId || '');
-  row.setAttribute('data-order-status', o.status || '');
-
-  row.innerHTML = `
+    row.innerHTML = `
 <div class="flex-1 min-w-0">
   <div class="font-medium flex flex-wrap items-center gap-1">
     <span>Ref ${salesSafe(refDisplay)}</span>
@@ -2275,107 +2274,107 @@ function buildOrderRow(o){
   </button>
 </div>
 `;
-  return row;
-}
-
-function wireOrderRowButtons(scopeEl){
-  scopeEl.querySelectorAll('.btn-assign').forEach(btn=>{
-    btn.addEventListener('click', ()=> assignOneOrder(btn.getAttribute('data-id')));
-  });
-  scopeEl.querySelectorAll('.btn-start').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const id = btn.getAttribute('data-id');
-      if(DEMO_MODE && DEMO_ORDERS_DB[id]){
-        mutateOrder(id, (o)=>{
-          if(o.status === 'assigned') o.status = 'in_transit';
-        });
-        renderOrders();
-        renderDrivers();
-        renderStats();
-      }
-    });
-  });
-  scopeEl.querySelectorAll('.btn-delivered').forEach(btn=>{
-    btn.addEventListener('click', ()=> markDelivered(btn.getAttribute('data-id')));
-  });
-}
-
-// ========================================================================
-// DRIVER METRICS & RENDERING
-// ========================================================================
-function computeDriverDerived(driverKey){
-  const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
-  const mine = Object.values(source).filter(o => {
-    const assigned = o.assigned_driver_id || o.driver_id;
-    return assigned === driverKey;
-  });
-
-  let assigned = 0, in_transit = 0, delivered = 0;
-  let pendingPay = 0, approvedPay = 0;
-  let deliveredRevenue = 0;
-  let totalFee = 0, feeCount = 0;
-  const deliveredRefs = [];
-
-  mine.forEach(o=>{
-    if(o.status === 'assigned')   assigned++;
-    if(o.status === 'in_transit') in_transit++;
-    if(o.status === 'delivered'){
-      delivered++;
-      deliveredRevenue += Number(o.total || 0);
-      deliveredRefs.push(o.order_public_id || o.order_id || o._internal_id || '—');
-    }
-    if(Number.isFinite(o.delivery_fee)){
-      totalFee += Number(o.delivery_fee);
-      feeCount++;
-    }
-    if(o.driver_pay_status === 'pending')
-      pendingPay += Number(o.driver_pay_pending || 0);
-    if(o.driver_pay_status === 'approved')
-      approvedPay += Number(o.driver_pay_approved || 0);
-  });
-
-  const avgFee = feeCount ? Math.round(totalFee / feeCount) : 0;
-  const lastDeliveries = deliveredRefs.slice(-3);
-
-  return {
-    assigned,
-    in_transit,
-    delivered,
-    pendingPay: Math.round(pendingPay),
-    approvedPay: Math.round(approvedPay),
-    deliveredRevenue: Math.round(deliveredRevenue),
-    avgFee,
-    lastDeliveries
-  };
-}
-
-function renderDrivers(){
-  if(!driversList) return;
-
-  const pairs = DEMO_MODE
-    ? Object.entries(DEMO_DRIVERS_DB)
-    : Object.entries(API_DRIVERS_MAP);
-
-  driversList.innerHTML = '';
-  if(pairs.length===0){
-    driversList.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
-    return;
+    return row;
   }
 
-  const wrapper = document.createElement('div');
-  wrapper.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
+  function wireOrderRowButtons(scopeEl){
+    scopeEl.querySelectorAll('.btn-assign').forEach(btn=>{
+      btn.addEventListener('click', ()=> assignOneOrder(btn.getAttribute('data-id')));
+    });
+    scopeEl.querySelectorAll('.btn-start').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const id = btn.getAttribute('data-id');
+        if(DEMO_MODE && DEMO_ORDERS_DB[id]){
+          mutateOrder(id, (o)=>{
+            if(o.status === 'assigned') o.status = 'in_transit';
+          });
+          renderOrders();
+          renderDrivers();
+          renderStats();
+        }
+      });
+    });
+    scopeEl.querySelectorAll('.btn-delivered').forEach(btn=>{
+      btn.addEventListener('click', ()=> markDelivered(btn.getAttribute('data-id')));
+    });
+  }
 
-  for(const [driverKey, dr] of pairs){
-    const stats = computeDriverDerived(driverKey);
-    const labelId = dr.driver_id || driverKey;
-    const area =
-      dr.area || dr.zone || dr.base_area || dr.depot_name || dr.hub_name || 'Area not set';
+  // ========================================================================
+  // DRIVER METRICS & RENDERING
+  // ========================================================================
+  function computeDriverDerived(driverKey){
+    const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
+    const mine = Object.values(source).filter(o => {
+      const assigned = o.assigned_driver_id || o.driver_id;
+      return assigned === driverKey;
+    });
 
-    const card = document.createElement('div');
-    card.className =
-      'bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-col gap-2 text-xs';
+    let assigned = 0, in_transit = 0, delivered = 0;
+    let pendingPay = 0, approvedPay = 0;
+    let deliveredRevenue = 0;
+    let totalFee = 0, feeCount = 0;
+    const deliveredRefs = [];
 
-    card.innerHTML = `
+    mine.forEach(o=>{
+      if(o.status === 'assigned')   assigned++;
+      if(o.status === 'in_transit') in_transit++;
+      if(o.status === 'delivered'){
+        delivered++;
+        deliveredRevenue += Number(o.total || 0);
+        deliveredRefs.push(o.order_public_id || o.order_id || o._internal_id || '—');
+      }
+      if(Number.isFinite(o.delivery_fee)){
+        totalFee += Number(o.delivery_fee);
+        feeCount++;
+      }
+      if(o.driver_pay_status === 'pending')
+        pendingPay += Number(o.driver_pay_pending || 0);
+      if(o.driver_pay_status === 'approved')
+        approvedPay += Number(o.driver_pay_approved || 0);
+    });
+
+    const avgFee = feeCount ? Math.round(totalFee / feeCount) : 0;
+    const lastDeliveries = deliveredRefs.slice(-3);
+
+    return {
+      assigned,
+      in_transit,
+      delivered,
+      pendingPay: Math.round(pendingPay),
+      approvedPay: Math.round(approvedPay),
+      deliveredRevenue: Math.round(deliveredRevenue),
+      avgFee,
+      lastDeliveries
+    };
+  }
+
+  function renderDrivers(){
+    if(!driversList) return;
+
+    const pairs = DEMO_MODE
+      ? Object.entries(DEMO_DRIVERS_DB)
+      : Object.entries(API_DRIVERS_MAP);
+
+    driversList.innerHTML = '';
+    if(pairs.length===0){
+      driversList.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
+      return;
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
+
+    for(const [driverKey, dr] of pairs){
+      const stats = computeDriverDerived(driverKey);
+      const labelId = dr.driver_id || driverKey;
+      const area =
+        dr.area || dr.zone || dr.base_area || dr.depot_name || dr.hub_name || 'Area not set';
+
+      const card = document.createElement('div');
+      card.className =
+        'bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-col gap-2 text-xs';
+
+      card.innerHTML = `
 <div class="flex flex-col gap-1">
   <div class="flex flex-wrap items-baseline gap-2">
     <div class="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
@@ -2445,77 +2444,77 @@ ${stats.lastDeliveries.length
   }
 </div>
 `;
-    wrapper.appendChild(card);
+      wrapper.appendChild(card);
+    }
+
+    driversList.appendChild(wrapper);
+
+    // Approve payouts
+    driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const did = btn.getAttribute('data-id');
+
+        if (DEMO_MODE){
+          let count = 0;
+          Object.values(DEMO_ORDERS_DB).forEach(o=>{
+            const assigned = o.assigned_driver_id || o.driver_id;
+            if(assigned===did && o.driver_pay_status==='pending'){
+              const amount = o.driver_pay_pending || 0;
+              o.driver_pay_status = 'approved';
+              o.driver_pay_approved = amount;
+              o.driver_pay_pending = 0;
+              count++;
+            }
+          });
+          saveOrdersToLS();
+          hydrateState();
+          renderDrivers(); renderOrders(); renderStats();
+          alert(count ? `Approved ${count} payout(s) for driver.` : `No pending payouts.`);
+          return;
+        }
+
+        try{
+          const res = await fetch(`${BASE_API}/drivers/${encodeURIComponent(did)}/approve-all-pay`, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'}
+          });
+          const data = await res.json().catch(()=>({}));
+          if(res.ok && data && data.ok){
+            alert(`Approved payouts for driver.`);
+          } else {
+            alert('Server did not approve payouts.');
+          }
+        }catch(err){
+          console.error('approve payouts err', err);
+          alert('Network/API error approving payouts.');
+        }
+        refreshAllData();
+      });
+    });
+
+    // View orders for driver
+    driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const did = btn.getAttribute('data-id');
+        ordersTab = `by_driver:${did}`;
+        setActiveAdminTab(ordersTab);
+      });
+    });
   }
 
-  driversList.appendChild(wrapper);
+  // ========================================================================
+  // MAP + ANIMATION
+  // ========================================================================
+  (function initMapSafely(){
+    const heroEl = document.getElementById('heroMap');
+    if(!heroEl) return;
 
-  // Approve payouts
-  driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      const did = btn.getAttribute('data-id');
+    let heroMap;
+    const localCars = [];
+    const movers = [];
 
-      if (DEMO_MODE){
-        let count = 0;
-        Object.values(DEMO_ORDERS_DB).forEach(o=>{
-          const assigned = o.assigned_driver_id || o.driver_id;
-          if(assigned===did && o.driver_pay_status==='pending'){
-            const amount = o.driver_pay_pending || 0;
-            o.driver_pay_status = 'approved';
-            o.driver_pay_approved = amount;
-            o.driver_pay_pending = 0;
-            count++;
-          }
-        });
-        saveOrdersToLS();
-        hydrateState();
-        renderDrivers(); renderOrders(); renderStats();
-        alert(count ? `Approved ${count} payout(s) for driver.` : `No pending payouts.`);
-        return;
-      }
-
-      try{
-        const res = await fetch(`${BASE_API}/drivers/${encodeURIComponent(did)}/approve-all-pay`, {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'}
-        });
-        const data = await res.json().catch(()=>({}));
-        if(res.ok && data && data.ok){
-          alert(`Approved payouts for driver.`);
-        } else {
-          alert('Server did not approve payouts.');
-        }
-      }catch(err){
-        console.error('approve payouts err', err);
-        alert('Network/API error approving payouts.');
-      }
-      refreshAllData();
-    });
-  });
-
-  // View orders for driver
-  driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const did = btn.getAttribute('data-id');
-      ordersTab = `by_driver:${did}`;
-      setActiveAdminTab(ordersTab);
-    });
-  });
-}
-
-// ========================================================================
-// MAP + ANIMATION
-// ========================================================================
-(function initMapSafely(){
-  const heroEl = document.getElementById('heroMap');
-  if(!heroEl) return;
-
-  let heroMap;
-  const localCars = [];
-  const movers = [];
-
-  function carIcon(){
-    const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
+    function carIcon(){
+      const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
 <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='${emerald[600]}' opacity='.95'/>
 <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
 <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
@@ -2524,571 +2523,570 @@ ${stats.lastDeliveries.length
 <circle cx='18' cy='20' r='3' fill='#111827'/>
 <circle cx='46' cy='20' r='3' fill='#111827'/>
 </g></svg>`;
-    return L.divIcon({ className:'car-dot', html:svg, iconSize:[28,14], iconAnchor:[14,7] });
-  }
+      return L.divIcon({ className:'car-dot', html:svg, iconSize:[28,14], iconAnchor:[14,7] });
+    }
 
-  const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
+    const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
 <path fill='${emerald[600]}' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
 </svg>`;
-  const pkgIcon = () => L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
+    const pkgIcon = () => L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
 
-  async function osrmRoute(a,b){
-    try{
-      const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
-      const r = await fetch(url);
-      const j = await r.json();
-      const coords = j?.routes?.[0]?.geometry?.coordinates;
-      if(Array.isArray(coords) && coords.length>1){
-        return coords.map(([lng,lat])=>[lat,lng]);
-      }
-    }catch(_){}
-    return null;
-  }
-
-  function buildStraight(a,b){ return [[a.lat,a.lng],[b.lat,b.lng]]; }
-
-  function cumulativeLengths(latlngs){
-    const lens=[0];
-    let acc=0;
-    for(let i=1;i<latlngs.length;i++){
-      const a = {lat:latlngs[i-1][0], lng:latlngs[i-1][1]};
-      const b = {lat:latlngs[i][0], lng:latlngs[i][1]};
-      acc += kmBetween(a,b);
-      lens.push(acc);
-    }
-    return { lensKm:lens, totalKm:acc };
-  }
-
-  function pointAtFraction(latlngs, lensKm, frac){
-    const target = frac*lensKm[lensKm.length-1];
-    let i=1;
-    while(i<lensKm.length && lensKm[i]<target) i++;
-    const a=latlngs[i-1], b=latlngs[i];
-    const segLen = lensKm[i]-lensKm[i-1] || 1e-6;
-    const t = (target - lensKm[i-1]) / segLen;
-    return [
-      a[0] + (b[0]-a[0])*t,
-      a[1] + (b[1]-a[1])*t
-    ];
-  }
-
-  function spawnLocalTraffic(center, count){
-    for(let i=0;i<count;i++){
-      const r = 0.01 + Math.random()*0.02;
-      const ang0 = Math.random()*Math.PI*2;
-      const spd = 0.10 + Math.random()*0.15;
-      const m = L.marker(
-        [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
-        { icon:carIcon() }
-      ).addTo(heroMap);
-      localCars.push({m, cx:center.lat, cy:center.lng, r, ang:ang0, spd});
-    }
-  }
-
-  async function centerAndDraw(){
-    DELIVERY_COORDS = DELIVERY_COORDS || await tryGetCustomerCoords();
-
-    const centerLatLng = [-33.20, 26.55];
-    const centerZoom = 7;
-
-    if(!DELIVERY_COORDS){
-      heroMap.setView(centerLatLng, centerZoom);
-      COLLECTIONS.slice(0,3).forEach(c=>{
-        L.marker([c.lat, c.lng], { icon: pkgIcon(), title: c.name }).addTo(heroMap).bindTooltip(c.name);
-      });
-      spawnLocalTraffic({lat:centerLatLng[0], lng:centerLatLng[1]}, 4);
-      return;
-    }
-
-    let best = null;
-    for(const c of COLLECTIONS){
-      const d = kmBetween({lat:c.lat,lng:c.lng}, DELIVERY_COORDS);
-      if(!best || d < best.d) best = { c, d };
-    }
-    const depot = best.c;
-
-    document.getElementById('coverageBadge')?.classList.add('bg-[rgba(15,23,42,.75)]');
-
-    L.marker([depot.lat,depot.lng], { icon: pkgIcon(), title: depot.name })
-      .addTo(heroMap).bindTooltip(depot.name);
-    L.circleMarker([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], {
-      radius: 7, color: emerald[600], fillColor: emerald[600], fillOpacity: 0.95
-    }).addTo(heroMap).bindTooltip('You');
-
-    let latlngs = await osrmRoute({lat:depot.lat, lng:depot.lng}, DELIVERY_COORDS);
-    if(!latlngs){ latlngs = buildStraight({lat:depot.lat, lng:depot.lng}, DELIVERY_COORDS); }
-
-    L.polyline(latlngs, { weight:3, color:emerald[600], opacity:0.9 }).addTo(heroMap);
-
-    const bounds = L.latLngBounds(latlngs);
-    bounds.extend([depot.lat,depot.lng]);
-    bounds.extend([DELIVERY_COORDS.lat,DELIVERY_COORDS.lng]);
-    heroMap.fitBounds(bounds, { padding:[30,30], maxZoom:14 });
-
-    const { lensKm } = cumulativeLengths(latlngs);
-    for(let i=0;i<3;i++){
-      const m = L.marker(latlngs[0], {icon:carIcon()}).addTo(heroMap);
-      movers.push({ m, latlngs, lensKm, t: Math.random(), speed: 0.05 + Math.random()*0.03, dir: 1 });
-    }
-
-    spawnLocalTraffic(DELIVERY_COORDS, 3);
-
-    const pulse = L.circle([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], {
-      radius: 50,
-      color: emerald[500],
-      weight: 1,
-      opacity: 0.6,
-      fillOpacity: 0
-    }).addTo(heroMap);
-
-    let grow = true;
-    setInterval(()=>{
-      const r = pulse.getRadius();
-      pulse.setRadius(grow ? r+6 : r-6);
-      if(pulse.getRadius()>120) grow=false;
-      if(pulse.getRadius()<40) grow=true;
-    }, 220);
-  }
-
-  (async function(){
-    try{
-      if(typeof L === 'undefined'){
-        throw new Error("Leaflet not loaded");
-      }
-
-      const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
-
-      heroMap = L.map(heroEl, {
-        zoomControl:false,
-        dragging:false,
-        scrollWheelZoom:false,
-        doubleClickZoom:false,
-        boxZoom:false,
-        touchZoom:false
-      }).setView([-33.20, 26.55], 7);
-
-      L.tileLayer(
-        'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-        { attribution:'', opacity:0.98, noWrap:true, detectRetina:true }
-      ).addTo(heroMap);
-
-      heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
-
-      if(COLLECTIONS.length >= 2){
-        const bgPairs = [];
-        for(let i=0;i<COLLECTIONS.length;i++){
-          const a = COLLECTIONS[i];
-          const b = COLLECTIONS[(i+1)%COLLECTIONS.length];
-          bgPairs.push([a,b]);
+    async function osrmRoute(a,b){
+      try{
+        const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
+        const r = await fetch(url);
+        const j = await r.json();
+        const coords = j?.routes?.[0]?.geometry?.coordinates;
+        if(Array.isArray(coords) && coords.length>1){
+          return coords.map(([lng,lat])=>[lat,lng]);
         }
-        for(const [A,B] of bgPairs){
-          let latlngs = await osrmRoute({lat:A.lat,lng:A.lng}, {lat:B.lat,lng:B.lng});
-          if(!latlngs){ latlngs = buildStraight({lat:A.lat,lng:A.lng}, {lat:B.lat,lng:B.lng}); }
-          const { lensKm } = cumulativeLengths(latlngs);
-          L.polyline(latlngs, { weight:2, color:emerald[500], opacity:0.25 }).addTo(heroMap);
+      }catch(_){}
+      return null;
+    }
 
-          for(let i=0;i<2;i++){
-            const m = L.marker(latlngs[0], {icon:carIcon()}).addTo(heroMap);
-            movers.push({
-              m,
-              latlngs,
-              lensKm,
-              t: Math.random(),
-              speed: 0.03 + Math.random()*0.02,
-              dir: Math.random()<0.5 ? 1 : -1
-            });
+    function buildStraight(a,b){ return [[a.lat,a.lng],[b.lat,b.lng]]; }
+
+    function cumulativeLengths(latlngs){
+      const lens=[0];
+      let acc=0;
+      for(let i=1;i<latlngs.length;i++){
+        const a = {lat:latlngs[i-1][0], lng:latlngs[i-1][1]};
+        const b = {lat:latlngs[i][0], lng:latlngs[i][1]};
+        acc += kmBetween(a,b);
+        lens.push(acc);
+      }
+      return { lensKm:lens, totalKm:acc };
+    }
+
+    function pointAtFraction(latlngs, lensKm, frac){
+      const target = frac*lensKm[lensKm.length-1];
+      let i=1;
+      while(i<lensKm.length && lensKm[i]<target) i++;
+      const a=latlngs[i-1], b=latlngs[i];
+      const segLen = lensKm[i]-lensKm[i-1] || 1e-6;
+      const t = (target - lensKm[i-1]) / segLen;
+      return [
+        a[0] + (b[0]-a[0])*t,
+        a[1] + (b[1]-a[1])*t
+      ];
+    }
+
+    function spawnLocalTraffic(center, count){
+      for(let i=0;i<count;i++){
+        const r = 0.01 + Math.random()*0.02;
+        const ang0 = Math.random()*Math.PI*2;
+        const spd = 0.10 + Math.random()*0.15;
+        const m = L.marker(
+          [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
+          { icon:carIcon() }
+        ).addTo(heroMap);
+        localCars.push({m, cx:center.lat, cy:center.lng, r, ang:ang0, spd});
+      }
+    }
+
+    async function centerAndDraw(){
+      DELIVERY_COORDS = DELIVERY_COORDS || await tryGetCustomerCoords();
+
+      const centerLatLng = [-33.20, 26.55];
+      const centerZoom = 7;
+
+      if(!DELIVERY_COORDS){
+        heroMap.setView(centerLatLng, centerZoom);
+        COLLECTIONS.slice(0,3).forEach(c=>{
+          L.marker([c.lat, c.lng], { icon: pkgIcon(), title: c.name }).addTo(heroMap).bindTooltip(c.name);
+        });
+        spawnLocalTraffic({lat:centerLatLng[0], lng:centerLatLng[1]}, 4);
+        return;
+      }
+
+      let best = null;
+      for(const c of COLLECTIONS){
+        const d = kmBetween({lat:c.lat,lng:c.lng}, DELIVERY_COORDS);
+        if(!best || d < best.d) best = { c, d };
+      }
+      const depot = best.c;
+
+      document.getElementById('coverageBadge')?.classList.add('bg-[rgba(15,23,42,.75)]');
+
+      L.marker([depot.lat,depot.lng], { icon: pkgIcon(), title: depot.name })
+        .addTo(heroMap).bindTooltip(depot.name);
+      L.circleMarker([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], {
+        radius: 7, color: emerald[600], fillColor: emerald[600], fillOpacity: 0.95
+      }).addTo(heroMap).bindTooltip('You');
+
+      let latlngs = await osrmRoute({lat:depot.lat, lng:depot.lng}, DELIVERY_COORDS);
+      if(!latlngs){ latlngs = buildStraight({lat:depot.lat, lng:depot.lng}, DELIVERY_COORDS); }
+
+      L.polyline(latlngs, { weight:3, color:emerald[600], opacity:0.9 }).addTo(heroMap);
+
+      const bounds = L.latLngBounds(latlngs);
+      bounds.extend([depot.lat,depot.lng]);
+      bounds.extend([DELIVERY_COORDS.lat,DELIVERY_COORDS.lng]);
+      heroMap.fitBounds(bounds, { padding:[30,30], maxZoom:14 });
+
+      const { lensKm } = cumulativeLengths(latlngs);
+      for(let i=0;i<3;i++){
+        const m = L.marker(latlngs[0], {icon:carIcon()}).addTo(heroMap);
+        movers.push({ m, latlngs, lensKm, t: Math.random(), speed: 0.05 + Math.random()*0.03, dir: 1 });
+      }
+
+      spawnLocalTraffic(DELIVERY_COORDS, 3);
+
+      const pulse = L.circle([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], {
+        radius: 50,
+        color: emerald[500],
+        weight: 1,
+        opacity: 0.6,
+        fillOpacity: 0
+      }).addTo(heroMap);
+
+      let grow = true;
+      setInterval(()=>{
+        const r = pulse.getRadius();
+        pulse.setRadius(grow ? r+6 : r-6);
+        if(pulse.getRadius()>120) grow=false;
+        if(pulse.getRadius()<40) grow=true;
+      }, 220);
+    }
+
+    (async function(){
+      try{
+        if(typeof L === 'undefined'){
+          throw new Error("Leaflet not loaded");
+        }
+
+        const southAfricaBounds = L.latLngBounds([[-35.5, 16.0], [-22.0, 33.5]]);
+
+        heroMap = L.map(heroEl, {
+          zoomControl:false,
+          dragging:false,
+          scrollWheelZoom:false,
+          doubleClickZoom:false,
+          boxZoom:false,
+          touchZoom:false
+        }).setView([-33.20, 26.55], 7);
+
+        L.tileLayer(
+          'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+          { attribution:'', opacity:0.98, noWrap:true, detectRetina:true }
+        ).addTo(heroMap);
+
+        heroMap.setMaxBounds(southAfricaBounds.pad(0.05));
+
+        if(COLLECTIONS.length >= 2){
+          const bgPairs = [];
+          for(let i=0;i<COLLECTIONS.length;i++){
+            const a = COLLECTIONS[i];
+            const b = COLLECTIONS[(i+1)%COLLECTIONS.length];
+            bgPairs.push([a,b]);
+          }
+          for(const [A,B] of bgPairs){
+            let latlngs = await osrmRoute({lat:A.lat,lng:A.lng}, {lat:B.lat,lng:B.lng});
+            if(!latlngs){ latlngs = buildStraight({lat:A.lat,lng:A.lng}, {lat:B.lat,lng:B.lng}); }
+            const { lensKm } = cumulativeLengths(latlngs);
+            L.polyline(latlngs, { weight:2, color:emerald[500], opacity:0.25 }).addTo(heroMap);
+
+            for(let i=0;i<2;i++){
+              const m = L.marker(latlngs[0], {icon:carIcon()}).addTo(heroMap);
+              movers.push({
+                m,
+                latlngs,
+                lensKm,
+                t: Math.random(),
+                speed: 0.03 + Math.random()*0.02,
+                dir: Math.random()<0.5 ? 1 : -1
+              });
+            }
           }
         }
-      }
 
-      function animate(){
-        movers.forEach(o=>{
-          o.t += o.speed * o.dir * (1/60);
-          if(o.t > 1) o.t = 0;
-          if(o.t < 0) o.t = 1;
-          const [lat,lng] = pointAtFraction(o.latlngs, o.lensKm, o.t);
-          o.m.setLatLng([lat,lng]);
-        });
-        localCars.forEach(lc=>{
-          lc.ang += lc.spd * 0.0015;
-          const lat = lc.cx + lc.r*Math.sin(lc.ang);
-          const lng = lc.cy + lc.r*Math.cos(lc.ang);
-          lc.m.setLatLng([lat,lng]);
-        });
+        function animate(){
+          movers.forEach(o=>{
+            o.t += o.speed * o.dir * (1/60);
+            if(o.t > 1) o.t = 0;
+            if(o.t < 0) o.t = 1;
+            const [lat,lng] = pointAtFraction(o.latlngs, o.lensKm, o.t);
+            o.m.setLatLng([lat,lng]);
+          });
+          localCars.forEach(lc=>{
+            lc.ang += lc.spd * 0.0015;
+            const lat = lc.cx + lc.r*Math.sin(lc.ang);
+            const lng = lc.cy + lc.r*Math.cos(lc.ang);
+            lc.m.setLatLng([lat,lng]);
+          });
+          requestAnimationFrame(animate);
+        }
         requestAnimationFrame(animate);
-      }
-      requestAnimationFrame(animate);
 
-      await centerAndDraw();
+        await centerAndDraw();
 
-      setTimeout(()=>{ try{ heroMap.invalidateSize(); }catch(_){ } }, 150);
-      window.addEventListener('resize', ()=> {
-        try { heroMap.invalidateSize(); } catch(_){}
-      });
+        setTimeout(()=>{ try{ heroMap.invalidateSize(); }catch(_){ } }, 150);
+        window.addEventListener('resize', ()=> {
+          try { heroMap.invalidateSize(); } catch(_){}
+        });
 
-      // Driver signup via map
-      formSignup?.addEventListener('submit', async e=>{
-        e.preventDefault();
-        const name = document.getElementById('drvName')?.value.trim();
-        const phone = digits(document.getElementById('drvPhone')?.value.trim());
-        const radius = Math.max(1, Number(document.getElementById('drvRadius')?.value || 10));
-        const vehicle = document.getElementById('drvVehicle')?.value.trim() || 'Car';
-        if(!name || !phone){
-          alert("Please enter name and phone.");
-          return;
-        }
+        // Driver signup via map
+        formSignup?.addEventListener('submit', async e=>{
+          e.preventDefault();
+          const name = document.getElementById('drvName')?.value.trim();
+          const phone = digits(document.getElementById('drvPhone')?.value.trim());
+          const radius = Math.max(1, Number(document.getElementById('drvRadius')?.value || 10));
+          const vehicle = document.getElementById('drvVehicle')?.value.trim() || 'Car';
+          if(!name || !phone){
+            alert("Please enter name and phone.");
+            return;
+          }
 
-        const jitter = ()=>{
-          const d = 1500 / 111111;
-          const a = Math.random()*Math.PI*2;
-          const r = Math.random()*d;
-          return {
-            lat: COLLECTION_COORDS.lat + r*Math.cos(a),
-            lng: COLLECTION_COORDS.lng + r*Math.sin(a)
+          const jitter = ()=>{
+            const d = 1500 / 111111;
+            const a = Math.random()*Math.PI*2;
+            const r = Math.random()*d;
+            return {
+              lat: COLLECTION_COORDS.lat + r*Math.cos(a),
+              lng: COLLECTION_COORDS.lng + r*Math.sin(a)
+            };
           };
-        };
-        const start = jitter();
-        L.marker([start.lat,start.lng], {icon:carIcon()}).addTo(heroMap);
+          const start = jitter();
+          L.marker([start.lat,start.lng], {icon:carIcon()}).addTo(heroMap);
 
-        const driver_id = `DRV-${Date.now().toString().slice(-6)}`;
-        if (DEMO_MODE){
-          DEMO_DRIVERS_DB[driver_id] = {
-            driver_id, name, phone, vehicle,
-            stats:{assigned:0,in_transit:0,delivered:0},
-            payout_pending:0, payout_approved:0
-          };
-          saveDriversToLS();
-          renderDrivers();
-          renderStats();
-        } else {
-          try{
-            await fetch(`${BASE_API}/drivers`, {
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body: JSON.stringify({driver_id, name, phone, vehicle, radius_km: radius})
-            });
-          }catch(_){}
-          refreshAllData();
-        }
+          const driver_id = `DRV-${Date.now().toString().slice(-6)}`;
+          if (DEMO_MODE){
+            DEMO_DRIVERS_DB[driver_id] = {
+              driver_id, name, phone, vehicle,
+              stats:{assigned:0,in_transit:0,delivered:0},
+              payout_pending:0, payout_approved:0
+            };
+            saveDriversToLS();
+            renderDrivers();
+            renderStats();
+          } else {
+            try{
+              await fetch(`${BASE_API}/drivers`, {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({driver_id, name, phone, vehicle, radius_km: radius})
+              });
+            }catch(_){}
+            refreshAllData();
+          }
 
-        const text = `New driver sign-up
+          const text = `New driver sign-up
 Name: ${name}
 Phone: ${phone}
 Radius: ${radius}km
 Vehicle: ${vehicle}`;
-        window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
+          window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(text)}`,'_blank');
 
-        closeDriverWindow();
-        alert('Driver submitted.');
-      });
-
-    }catch(err){
-      console.warn("Map disabled:", err);
-    }
-  })();
-})();
-
-// ========================================================================
-// DRIVER LOGIN → DASH
-// ========================================================================
-formLogin?.addEventListener('submit',e=>{
-  e.preventDefault();
-  alert('Logged in (demo). Opening dashboard.');
-  closeDriverWindow();
-  if(driverDashModal){ openDriverDash(); }
-});
-
-// ========================================================================
-// ORDER SUBMISSION
-// ========================================================================
-confirmBtn2?.addEventListener('click', async ()=>{
-  confirmBtn2.disabled = true;
-  try{
-    const summary = await computeTotal();
-    if (!summary.items.length){
-      alert('Please select at least one item.');
-      return;
-    }
-
-    const custName = (custNameEl?.value||'').trim();
-    const custPhone = digits((custPhoneEl?.value||'').trim());
-    const custAddr = (custAddrEl?.value||'').trim();
-    if(!custName || !custPhone || !custAddr){
-      alert('Please fill name, WhatsApp and address.');
-      return;
-    }
-
-    const paymentMethod = selectedPay();
-    const eta = nextETA(Boolean(summary.rush));
-
-    const orderPayload = {
-      customer: {
-        name: custName,
-        phone: custPhone,
-        address: { line1: custAddr, suburb: '—', coords: DELIVERY_COORDS || null }
-      },
-      items: summary.items.map(it => ({
-        sku: null,
-        name: it.name,
-        qty: it.qty,
-        price: it.price
-      })),
-      subtotal: summary.itemsTotal,
-      delivery_fee: summary.fee + summary.rush,
-      total: summary.total,
-      payment: { method: paymentMethod, status: "pending", provider_ref: null },
-      created_by: "web",
-      route: {
-        eta_minutes: null,
-        distance_km: Number(summary.distanceKm.toFixed(2)),
-        eta_text: eta
-      },
-      meta: { rush: !!summary.rush, collection_name: summary.collectionName }
-    };
-
-    if(DEMO_MODE){
-      const refStub = Date.now().toString().slice(-6);
-      const internalId = "demo-" + refStub.toLowerCase();
-      const driverPay = clamp(orderPayload.delivery_fee,25,45);
-      const did = pickDriverId();
-      DEMO_ORDERS_DB[internalId] = {
-        _internal_id: internalId,
-        order_id: ("YI-" + refStub).toUpperCase(),
-        order_public_id: ("DEMO-" + refStub).toUpperCase(),
-        status: "pending",
-        total: orderPayload.total,
-        delivery_fee: orderPayload.delivery_fee,
-        items: orderPayload.items.map(x=>({name:x.name, qty:x.qty})),
-        meta: {
-          collection_name: orderPayload.meta.collection_name,
-          distance_km: orderPayload.route.distance_km,
-          rush: !!summary.rush
-        },
-        fraud_score: 0.00,
-        driver_id: did,
-        driver_pay_status: 'pending',
-        driver_pay_pending: driverPay,
-        driver_pay_approved: 0
-      };
-      saveOrdersToLS();
-      hydrateState();
-      window.dispatchEvent(new Event('yt-orders-updated'));
-
-      latestOrderData = {
-        order_public_id: ("DEMO-" + refStub).toUpperCase(),
-        status: "pending",
-        fraud_score: 0.0,
-        total: summary.total,
-        items: summary.items,
-        eta,
-        payment_method: paymentMethod,
-        wa_message:
-          `Yi Thume, my order is:\n` +
-          `Ref: DEMO-${refStub}\n` +
-          `Deliver to: ${custAddr}\n` +
-          `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
-          `Total: R${summary.total}\n` +
-          `Expected: ${eta}\n` +
-          `Payment: ${paymentMethod}\n` +
-          `Please confirm + send payment link.`
-      };
-    } else {
-      let data = null;
-      try{
-        const res = await fetch(`${BASE_API}/orders`, {
-          method:"POST",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify(orderPayload)
+          closeDriverWindow();
+          alert('Driver submitted.');
         });
-        try { data = await res.json(); } catch(_){ data=null; }
 
-        if (res.status === 409 && data && data.error === "no_driver_available") {
-          alert(data.message || `Sorry, no driver currently available near your area.`);
-          return;
-        }
-        if(!res.ok || !data || data.ok === false){
-          console.error("Order failed", res.status, data);
-          alert("Order failed on server.");
-          return;
-        }
+      }catch(err){
+        console.warn("Map disabled:", err);
+      }
+    })();
+  })();
+
+  // ========================================================================
+  // DRIVER LOGIN → DASH
+  // ========================================================================
+  formLogin?.addEventListener('submit',e=>{
+    e.preventDefault();
+    alert('Logged in (demo). Opening dashboard.');
+    closeDriverWindow();
+    if(driverDashModal){ openDriverDash(); }
+  });
+
+  // ========================================================================
+  // ORDER SUBMISSION
+  // ========================================================================
+  confirmBtn2?.addEventListener('click', async ()=>{
+    confirmBtn2.disabled = true;
+    try{
+      const summary = await computeTotal();
+      if (!summary.items.length){
+        alert('Please select at least one item.');
+        return;
+      }
+
+      const custName = (custNameEl?.value||'').trim();
+      const custPhone = digits((custPhoneEl?.value||'').trim());
+      const custAddr = (custAddrEl?.value||'').trim();
+      if(!custName || !custPhone || !custAddr){
+        alert('Please fill name, WhatsApp and address.');
+        return;
+      }
+
+      const paymentMethod = selectedPay();
+      const eta = nextETA(Boolean(summary.rush));
+
+      const orderPayload = {
+        customer: {
+          name: custName,
+          phone: custPhone,
+          address: { line1: custAddr, suburb: '—', coords: DELIVERY_COORDS || null }
+        },
+        items: summary.items.map(it => ({
+          sku: null,
+          name: it.name,
+          qty: it.qty,
+          price: it.price
+        })),
+        subtotal: summary.itemsTotal,
+        delivery_fee: summary.fee + summary.rush,
+        total: summary.total,
+        payment: { method: paymentMethod, status: "pending", provider_ref: null },
+        created_by: "web",
+        route: {
+          eta_minutes: null,
+          distance_km: Number(summary.distanceKm.toFixed(2)),
+          eta_text: eta
+        },
+        meta: { rush: !!summary.rush, collection_name: summary.collectionName }
+      };
+
+      if(DEMO_MODE){
+        const refStub = Date.now().toString().slice(-6);
+        const internalId = "demo-" + refStub.toLowerCase();
+        const driverPay = clamp(orderPayload.delivery_fee,25,45);
+        const did = pickDriverId();
+        DEMO_ORDERS_DB[internalId] = {
+          _internal_id: internalId,
+          order_id: ("YI-" + refStub).toUpperCase(),
+          order_public_id: ("DEMO-" + refStub).toUpperCase(),
+          status: "pending",
+          total: orderPayload.total,
+          delivery_fee: orderPayload.delivery_fee,
+          items: orderPayload.items.map(x=>({name:x.name, qty:x.qty})),
+          meta: {
+            collection_name: orderPayload.meta.collection_name,
+            distance_km: orderPayload.route.distance_km,
+            rush: !!summary.rush
+          },
+          fraud_score: 0.00,
+          driver_id: did,
+          driver_pay_status: 'pending',
+          driver_pay_pending: driverPay,
+          driver_pay_approved: 0
+        };
+        saveOrdersToLS();
+        hydrateState();
+        window.dispatchEvent(new Event('yt-orders-updated'));
 
         latestOrderData = {
-          order_public_id: data.order_public_id || data.order_id || ("YI-" + Date.now().toString().slice(-6)),
-          status: data.status || "pending",
-          fraud_score: data.fraud_score ?? null,
+          order_public_id: ("DEMO-" + refStub).toUpperCase(),
+          status: "pending",
+          fraud_score: 0.0,
           total: summary.total,
           items: summary.items,
           eta,
           payment_method: paymentMethod,
-          wa_message: data.wa_message || null
+          wa_message:
+            `Yi Thume, my order is:\n` +
+            `Ref: DEMO-${refStub}\n` +
+            `Deliver to: ${custAddr}\n` +
+            `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
+            `Total: R${summary.total}\n` +
+            `Expected: ${eta}\n` +
+            `Payment: ${paymentMethod}\n` +
+            `Please confirm + send payment link.`
         };
+      } else {
+        let data = null;
+        try{
+          const res = await fetch(`${BASE_API}/orders`, {
+            method:"POST",
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify(orderPayload)
+          });
+          try { data = await res.json(); } catch(_){ data=null; }
 
-        await refreshAllData();
-      }catch(err){
-        console.error("Network/Fetch error", err);
-        alert("Network error creating order.");
-        return;
+          if (res.status === 409 && data && data.error === "no_driver_available") {
+            alert(data.message || `Sorry, no driver currently available near your area.`);
+            return;
+          }
+          if(!res.ok || !data || data.ok === false){
+            console.error("Order failed", res.status, data);
+            alert("Order failed on server.");
+            return;
+          }
+
+          latestOrderData = {
+            order_public_id: data.order_public_id || data.order_id || ("YI-" + Date.now().toString().slice(-6)),
+            status: data.status || "pending",
+            fraud_score: data.fraud_score ?? null,
+            total: summary.total,
+            items: summary.items,
+            eta,
+            payment_method: paymentMethod,
+            wa_message: data.wa_message || null
+          };
+
+          await refreshAllData();
+        }catch(err){
+          console.error("Network/Fetch error", err);
+          alert("Network error creating order.");
+          return;
+        }
       }
-    }
 
-    closeOrder();
-    openBot();
+      closeOrder();
+      openBot();
 
-    appendBot(
-      `<b>YiThume</b> 🤖<br/>
+      appendBot(
+        `<b>YiThume</b> 🤖<br/>
 Thanks for your order!<br/>
 <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
 <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
 <b>Total:</b> R${latestOrderData.total}<br/>
 <b>Estimated window:</b> ${eta}`
-    );
+      );
 
-    if(latestOrderData.status === "review_required"){
-      appendBot(`<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`);
-    } else {
-      appendBot(`Choose your payment method below and tap <b>Pay</b>.`);
+      if(latestOrderData.status === "review_required"){
+        appendBot(`<b>Note:</b> We're quickly reviewing this order for safety. We'll confirm shortly.`);
+      } else {
+        appendBot(`Choose your payment method below and tap <b>Pay</b>.`);
+      }
+
+      if(botPayChoice) botPayChoice.value = latestOrderData.payment_method;
+
+    } finally {
+      confirmBtn2.disabled = false;
+      renderStats();
     }
+  });
 
-    if(botPayChoice) botPayChoice.value = latestOrderData.payment_method;
+  // ========================================================================
+  // BOT PAY & WHATSAPP
+  // ========================================================================
+  botNext?.addEventListener('click', ()=>{
+    if(!latestOrderData) return;
 
-  } finally {
-    confirmBtn2.disabled = false;
-    renderStats();
-  }
-});
+    const pay = botPayChoice?.value || selectedPay();
+    latestOrderData.payment_method = pay;
 
-// ========================================================================
-// BOT PAY & WHATSAPP
-// ========================================================================
-botNext?.addEventListener('click', ()=>{
-  if(!latestOrderData) return;
-
-  const pay = botPayChoice?.value || selectedPay();
-  latestOrderData.payment_method = pay;
-
-  if(botStage === 0){
-    if(pay === 'eft'){
-      appendBot(
-        `<b>Instant EFT (Ozow)</b><br/>
+    if(botStage === 0){
+      if(pay === 'eft'){
+        appendBot(
+          `<b>Instant EFT (Ozow)</b><br/>
 We'll WhatsApp you a secure Ozow link.<br/>
 Use ref <code>${latestOrderData.order_public_id}</code>.`
-      );
-    } else if(pay === 'card'){
-      appendBot(
-        `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
+        );
+      } else if(pay === 'card'){
+        appendBot(
+          `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
 Use ref <code>${latestOrderData.order_public_id}</code>.`
-      );
-    } else {
-      const deposit = Math.ceil(latestOrderData.total*0.5);
-      appendBot(
-        `<b>50% deposit + COD</b><br/>
+        );
+      } else {
+        const deposit = Math.ceil(latestOrderData.total*0.5);
+        appendBot(
+          `<b>50% deposit + COD</b><br/>
 Pay deposit now: <b>R${deposit}</b>.<br/>
 Balance due at delivery.<br/>
 Ref <code>${latestOrderData.order_public_id}</code>.`
-      );
+        );
+      }
+
+      appendBot(`This next screen is a demo. No money is taken here.`);
+      openPayModal(latestOrderData.order_public_id, latestOrderData.total);
+      botStage = 1;
+      return;
     }
 
-    appendBot(`This next screen is a demo. No money is taken here.`);
-    openPayModal(latestOrderData.order_public_id, latestOrderData.total);
-    botStage = 1;
-    return;
+    appendBot(`Click "Contact support" so we can confirm the order and send the real secure payment link.`);
+  });
+
+  botSendWA?.addEventListener('click', () => {
+    if(!latestOrderData){
+      alert("No order data.");
+      return;
+    }
+
+    const msg = latestOrderData.wa_message
+      ? latestOrderData.wa_message
+      : [
+          "Yi Thume, my order is:",
+          `Ref: ${latestOrderData.order_public_id}`,
+          `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
+          `Total: R${latestOrderData.total}`,
+          `Expected: ${latestOrderData.eta}`,
+          `Payment: ${latestOrderData.payment_method}`,
+          "Please confirm + send payment link."
+        ].join("\n");
+
+    const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}`;
+    window.open(wa,'_blank');
+
+    closeBot();
+    alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
+  });
+
+  botNewOrder?.addEventListener('click', ()=>{
+    closeBot();
+    openOrder();
+  });
+
+  // ========================================================================
+  // REFRESH ALL DATA
+  // ========================================================================
+  async function refreshAllData(){
+    if(DEMO_MODE){
+      hydrateState();
+      const map = {};
+      Object.values(DEMO_ORDERS_DB).forEach(o=>{
+        const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id;
+        if(key) map[key] = o;
+      });
+      ALL_ORDERS_MAP = map;
+      renderOrders();
+      renderDrivers();
+      renderStats();
+      return;
+    }
+
+    const orders = await fetchAllOrders();
+    await fetchDrivers();
+
+    const map = {};
+    orders.forEach(o=>{
+      const key =
+        o._internal_id || o.internal_id ||
+        o.order_public_id || o.order_id ||
+        Math.random().toString(36).slice(2);
+      map[key] = o;
+    });
+    ALL_ORDERS_MAP = map;
+
+    renderOrders();
+    renderDrivers();
+    renderStats();
   }
 
-  appendBot(`Click "Contact support" so we can confirm the order and send the real secure payment link.`);
-});
-
-botSendWA?.addEventListener('click', () => {
-  if(!latestOrderData){
-    alert("No order data.");
-    return;
-  }
-
-  const msg = latestOrderData.wa_message
-    ? latestOrderData.wa_message
-    : [
-        "Yi Thume, my order is:",
-        `Ref: ${latestOrderData.order_public_id}`,
-        `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
-        `Total: R${latestOrderData.total}`,
-        `Expected: ${latestOrderData.eta}`,
-        `Payment: ${latestOrderData.payment_method}`,
-        "Please confirm + send payment link."
-      ].join("\n");
-
-  const wa = `https://wa.me/${WHATSAPP_NUMBER}?text=${waText(msg)}`;
-  window.open(wa,'_blank');
-
-  closeBot();
-  alert(`Order sent to WhatsApp. Ref: ${latestOrderData.order_public_id}`);
-});
-
-botNewOrder?.addEventListener('click', ()=>{
-  closeBot();
-  openOrder();
-});
-
-// ========================================================================
-// REFRESH ALL DATA
-// ========================================================================
-async function refreshAllData(){
-  if(DEMO_MODE){
-    hydrateState();
+  // ========================================================================
+  // FINAL INIT
+  // ========================================================================
+  renderStoreItems();
+  if (DEMO_MODE) {
     const map = {};
     Object.values(DEMO_ORDERS_DB).forEach(o=>{
       const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id;
       if(key) map[key] = o;
     });
     ALL_ORDERS_MAP = map;
+    DRIVERS = Object.values(DEMO_DRIVERS_DB);
+    API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
+    ensureAdminTabs();
+    setActiveAdminTab(ordersTab);
     renderOrders();
     renderDrivers();
     renderStats();
-    return;
+  } else {
+    refreshAllData().then(()=>{
+      ensureAdminTabs();
+      setActiveAdminTab(ordersTab);
+    });
   }
-
-  const orders = await fetchAllOrders();
-  await fetchDrivers();
-
-  const map = {};
-  orders.forEach(o=>{
-    const key =
-      o._internal_id || o.internal_id ||
-      o.order_public_id || o.order_id ||
-      Math.random().toString(36).slice(2);
-    map[key] = o;
-  });
-  ALL_ORDERS_MAP = map;
-
-  renderOrders();
-  renderDrivers();
-  renderStats();
-}
-
-// ========================================================================
-// FINAL INIT
-// ========================================================================
-renderStoreItems();
-if (DEMO_MODE) {
-  const map = {};
-  Object.values(DEMO_ORDERS_DB).forEach(o=>{
-    const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id;
-    if(key) map[key] = o;
-  });
-  ALL_ORDERS_MAP = map;
-  DRIVERS = Object.values(DEMO_DRIVERS_DB);
-  API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
-  ensureAdminTabs();
-  setActiveAdminTab(ordersTab);
-  renderOrders();
-  renderDrivers();
-  renderStats();
-} else {
-  refreshAllData().then(()=>{
-    ensureAdminTabs();
-    setActiveAdminTab(ordersTab);
-  });
-  });
-}
-  
+});
 </script>
 
 
