@@ -1817,6 +1817,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   async function renderAdminStats(){
     if(!ordersPanel) return;
 
+    // Ensure container
     if(!statsContainer){
       statsContainer = document.createElement('div');
       statsContainer.id = 'statsContainer';
@@ -1824,6 +1825,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ordersPanel.appendChild(statsContainer);
     }
 
+    // Ensure layout
     if(!document.getElementById('adminStatsWrap')){
       statsContainer.innerHTML = `
         <div id="adminStatsWrap" class="space-y-4">
@@ -1863,6 +1865,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       `;
     }
 
+    // Refs
     adminStatsOrdersEl   = document.getElementById('adminStatsOrders');
     adminStatsRevenueEl  = document.getElementById('adminStatsRevenue');
     adminTopProductsEl   = document.getElementById('adminTopProducts');
@@ -1871,6 +1874,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     adminPayPendingEl    = document.getElementById('adminPayPending');
     adminPayApprovedEl   = document.getElementById('adminPayApproved');
 
+    // Orders
     let orders;
     if(DEMO_MODE){
       orders = Object.values(DEMO_ORDERS_DB);
@@ -1886,6 +1890,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
     }
 
+    // Drivers
     await fetchDrivers();
 
     const totalOrders = orders.length;
@@ -1894,6 +1899,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
     if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${Math.round(revenue)}`;
 
+    // Top products
     const prodMap = new Map();
     orders.forEach(o=>{
       (o.items||[]).forEach(it=>{
@@ -1910,6 +1916,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         : '<li class="text-slate-500">No data yet</li>';
     }
 
+    // Top areas
     const areaMap = new Map();
     orders.forEach(o=>{
       const k = o.meta?.collection_name || '—';
@@ -1925,6 +1932,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     }
 
     recalcAdminPayoutWidgets();
+
+    // Make sure visible when used
+    if(statsContainer){
+      statsContainer.classList.remove('hidden');
+    }
   }
 
   function renderStats(){
@@ -1979,6 +1991,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   function setActiveAdminTab(tabKey){
     ordersTab = tabKey;
 
+    // Tab styling
     document.querySelectorAll('.yt-o-tab').forEach(x=>{
       x.classList.remove('bg-emerald-600','text-white');
       x.setAttribute('aria-selected','false');
@@ -1996,13 +2009,16 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     if (ordersWrapper)  ordersWrapper.classList.toggle('hidden', showDrivers || showStats);
     if (driversWrapper) driversWrapper.classList.toggle('hidden', !showDrivers);
-    if (statsContainer) statsContainer.classList.toggle('hidden', !showStats);
 
-    if(showDrivers){
-      renderDrivers();
-    } else if(showStats){
+    if (showStats) {
       renderAdminStats();
-    } else {
+    } else if (statsContainer) {
+      statsContainer.classList.add('hidden');
+    }
+
+    if (showDrivers) {
+      renderDrivers();
+    } else if (!showStats) {
       renderOrders();
     }
   }
@@ -2178,6 +2194,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       syncAllOrdersFromDemo();
     }
 
+    // by_driver tab
     if((ordersTab||'').startsWith('by_driver:')){
       const did = ordersTab.split(':',2)[1];
       const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : ALL_ORDERS;
@@ -2195,6 +2212,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
+    // status tabs
     const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : ALL_ORDERS;
     const data = src.filter(o => o.status === ordersTab);
 
@@ -2475,6 +2493,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     driversList.appendChild(wrapper);
 
+    // Approve payouts
     driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
       btn.addEventListener('click', async ()=>{
         const did = btn.getAttribute('data-id');
@@ -2518,6 +2537,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       });
     });
 
+    // View orders by driver
     driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const did = btn.getAttribute('data-id');
@@ -3100,6 +3120,7 @@ Ref <code>${latestOrderData.order_public_id}</code>.`
   }
 });
 </script>
+
 
 
 </body>
