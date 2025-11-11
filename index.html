@@ -1027,7 +1027,7 @@ let API_DRIVERS_MAP = {}; // driver_id/_internal_id -> driver
 let DRIVERS = []; // for stats & drivers cards
 let DRIVERS_BY_ID = {};
 
-let REMOTE_STATS = null;
+let REMOTE_STATS = null; // reserved
 
 const driverTotals = { pending: 0, approved: 0 };
 
@@ -1117,7 +1117,7 @@ const driversList = document.getElementById('driversList');
 const driversRefresh = document.getElementById('driversRefresh');
 
 const ordersTabsContainer = document.getElementById('ordersTabs');
-let statsContainer = document.getElementById('statsContainer'); // created if missing
+let statsContainer = document.getElementById('statsContainer'); // (created if missing)
 
 const storeModal = document.getElementById('storeModal');
 const openStoreFooter = document.getElementById('openStoreModalFooter');
@@ -1748,7 +1748,7 @@ window.addEventListener('yt-orders-updated', ()=>{
 });
 
 // ========================================================================
-// ADMIN STATS (live from API) — YOUR SNIPPET (slightly extended)
+// ADMIN STATS (live from API)  — USING YOUR SNIPPET
 // ========================================================================
 async function fetchAllOrders(){
   try{
@@ -1775,7 +1775,6 @@ async function fetchDrivers(){
     DRIVERS = Array.isArray(j.drivers) ? j.drivers : [];
     DRIVERS_BY_ID = Object.create(null);
     API_DRIVERS_MAP = Object.create(null);
-
     for(const d of DRIVERS){
       if(!d) continue;
       const key = d._internal_id || d.driver_id;
@@ -1815,11 +1814,11 @@ function recalcAdminPayoutWidgets(){
 }
 
 async function renderAdminStats(){
-  // Ensure stats container exists
+  // Ensure stats container exists for Stats tab
   if(!statsContainer){
     statsContainer = document.createElement('div');
     statsContainer.id = 'statsContainer';
-    statsContainer.className = 'mt-4';
+    statsContainer.className = 'mt-4 hidden';
     (ordersPanel || document.body).appendChild(statsContainer);
   }
 
@@ -1831,7 +1830,6 @@ async function renderAdminStats(){
   if(!document.getElementById('adminStatsWrap')){
     const stats = document.createElement('div');
     stats.id = 'adminStatsWrap';
-    stats.className = ''; // visible; Stats tab toggles container
     stats.innerHTML = `
       <div class="grid gap-3 sm:grid-cols-3">
         <div class="border rounded-xl p-3 flex flex-col">
@@ -1903,7 +1901,7 @@ async function renderAdminStats(){
   if(adminTopAreasEl){
     adminTopAreasEl.innerHTML = topAreas.length
       ? topAreas.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
-      : '<li class="text-slate-500">No data yet</li>';
+      : '<li class="text-slate-500">No data yet</li>`;
   }
 
   if(!DEMO_MODE){
@@ -1912,6 +1910,7 @@ async function renderAdminStats(){
   recalcAdminPayoutWidgets();
 }
 
+// Wrapper so any existing calls still work
 function renderStats(){
   renderAdminStats();
 }
@@ -3068,41 +3067,27 @@ async function refreshAllData(){
 // FINAL INIT
 // ========================================================================
 renderStoreItems();
-
 if (DEMO_MODE) {
-  // Ensure demo data is hydrated
-  hydrateState();
-
   const map = {};
-  Object.values(DEMO_ORDERS_DB).forEach(o => {
+  Object.values(DEMO_ORDERS_DB).forEach(o=>{
     const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id;
-    if (key) map[key] = o;
+    if(key) map[key] = o;
   });
-  ALL_ORDERS_MAP   = map;
-  DRIVERS          = Object.values(DEMO_DRIVERS_DB);
-  API_DRIVERS_MAP  = { ...DEMO_DRIVERS_DB };
-
+  ALL_ORDERS_MAP = map;
+  DRIVERS = Object.values(DEMO_DRIVERS_DB);
+  API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
   ensureAdminTabs();
-  setActiveAdminTab(ordersTab);   // default "Pending"
-
+  setActiveAdminTab(ordersTab);
   renderOrders();
   renderDrivers();
-  renderAdminStats();             // 🔴 build + populate Stats UI
+  renderStats();
 } else {
-  // Live mode: load from API first, then wire UI
-  refreshAllData().then(() => {
+  refreshAllData().then(()=>{
     ensureAdminTabs();
-    setActiveAdminTab(ordersTab); // default "Pending"
-    renderAdminStats();           // 🔴 ensure Stats DOM + numbers exist
+    setActiveAdminTab(ordersTab);
   });
 }
-}); // end DOMContentLoaded
 </script>
-
-
-
-
-
 
 
 </body>
