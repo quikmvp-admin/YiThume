@@ -3065,30 +3065,37 @@ async function refreshAllData(){
 }
 
 // ========================================================================
-// FINAL INIT (inside DOMContentLoaded)
+// FINAL INIT
 // ========================================================================
 renderStoreItems();
+
 if (DEMO_MODE) {
+  // Ensure demo data is hydrated
+  hydrateState();
+
   const map = {};
-  Object.values(DEMO_ORDERS_DB).forEach(o=>{
+  Object.values(DEMO_ORDERS_DB).forEach(o => {
     const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id;
-    if(key) map[key] = o;
+    if (key) map[key] = o;
   });
-  ALL_ORDERS_MAP = map;
-  DRIVERS = Object.values(DEMO_DRIVERS_DB);
-  API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
+  ALL_ORDERS_MAP   = map;
+  DRIVERS          = Object.values(DEMO_DRIVERS_DB);
+  API_DRIVERS_MAP  = { ...DEMO_DRIVERS_DB };
+
   ensureAdminTabs();
-  setActiveAdminTab(ordersTab);
+  setActiveAdminTab(ordersTab);   // default "Pending"
+
   renderOrders();
   renderDrivers();
-  renderStats();
+  renderAdminStats();             // 🔴 build + populate Stats UI
 } else {
-  refreshAllData().then(()=>{
+  // Live mode: load from API first, then wire UI
+  refreshAllData().then(() => {
     ensureAdminTabs();
-    setActiveAdminTab(ordersTab);
+    setActiveAdminTab(ordersTab); // default "Pending"
+    renderAdminStats();           // 🔴 ensure Stats DOM + numbers exist
   });
 }
-
 }); // end DOMContentLoaded
 </script>
 
