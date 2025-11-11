@@ -3073,24 +3073,25 @@ async function refreshAllData(){
 renderStoreItems();
 if (DEMO_MODE) {
   const map = {};
-  Object.values(DEMO_ORDERS_DB).forEach(o=>{
+  Object.values(DEMO_ORDERS_DB).forEach(o => {
     const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id;
-    if(key) map[key] = o;
+    if (key) map[key] = o;
   });
   ALL_ORDERS_MAP = map;
   DRIVERS = Object.values(DEMO_DRIVERS_DB);
-  API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
+  API_DRIVERS_MAP = { ...DEMO_DRIVERS_DB };
   ensureAdminTabs();
   setActiveAdminTab(ordersTab);
   renderOrders();
   renderDrivers();
   renderStats();
 } else {
-  refreshAllData().then(()=>{
+  refreshAllData().then(() => {
     ensureAdminTabs();
     setActiveAdminTab(ordersTab);
   });
 }
+});
 </script>
 
 
