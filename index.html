@@ -3063,7 +3063,7 @@ Vehicle: ${vehicle}`;
         };
       } else {
         let data = null;
-        try{
+               try{
           const res = await fetch(`${BASE_API}/orders`, {
             method:"POST",
             headers:{ "Content-Type":"application/json" },
