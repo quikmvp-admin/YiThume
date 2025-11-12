@@ -1213,6 +1213,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   let ordersTabsContainer = document.getElementById('ordersTabs');
   let   statsContainer    = document.getElementById('statsContainer'); // created if missing
+  let   metricsContainer  = document.getElementById('metricsContainer'); // created if missing
 
   const storeModal          = document.getElementById('storeModal');
   const openStoreFooter     = document.getElementById('openStoreModalFooter');
@@ -1237,7 +1238,7 @@ window.addEventListener('DOMContentLoaded', () => {
     panel.className = 'hidden fixed inset-0 z-[1000] items-center justify-center bg-black/40';
 
     panel.innerHTML = `
-      <div class="bg-white w-[min(100%,1000px)] max-h-[85vh] rounded-2xl shadow-xl p-4 flex flex-col">
+      <div class="bg-white w=[min(100%,1000px)] w-[min(100%,1000px)] max-h-[85vh] rounded-2xl shadow-xl p-4 flex flex-col">
         <div class="flex items-center justify-between gap-2">
           <div class="text-sm font-semibold">Orders / Admin</div>
           <div class="flex items-center gap-2">
@@ -1260,7 +1261,8 @@ window.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
 
-        <div id="statsContainer" class="mt-4"></div>
+        <div id="statsContainer" class="mt-4 hidden"></div>
+        <div id="metricsContainer" class="mt-4 hidden"></div>
       </div>
     `;
     document.body.appendChild(panel);
@@ -1275,6 +1277,7 @@ window.addEventListener('DOMContentLoaded', () => {
     driversRefresh      = document.getElementById('driversRefresh'); // may not exist in scaffold
     ordersTabsContainer = document.getElementById('ordersTabs');
     statsContainer      = document.getElementById('statsContainer');
+    metricsContainer    = document.getElementById('metricsContainer');
 
     // Wire close button
     ordersClose?.addEventListener('click', closeOrders);
@@ -1894,6 +1897,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       renderOrders();
       renderDrivers();
       renderStats();
+      renderMetrics();
     }
   });
 
@@ -2119,13 +2123,158 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     recalcAdminPayoutWidgets();
   }
 
+  // NEW: METRICS TAB (draws from history / ALL_ORDERS_MAP)
+  function renderMetrics(){
+    const panel = ensureOrdersPanelScaffold();
+    metricsContainer = document.getElementById('metricsContainer');
+    if(!metricsContainer) return;
+
+    const orders = DEMO_MODE
+      ? Object.values(DEMO_ORDERS_DB).map(o=>normalizeOrder(o))
+      : Object.values(ALL_ORDERS_MAP).map(o=> o._normalized ? o : normalizeOrder(o));
+
+    // KPIs
+    const totalOrders = orders.length;
+    const delivered   = orders.filter(o=>o.status==='delivered');
+    const deliveredCount = delivered.length;
+
+    const revenueAll  = orders.reduce((s,o)=> s + Number(o.total||0), 0);
+    const revenueDelivered = delivered.reduce((s,o)=> s + Number(o.total||0), 0);
+
+    const avgOrderAll        = totalOrders ? Math.round(revenueAll / totalOrders) : 0;
+    const avgOrderDelivered  = deliveredCount ? Math.round(revenueDelivered / deliveredCount) : 0;
+
+    // Products: qty + estimated revenue (if item price present)
+    const products = new Map(); // name -> {qty, rev}
+    orders.forEach(o=>{
+      (o.items||[]).forEach(it=>{
+        const name = it?.name || 'Item';
+        const qty  = Number(it?.qty||1);
+        const rev  = Number(it?.price||0) * qty;
+        if(!products.has(name)) products.set(name, {qty:0, rev:0});
+        const p = products.get(name);
+        p.qty += qty;
+        p.rev += Number.isFinite(rev) ? rev : 0;
+      });
+    });
+    const topProducts = Array.from(products.entries())
+      .sort((a,b)=> b[1].qty - a[1].qty)
+      .slice(0,10);
+
+    // Areas: count + revenue
+    const areas = new Map(); // area -> {count, rev}
+    orders.forEach(o=>{
+      const area = o.meta?.collection_name || '—';
+      if(!areas.has(area)) areas.set(area, {count:0, rev:0});
+      const a = areas.get(area);
+      a.count += 1;
+      a.rev   += Number(o.total||0);
+    });
+    const topAreas = Array.from(areas.entries())
+      .sort((a,b)=> b[1].count - a[1].count)
+      .slice(0,10);
+
+    // Render
+    if(!document.getElementById('metricsWrap')){
+      metricsContainer.innerHTML = `
+        <div id="metricsWrap" class="space-y-4">
+          <div class="grid gap-3 sm:grid-cols-4">
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+              <div id="mxTotalOrders" class="text-2xl font-semibold">0</div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Delivered Orders</div>
+              <div id="mxDelivered" class="text-2xl font-semibold">0</div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Revenue (All)</div>
+              <div id="mxRevAll" class="text-2xl font-semibold">R0</div>
+              <div class="text-[11px] text-slate-500 mt-1">Avg order: <b id="mxAvgAll">R0</b></div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Revenue (Delivered)</div>
+              <div id="mxRevDelivered" class="text-2xl font-semibold">R0</div>
+              <div class="text-[11px] text-slate-500 mt-1">Avg order: <b id="mxAvgDelivered">R0</b></div>
+            </div>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2 mt-2">
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Products (qty &amp; est. revenue)</div>
+              <div class="overflow-auto">
+                <table class="w-full text-sm">
+                  <thead class="text-xs text-slate-500">
+                    <tr>
+                      <th class="text-left py-1 pr-2">Product</th>
+                      <th class="text-right py-1 pr-2">Qty</th>
+                      <th class="text-right py-1">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mxProducts"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Areas (orders &amp; revenue)</div>
+              <div class="overflow-auto">
+                <table class="w-full text-sm">
+                  <thead class="text-xs text-slate-500">
+                    <tr>
+                      <th class="text-left py-1 pr-2">Area</th>
+                      <th class="text-right py-1 pr-2">Orders</th>
+                      <th class="text-right py-1">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mxAreas"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Update KPI values
+    const el = (id)=> document.getElementById(id);
+    el('mxTotalOrders').textContent   = String(totalOrders);
+    el('mxDelivered').textContent     = String(deliveredCount);
+    el('mxRevAll').textContent        = `R${Math.round(revenueAll)}`;
+    el('mxAvgAll').textContent        = `R${avgOrderAll}`;
+    el('mxRevDelivered').textContent  = `R${Math.round(revenueDelivered)}`;
+    el('mxAvgDelivered').textContent  = `R${avgOrderDelivered}`;
+
+    // Update products
+    const prodTbody = el('mxProducts');
+    prodTbody.innerHTML = topProducts.length
+      ? topProducts.map(([name,stats]) =>
+          `<tr class="border-t">
+             <td class="py-1 pr-2">${salesSafe(name)}</td>
+             <td class="py-1 pr-2 text-right">${stats.qty}</td>
+             <td class="py-1 text-right">${stats.rev ? 'R'+Math.round(stats.rev) : '—'}</td>
+           </tr>`).join('')
+      : `<tr><td colspan="3" class="py-2 text-slate-500">No data yet</td></tr>`;
+
+    // Update areas
+    const areaTbody = el('mxAreas');
+    areaTbody.innerHTML = topAreas.length
+      ? topAreas.map(([name,stats]) =>
+          `<tr class="border-t">
+             <td class="py-1 pr-2">${salesSafe(name)}</td>
+             <td class="py-1 pr-2 text-right">${stats.count}</td>
+             <td class="py-1 text-right">R${Math.round(stats.rev)}</td>
+           </tr>`).join('')
+      : `<tr><td colspan="3" class="py-2 text-slate-500">No data yet</td></tr>`;
+  }
+
   // Wrapper so any existing calls still work
   function renderStats(){
     renderAdminStats();
   }
 
   // ========================================================================
-  // ADMIN TABS  (added "History")
+  // ADMIN TABS  (added "History" and new "Metrics")
   // ========================================================================
   function ensureAdminTabs(){
     let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
@@ -2149,7 +2298,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ['Delivered','delivered'],
       ['Drivers','drivers'],
       ['Stats','stats'],
-      ['History','history'] // NEW: full history across all statuses
+      ['History','history'],
+      ['Metrics','metrics'] // NEW: after History
     ];
 
     const host = ordersTabsContainer || ordersList?.parentElement || document.getElementById('ordersPanel') || document.body;
@@ -2182,20 +2332,24 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
     });
 
-    const showDrivers = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
-    const showStats   = (tabKey === 'stats');
+    const showDrivers  = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
+    const showStats    = (tabKey === 'stats');
+    const showMetrics  = (tabKey === 'metrics');
 
     const ordersWrapper  = document.getElementById('ordersList')?.parentElement;
     const driversWrapper = document.getElementById('driversList')?.parentElement;
 
-    if (ordersWrapper)  ordersWrapper.classList.toggle('hidden', showDrivers || showStats);
+    if (ordersWrapper)  ordersWrapper.classList.toggle('hidden', showDrivers || showStats || showMetrics);
     if (driversWrapper) driversWrapper.classList.toggle('hidden', !showDrivers);
     if (statsContainer) statsContainer.classList.toggle('hidden', !showStats);
+    if (metricsContainer) metricsContainer.classList.toggle('hidden', !showMetrics);
 
     if(showDrivers){
       renderDrivers();
     } else if(showStats){
       renderAdminStats();
+    } else if(showMetrics){
+      renderMetrics();
     } else {
       renderOrders();
     }
@@ -2251,7 +2405,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         o.driver_pay_approved = 0;
         if(o.status === 'pending') o.status = 'assigned';
       });
-      renderOrders(); renderDrivers(); renderStats();
+      renderOrders(); renderDrivers(); renderStats(); renderMetrics();
       alert(`[DEMO] Assigned ${internalId}.`);
       return;
     }
@@ -2288,7 +2442,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         o.driver_pay_approved = pay;
         o.driver_pay_pending  = 0;
       });
-      renderOrders(); renderDrivers(); renderStats();
+      renderOrders(); renderDrivers(); renderStats(); renderMetrics();
       alert(`[DEMO] Delivered ${internalId}.`);
       return;
     }
@@ -2523,6 +2677,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           renderOrders();
           renderDrivers();
           renderStats();
+          renderMetrics();
         }
       });
     });
@@ -2704,7 +2859,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           });
           saveOrdersToLS();
           hydrateState();
-          renderDrivers(); renderOrders(); renderStats();
+          renderDrivers(); renderOrders(); renderStats(); renderMetrics();
           alert(count ? `Approved ${count} payout(s) for driver.` : `No pending payouts.`);
           return;
         }
@@ -2995,6 +3150,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             saveDriversToLS();
             renderDrivers();
             renderStats();
+            renderMetrics();
           } else {
             try{
               await fetch(`${BASE_API}/drivers`, {
@@ -3129,7 +3285,7 @@ Vehicle: ${vehicle}`;
         };
       } else {
         let data = null;
-               try{
+        try{
           const res = await fetch(`${BASE_API}/orders`, {
             method:"POST",
             headers:{ "Content-Type":"application/json" },
@@ -3190,6 +3346,7 @@ Vehicle: ${vehicle}`;
     } finally {
       confirmBtn2.disabled = false;
       renderStats();
+      renderMetrics();
     }
   });
 
@@ -3280,6 +3437,7 @@ Vehicle: ${vehicle}`;
       renderOrders();
       renderDrivers();
       renderStats();
+      renderMetrics();
       return;
     }
 
@@ -3305,11 +3463,17 @@ Vehicle: ${vehicle}`;
     renderOrders();
     renderDrivers();
     renderStats();
+    renderMetrics();
   }
 
   // ========================================================================
   // FINAL INIT
   // ========================================================================
+  function ensureAdminTabsThenShow(){
+    ensureAdminTabs();
+    setActiveAdminTab(ordersTab);
+  }
+
   renderStoreItems();
   if (DEMO_MODE) {
     // demo preload
@@ -3323,21 +3487,16 @@ Vehicle: ${vehicle}`;
     DRIVERS = Object.values(DEMO_DRIVERS_DB);
     DRIVERS_BY_ID = {};
     API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
-    ensureAdminTabs();
-    setActiveAdminTab(ordersTab);
+    ensureAdminTabsThenShow();
     renderOrders();
     renderDrivers();
     renderStats();
+    renderMetrics();
   } else {
-    refreshAllData().then(()=>{
-      ensureAdminTabs();
-      setActiveAdminTab(ordersTab);
-    });
+    refreshAllData().then(ensureAdminTabsThenShow);
   }
 });
 </script>
-
-
 
 
 </body>
