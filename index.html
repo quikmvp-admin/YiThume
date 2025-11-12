@@ -3498,12 +3498,14 @@ Vehicle: ${vehicle}`;
 });
 
 // ========================================================================
-// METRICS TAB - Standalone Script
+// KPIs TAB - Standalone Script
 // Paste this after the main code loads
 // ========================================================================
 
-(function initMetricsTab() {
+(function initKPIsTab() {
   'use strict';
+
+  console.log('KPIs Tab script starting...');
 
   // Wait for DOM to be ready
   if (document.readyState === 'loading') {
@@ -3513,142 +3515,82 @@ Vehicle: ${vehicle}`;
   }
 
   function init() {
-    console.log('Metrics Tab initializing...');
-    console.log('Current DEMO_MODE:', typeof DEMO_MODE !== 'undefined' ? DEMO_MODE : 'undefined');
+    console.log('KPIs Tab initializing...');
     
-    // Wait for main code to be ready
-    const checkReady = setInterval(() => {
-      if (typeof DEMO_MODE !== 'undefined' || typeof ALL_ORDERS_MAP !== 'undefined') {
-        clearInterval(checkReady);
-        console.log('Main code ready, setting up metrics tab');
-        setupMetricsTab();
-      }
-    }, 100);
+    // Add KPIs tab to admin panel
+    addKPIsTab();
     
-    // Timeout after 5 seconds
-    setTimeout(() => {
-      clearInterval(checkReady);
-      console.log('Timeout reached, forcing setup');
-      setupMetricsTab();
-    }, 5000);
-  }
-
-  function setupMetricsTab() {
-    // Hook into the existing tab system
-    addMetricsTabIfNeeded();
-    
-    // Listen for tab changes
+    // Listen for clicks on KPIs tab
     document.addEventListener('click', (e) => {
-      const tab = e.target.closest('[data-o-tab="metrics"]');
+      const tab = e.target.closest('[data-o-tab="kpis"]');
       if (tab) {
-        console.log('Metrics tab clicked');
-        renderMetricsTab();
+        console.log('KPIs tab clicked');
+        renderKPIsTab();
       }
     });
 
-    // Listen for data updates
+    // Listen for order updates
     window.addEventListener('yt-orders-updated', () => {
-      console.log('yt-orders-updated event received');
-      const panel = document.getElementById('ordersPanel');
-      if (panel && !panel.classList.contains('hidden')) {
-        const activeTab = document.querySelector('[data-o-tab].bg-emerald-600');
-        if (activeTab && activeTab.dataset.oTab === 'metrics') {
-          console.log('Auto-refreshing metrics');
-          renderMetricsTab();
-        }
+      const activeTab = document.querySelector('[data-o-tab].bg-emerald-600');
+      if (activeTab && activeTab.dataset.oTab === 'kpis') {
+        console.log('Refreshing KPIs after order update');
+        renderKPIsTab();
       }
     });
 
-    console.log('Metrics tab setup complete');
+    console.log('KPIs Tab ready');
   }
 
-  function addMetricsTabIfNeeded() {
+  function addKPIsTab() {
     const tabsContainer = document.getElementById('ordersTabs');
-    if (!tabsContainer) return;
+    if (!tabsContainer) {
+      console.warn('ordersTabs container not found');
+      return;
+    }
 
-    // Check if metrics tab already exists
-    const existing = tabsContainer.querySelector('[data-o-tab="metrics"]');
-    if (existing) return;
+    // Check if KPIs tab already exists
+    const existing = tabsContainer.querySelector('[data-o-tab="kpis"]');
+    if (existing) {
+      console.log('KPIs tab already exists');
+      return;
+    }
 
-    // Create metrics tab button
+    // Create KPIs tab button
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'yt-o-tab px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 text-xs';
-    btn.dataset.oTab = 'metrics';
+    btn.dataset.oTab = 'kpis';
     btn.setAttribute('role', 'tab');
     btn.setAttribute('aria-selected', 'false');
-    btn.textContent = 'Metrics';
+    btn.textContent = 'KPIs';
     
     tabsContainer.appendChild(btn);
+    console.log('KPIs tab added');
   }
 
-  function getOrdersData() {
-    // Debug logging
-    console.log('Getting orders data...');
-    console.log('DEMO_MODE:', window.DEMO_MODE);
-    console.log('DEMO_ORDERS_DB:', window.DEMO_ORDERS_DB);
-    console.log('ALL_ORDERS_MAP:', window.ALL_ORDERS_MAP);
-    
-    // Try to get orders from global state
-    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE && typeof DEMO_ORDERS_DB !== 'undefined') {
-      const orders = Object.values(DEMO_ORDERS_DB).map(normalizeOrder);
-      console.log('Returning DEMO orders:', orders.length);
+  function getHistoryOrders() {
+    // Get from history tab's current data first
+    if (typeof currentOrdersByTab !== 'undefined' && currentOrdersByTab['history']) {
+      console.log('Found orders in currentOrdersByTab.history:', currentOrdersByTab['history'].length);
+      return currentOrdersByTab['history'];
+    }
+
+    // Fallback to DEMO_ORDERS_DB
+    if (typeof DEMO_ORDERS_DB !== 'undefined' && DEMO_ORDERS_DB) {
+      const orders = Object.values(DEMO_ORDERS_DB);
+      console.log('Found orders in DEMO_ORDERS_DB:', orders.length);
       return orders;
     }
     
+    // Fallback to ALL_ORDERS_MAP
     if (typeof ALL_ORDERS_MAP !== 'undefined' && ALL_ORDERS_MAP) {
-      const orders = Object.values(ALL_ORDERS_MAP).map(o => 
-        o._normalized ? o : normalizeOrder(o)
-      );
-      console.log('Returning ALL_ORDERS_MAP orders:', orders.length);
+      const orders = Object.values(ALL_ORDERS_MAP);
+      console.log('Found orders in ALL_ORDERS_MAP:', orders.length);
       return orders;
     }
 
-    console.log('No orders found, returning empty array');
+    console.warn('No orders found in any source');
     return [];
-  }
-
-  function normalizeOrder(o) {
-    if (o._normalized) return o;
-
-    const id = o?._internal_id || o?.internal_id || o?.order_public_id || o?.order_id || o?._id || null;
-    const created = o?.created_at_iso || o?.created_at || o?.createdAt || o?.meta?.created_at || o?.timestamp;
-    
-    const items = Array.isArray(o?.items)
-      ? o.items.map(it => ({
-          name: it?.name || it?.title || it?.product_name || 'Item',
-          qty: Number(it?.qty ?? it?.quantity ?? 1),
-          price: Number(it?.price ?? it?.unit_price ?? 0)
-        }))
-      : [];
-
-    const distance_km = Number(o?.route?.distance_km ?? o?.meta?.distance_km ?? o?.distance_km ?? 0);
-    const collection_name = o?.meta?.collection_name || o?.collection_name || o?.depot_name || '—';
-
-    return {
-      _normalized: true,
-      _internal_id: id,
-      order_id: o?.order_id || id,
-      order_public_id: o?.order_public_id || o?.ref || id,
-      status: (o?.status || 'pending').toLowerCase(),
-      subtotal: Number(o?.subtotal ?? 0),
-      delivery_fee: Number(o?.delivery_fee ?? o?.delivery?.fee ?? 0),
-      total: Number(o?.total ?? o?.amount_total ?? 0),
-      items,
-      meta: { collection_name, distance_km, rush: !!(o?.meta?.rush ?? o?.rush) },
-      fraud_score: Number(o?.fraud_score ?? o?.risk?.score ?? 0),
-      driver_id: o?.assigned_driver_id || o?.driver_id || o?.driver?.id || o?.driver?._id || null,
-      driver_pay_status: o?.driver_pay_status || o?.driver?.pay_status || o?.payout?.status || null,
-      driver_pay_pending: Number(o?.driver_pay_pending ?? o?.payout?.pending ?? 0),
-      driver_pay_approved: Number(o?.driver_pay_approved ?? o?.payout?.approved ?? 0),
-      created_at: created ? new Date(created) : null,
-      customer: {
-        name: o?.customer?.name || o?.customer_name || o?.name || null,
-        phone: (o?.customer?.phone || o?.phone || o?.customer_phone || '').replace(/\D+/g, '') || null,
-        address: o?.customer?.address || o?.address || null
-      },
-      raw: o
-    };
   }
 
   function salesSafe(str) {
@@ -3657,15 +3599,15 @@ Vehicle: ${vehicle}`;
     );
   }
 
-  function renderMetricsTab() {
-    console.log('renderMetricsTab called');
+  function renderKPIsTab() {
+    console.log('Rendering KPIs tab...');
     
-    let container = document.getElementById('metricsContainer');
+    // Get or create KPIs container
+    let container = document.getElementById('kpisContainer');
     
     if (!container) {
-      console.log('Creating metricsContainer');
       container = document.createElement('div');
-      container.id = 'metricsContainer';
+      container.id = 'kpisContainer';
       container.className = 'mt-4 hidden';
       
       const panel = document.getElementById('ordersPanel');
@@ -3674,328 +3616,279 @@ Vehicle: ${vehicle}`;
                             panel.querySelector('.overflow-auto')?.parentElement;
         if (targetParent) {
           targetParent.appendChild(container);
-          console.log('Container appended to parent');
         }
       }
     }
 
-    // Get all orders
-    const orders = getOrdersData();
-    console.log('Orders retrieved for metrics:', orders.length);
+    // Get all orders from history
+    const orders = getHistoryOrders();
+    console.log('Processing orders for KPIs:', orders.length);
     
     if (orders.length === 0) {
       container.innerHTML = `
         <div class="bg-white border rounded-2xl p-8 text-center">
-          <div class="text-slate-400 text-sm">No order data available yet</div>
-          <div class="text-slate-300 text-xs mt-2">Create some orders to see metrics</div>
+          <div class="text-slate-400 text-sm">No order history available yet</div>
+          <div class="text-slate-300 text-xs mt-2">Create some orders to see KPIs</div>
         </div>
       `;
-      container.classList.remove('hidden');
+      showContainer(container);
       return;
     }
-    
+
     // Calculate KPIs
     const totalOrders = orders.length;
-    const pendingOrders = orders.filter(o => o.status === 'pending').length;
-    const assignedOrders = orders.filter(o => o.status === 'assigned').length;
-    const inTransitOrders = orders.filter(o => o.status === 'in_transit').length;
-    const deliveredOrders = orders.filter(o => o.status === 'delivered').length;
     
-    const allRevenue = orders.reduce((sum, o) => sum + Number(o.total || 0), 0);
-    const deliveredRevenue = orders
-      .filter(o => o.status === 'delivered')
-      .reduce((sum, o) => sum + Number(o.total || 0), 0);
-    
-    const allCosts = orders.reduce((sum, o) => {
-      const driverPay = o.driver_pay_status === 'approved' 
-        ? Number(o.driver_pay_approved || 0)
-        : Number(o.driver_pay_pending || 0);
-      return sum + driverPay;
+    // Revenue calculations
+    const totalRevenue = orders.reduce((sum, o) => {
+      return sum + Number(o.total || 0);
     }, 0);
     
-    const deliveredCosts = orders
-      .filter(o => o.status === 'delivered')
-      .reduce((sum, o) => sum + Number(o.driver_pay_approved || 0), 0);
+    const deliveredOrders = orders.filter(o => 
+      (o.status || '').toLowerCase() === 'delivered'
+    );
+    const deliveredRevenue = deliveredOrders.reduce((sum, o) => {
+      return sum + Number(o.total || 0);
+    }, 0);
     
-    const allProfit = allRevenue - allCosts;
+    // Costs (driver payouts)
+    const totalCosts = orders.reduce((sum, o) => {
+      const pending = Number(o.driver_pay_pending || 0);
+      const approved = Number(o.driver_pay_approved || 0);
+      return sum + pending + approved;
+    }, 0);
+    
+    const deliveredCosts = deliveredOrders.reduce((sum, o) => {
+      return sum + Number(o.driver_pay_approved || 0);
+    }, 0);
+    
+    // Profit
+    const totalProfit = totalRevenue - totalCosts;
     const deliveredProfit = deliveredRevenue - deliveredCosts;
+    const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0.0';
     
-    const avgOrderValue = totalOrders ? Math.round(allRevenue / totalOrders) : 0;
-    const avgDeliveredValue = deliveredOrders ? Math.round(deliveredRevenue / deliveredOrders) : 0;
+    // Averages
+    const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
+    const avgDeliveredValue = deliveredOrders.length > 0 ? Math.round(deliveredRevenue / deliveredOrders.length) : 0;
+    const avgProfit = totalOrders > 0 ? Math.round(totalProfit / totalOrders) : 0;
     
-    const avgProfit = totalOrders ? Math.round(allProfit / totalOrders) : 0;
-    const avgDeliveredProfit = deliveredOrders ? Math.round(deliveredProfit / deliveredOrders) : 0;
+    // Status breakdown
+    const pending = orders.filter(o => (o.status || '').toLowerCase() === 'pending').length;
+    const assigned = orders.filter(o => (o.status || '').toLowerCase() === 'assigned').length;
+    const inTransit = orders.filter(o => (o.status || '').toLowerCase() === 'in_transit').length;
+    const delivered = deliveredOrders.length;
     
-    const profitMargin = allRevenue ? ((allProfit / allRevenue) * 100).toFixed(1) : '0.0';
-    const deliveredMargin = deliveredRevenue ? ((deliveredProfit / deliveredRevenue) * 100).toFixed(1) : '0.0';
-
-    // Product analysis
-    const products = new Map();
+    // Delivery fees
+    const totalDeliveryFees = orders.reduce((sum, o) => {
+      return sum + Number(o.delivery_fee || 0);
+    }, 0);
+    const avgDeliveryFee = totalOrders > 0 ? Math.round(totalDeliveryFees / totalOrders) : 0;
+    
+    // Product revenue
+    const productRevenue = new Map();
     orders.forEach(o => {
-      (o.items || []).forEach(it => {
-        const name = it?.name || 'Item';
-        const qty = Number(it?.qty || 1);
-        const revenue = Number(it?.price || 0) * qty;
+      const items = o.items || [];
+      items.forEach(it => {
+        const name = it.name || 'Unknown Item';
+        const qty = Number(it.qty || 1);
+        const price = Number(it.price || 0);
+        const revenue = price * qty;
         
-        if (!products.has(name)) {
-          products.set(name, { qty: 0, revenue: 0, orders: 0 });
+        if (!productRevenue.has(name)) {
+          productRevenue.set(name, { qty: 0, revenue: 0, orders: 0 });
         }
-        const p = products.get(name);
+        const p = productRevenue.get(name);
         p.qty += qty;
-        p.revenue += Number.isFinite(revenue) ? revenue : 0;
+        p.revenue += revenue;
         p.orders += 1;
       });
     });
-
-    const topProducts = Array.from(products.entries())
+    
+    const topProducts = Array.from(productRevenue.entries())
       .sort((a, b) => b[1].revenue - a[1].revenue)
-      .slice(0, 10);
-
-    // Area analysis
-    const areas = new Map();
+      .slice(0, 5);
+    
+    // Area revenue
+    const areaRevenue = new Map();
     orders.forEach(o => {
-      const area = o.meta?.collection_name || '—';
-      if (!areas.has(area)) {
-        areas.set(area, { orders: 0, revenue: 0, costs: 0, profit: 0 });
+      const area = o.meta?.collection_name || o.collection_name || '—';
+      if (!areaRevenue.has(area)) {
+        areaRevenue.set(area, { orders: 0, revenue: 0 });
       }
-      const a = areas.get(area);
+      const a = areaRevenue.get(area);
       a.orders += 1;
       a.revenue += Number(o.total || 0);
-      
-      const driverPay = o.driver_pay_status === 'approved'
-        ? Number(o.driver_pay_approved || 0)
-        : Number(o.driver_pay_pending || 0);
-      a.costs += driverPay;
-      a.profit = a.revenue - a.costs;
     });
-
-    const topAreas = Array.from(areas.entries())
-      .sort((a, b) => b[1].revenue - a[1].revenue)
-      .slice(0, 10);
-
-    // Time analysis (last 7 days)
-    const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const recentOrders = orders.filter(o => 
-      o.created_at && o.created_at >= sevenDaysAgo
-    );
     
-    const recentRevenue = recentOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
-    const avgDailyOrders = (recentOrders.length / 7).toFixed(1);
-    const avgDailyRevenue = Math.round(recentRevenue / 7);
+    const topAreas = Array.from(areaRevenue.entries())
+      .sort((a, b) => b[1].revenue - a[1].revenue)
+      .slice(0, 5);
 
     // Render HTML
     container.innerHTML = `
-      <div id="metricsWrap" class="space-y-4">
-        <!-- Financial Overview -->
-        <div class="bg-gradient-to-br from-emerald-50 to-white border-2 border-emerald-200 rounded-2xl p-4 shadow-sm">
-          <h3 class="text-base font-bold text-emerald-900 mb-3">Financial Overview</h3>
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div class="bg-white rounded-xl p-3 border border-emerald-100">
-              <div class="text-xs text-slate-500 mb-1">Total Revenue</div>
-              <div class="text-2xl font-bold text-emerald-700">R${Math.round(allRevenue).toLocaleString()}</div>
-              <div class="text-[10px] text-slate-400 mt-1">From ${totalOrders} orders</div>
+      <div class="space-y-4">
+        <!-- Header -->
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-bold text-slate-900">Key Performance Indicators</h2>
+          <div class="text-xs text-slate-500">Total: ${totalOrders} orders</div>
+        </div>
+
+        <!-- Main Revenue KPIs -->
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-300 rounded-2xl p-4 shadow-sm">
+            <div class="text-xs text-emerald-700 font-medium mb-1">Total Revenue</div>
+            <div class="text-3xl font-bold text-emerald-900">R${Math.round(totalRevenue).toLocaleString()}</div>
+            <div class="text-[10px] text-emerald-600 mt-1">All orders</div>
+          </div>
+          
+          <div class="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 rounded-2xl p-4 shadow-sm">
+            <div class="text-xs text-blue-700 font-medium mb-1">Delivered Revenue</div>
+            <div class="text-3xl font-bold text-blue-900">R${Math.round(deliveredRevenue).toLocaleString()}</div>
+            <div class="text-[10px] text-blue-600 mt-1">${delivered} delivered</div>
+          </div>
+          
+          <div class="bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-amber-300 rounded-2xl p-4 shadow-sm">
+            <div class="text-xs text-amber-700 font-medium mb-1">Total Costs</div>
+            <div class="text-3xl font-bold text-amber-900">R${Math.round(totalCosts).toLocaleString()}</div>
+            <div class="text-[10px] text-amber-600 mt-1">Driver payouts</div>
+          </div>
+          
+          <div class="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 rounded-2xl p-4 shadow-sm">
+            <div class="text-xs text-purple-700 font-medium mb-1">Total Profit</div>
+            <div class="text-3xl font-bold ${totalProfit >= 0 ? 'text-purple-900' : 'text-red-700'}">
+              R${Math.round(totalProfit).toLocaleString()}
             </div>
-            
-            <div class="bg-white rounded-xl p-3 border border-emerald-100">
-              <div class="text-xs text-slate-500 mb-1">Delivered Revenue</div>
-              <div class="text-2xl font-bold text-emerald-600">R${Math.round(deliveredRevenue).toLocaleString()}</div>
-              <div class="text-[10px] text-slate-400 mt-1">From ${deliveredOrders} orders</div>
-            </div>
-            
-            <div class="bg-white rounded-xl p-3 border border-amber-100">
-              <div class="text-xs text-slate-500 mb-1">Total Costs</div>
-              <div class="text-2xl font-bold text-amber-600">R${Math.round(allCosts).toLocaleString()}</div>
-              <div class="text-[10px] text-slate-400 mt-1">Driver payouts</div>
-            </div>
-            
-            <div class="bg-white rounded-xl p-3 border border-blue-100">
-              <div class="text-xs text-slate-500 mb-1">Total Profit</div>
-              <div class="text-2xl font-bold ${allProfit >= 0 ? 'text-blue-700' : 'text-red-600'}">
-                R${Math.round(allProfit).toLocaleString()}
-              </div>
-              <div class="text-[10px] text-slate-400 mt-1">Margin: ${profitMargin}%</div>
-            </div>
+            <div class="text-[10px] text-purple-600 mt-1">Margin: ${profitMargin}%</div>
           </div>
         </div>
 
         <!-- Order Status & Averages -->
         <div class="grid gap-3 sm:grid-cols-2">
-          <div class="bg-white border rounded-2xl p-4 shadow-sm">
-            <h3 class="text-sm font-bold text-slate-900 mb-3">Order Status</h3>
+          <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
+            <h3 class="text-sm font-bold text-slate-900 mb-3">Order Status Breakdown</h3>
             <div class="space-y-2">
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-600">Pending</span>
-                <span class="text-sm font-semibold text-amber-600">${pendingOrders}</span>
+              <div class="flex justify-between items-center p-2 bg-amber-50 rounded-lg">
+                <span class="text-xs text-slate-700 font-medium">Pending</span>
+                <span class="text-base font-bold text-amber-600">${pending}</span>
               </div>
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-600">Assigned</span>
-                <span class="text-sm font-semibold text-blue-600">${assignedOrders}</span>
+              <div class="flex justify-between items-center p-2 bg-blue-50 rounded-lg">
+                <span class="text-xs text-slate-700 font-medium">Assigned</span>
+                <span class="text-base font-bold text-blue-600">${assigned}</span>
               </div>
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-600">In Transit</span>
-                <span class="text-sm font-semibold text-purple-600">${inTransitOrders}</span>
+              <div class="flex justify-between items-center p-2 bg-purple-50 rounded-lg">
+                <span class="text-xs text-slate-700 font-medium">In Transit</span>
+                <span class="text-base font-bold text-purple-600">${inTransit}</span>
               </div>
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-600">Delivered</span>
-                <span class="text-sm font-semibold text-emerald-600">${deliveredOrders}</span>
+              <div class="flex justify-between items-center p-2 bg-emerald-50 rounded-lg">
+                <span class="text-xs text-slate-700 font-medium">Delivered</span>
+                <span class="text-base font-bold text-emerald-600">${delivered}</span>
               </div>
             </div>
           </div>
 
-          <div class="bg-white border rounded-2xl p-4 shadow-sm">
+          <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
             <h3 class="text-sm font-bold text-slate-900 mb-3">Average Metrics</h3>
             <div class="space-y-2">
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-600">Avg Order Value (All)</span>
-                <span class="text-sm font-semibold text-slate-900">R${avgOrderValue}</span>
+              <div class="flex justify-between items-center p-2 bg-slate-50 rounded-lg">
+                <span class="text-xs text-slate-700">Avg Order Value</span>
+                <span class="text-base font-bold text-slate-900">R${avgOrderValue}</span>
               </div>
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-600">Avg Order Value (Delivered)</span>
-                <span class="text-sm font-semibold text-emerald-600">R${avgDeliveredValue}</span>
+              <div class="flex justify-between items-center p-2 bg-emerald-50 rounded-lg">
+                <span class="text-xs text-slate-700">Avg Delivered Value</span>
+                <span class="text-base font-bold text-emerald-700">R${avgDeliveredValue}</span>
               </div>
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-600">Avg Profit per Order (All)</span>
-                <span class="text-sm font-semibold ${avgProfit >= 0 ? 'text-blue-600' : 'text-red-600'}">R${avgProfit}</span>
+              <div class="flex justify-between items-center p-2 bg-blue-50 rounded-lg">
+                <span class="text-xs text-slate-700">Avg Delivery Fee</span>
+                <span class="text-base font-bold text-blue-700">R${avgDeliveryFee}</span>
               </div>
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-600">Avg Profit (Delivered)</span>
-                <span class="text-sm font-semibold ${avgDeliveredProfit >= 0 ? 'text-blue-700' : 'text-red-600'}">R${avgDeliveredProfit}</span>
+              <div class="flex justify-between items-center p-2 bg-purple-50 rounded-lg">
+                <span class="text-xs text-slate-700">Avg Profit per Order</span>
+                <span class="text-base font-bold ${avgProfit >= 0 ? 'text-purple-700' : 'text-red-600'}">R${avgProfit}</span>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Recent Trends (Last 7 Days) -->
-        <div class="bg-white border rounded-2xl p-4 shadow-sm">
-          <h3 class="text-sm font-bold text-slate-900 mb-3">Last 7 Days Trend</h3>
-          <div class="grid grid-cols-3 gap-3">
-            <div class="text-center">
-              <div class="text-2xl font-bold text-emerald-600">${recentOrders.length}</div>
-              <div class="text-[10px] text-slate-500">Orders</div>
-            </div>
-            <div class="text-center">
-              <div class="text-2xl font-bold text-emerald-600">${avgDailyOrders}</div>
-              <div class="text-[10px] text-slate-500">Avg Daily Orders</div>
-            </div>
-            <div class="text-center">
-              <div class="text-2xl font-bold text-emerald-600">R${avgDailyRevenue.toLocaleString()}</div>
-              <div class="text-[10px] text-slate-500">Avg Daily Revenue</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Products & Areas -->
-        <div class="grid gap-3 sm:grid-cols-2">
-          <!-- Top Products by Revenue -->
-          <div class="bg-white border rounded-2xl p-4 shadow-sm">
-            <h3 class="text-sm font-bold text-slate-900 mb-3">Top Products by Revenue</h3>
-            <div class="overflow-auto max-h-[300px]">
-              <table class="w-full text-xs">
-                <thead class="text-[10px] text-slate-500 sticky top-0 bg-white">
-                  <tr class="border-b">
-                    <th class="text-left py-2 pr-2">Product</th>
-                    <th class="text-right py-2 pr-2">Qty</th>
-                    <th class="text-right py-2 pr-2">Orders</th>
-                    <th class="text-right py-2">Revenue</th>
-                  </tr>
-                </thead>
-                <tbody id="metricsProducts">
-                  ${topProducts.length
-                    ? topProducts.map(([name, stats]) => `
-                        <tr class="border-t hover:bg-slate-50">
-                          <td class="py-2 pr-2 truncate max-w-[120px]" title="${salesSafe(name)}">${salesSafe(name)}</td>
-                          <td class="py-2 pr-2 text-right font-medium">${stats.qty}</td>
-                          <td class="py-2 pr-2 text-right text-slate-500">${stats.orders}</td>
-                          <td class="py-2 text-right font-semibold text-emerald-600">
-                            ${stats.revenue ? 'R' + Math.round(stats.revenue).toLocaleString() : '—'}
-                          </td>
-                        </tr>
-                      `).join('')
-                    : '<tr><td colspan="4" class="py-3 text-center text-slate-400">No product data</td></tr>'
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Top Areas by Revenue & Profit -->
-          <div class="bg-white border rounded-2xl p-4 shadow-sm">
-            <h3 class="text-sm font-bold text-slate-900 mb-3">Top Areas by Revenue</h3>
-            <div class="overflow-auto max-h-[300px]">
-              <table class="w-full text-xs">
-                <thead class="text-[10px] text-slate-500 sticky top-0 bg-white">
-                  <tr class="border-b">
-                    <th class="text-left py-2 pr-2">Area</th>
-                    <th class="text-right py-2 pr-2">Orders</th>
-                    <th class="text-right py-2 pr-2">Revenue</th>
-                    <th class="text-right py-2">Profit</th>
-                  </tr>
-                </thead>
-                <tbody id="metricsAreas">
-                  ${topAreas.length
-                    ? topAreas.map(([name, stats]) => `
-                        <tr class="border-t hover:bg-slate-50">
-                          <td class="py-2 pr-2 truncate max-w-[120px]" title="${salesSafe(name)}">${salesSafe(name)}</td>
-                          <td class="py-2 pr-2 text-right font-medium">${stats.orders}</td>
-                          <td class="py-2 pr-2 text-right font-semibold text-emerald-600">R${Math.round(stats.revenue).toLocaleString()}</td>
-                          <td class="py-2 text-right font-semibold ${stats.profit >= 0 ? 'text-blue-600' : 'text-red-600'}">
-                            R${Math.round(stats.profit).toLocaleString()}
-                          </td>
-                        </tr>
-                      `).join('')
-                    : '<tr><td colspan="4" class="py-3 text-center text-slate-400">No area data</td></tr>'
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- Delivered vs In-Progress Revenue -->
-        <div class="bg-white border rounded-2xl p-4 shadow-sm">
-          <h3 class="text-sm font-bold text-slate-900 mb-3">Revenue Breakdown</h3>
+        <!-- Profit Breakdown -->
+        <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
+          <h3 class="text-sm font-bold text-slate-900 mb-3">Profit Analysis</h3>
           <div class="grid grid-cols-2 gap-3">
-            <div class="bg-emerald-50 rounded-xl p-3">
-              <div class="text-xs text-slate-600 mb-1">Delivered (Realized)</div>
-              <div class="text-xl font-bold text-emerald-700">R${Math.round(deliveredRevenue).toLocaleString()}</div>
-              <div class="text-[10px] text-slate-500 mt-1">${deliveredOrders} orders • ${deliveredMargin}% margin</div>
+            <div class="bg-gradient-to-br from-emerald-50 to-white rounded-xl p-3 border border-emerald-200">
+              <div class="text-xs text-slate-600 mb-1">Total Profit</div>
+              <div class="text-2xl font-bold ${totalProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}">
+                R${Math.round(totalProfit).toLocaleString()}
+              </div>
+              <div class="text-[10px] text-slate-500 mt-1">Margin: ${profitMargin}%</div>
             </div>
-            <div class="bg-amber-50 rounded-xl p-3">
-              <div class="text-xs text-slate-600 mb-1">In Progress (Potential)</div>
-              <div class="text-xl font-bold text-amber-700">R${Math.round(allRevenue - deliveredRevenue).toLocaleString()}</div>
-              <div class="text-[10px] text-slate-500 mt-1">${totalOrders - deliveredOrders} orders pending</div>
+            <div class="bg-gradient-to-br from-blue-50 to-white rounded-xl p-3 border border-blue-200">
+              <div class="text-xs text-slate-600 mb-1">Delivered Profit</div>
+              <div class="text-2xl font-bold ${deliveredProfit >= 0 ? 'text-blue-700' : 'text-red-600'}">
+                R${Math.round(deliveredProfit).toLocaleString()}
+              </div>
+              <div class="text-[10px] text-slate-500 mt-1">${delivered} orders</div>
             </div>
+          </div>
+        </div>
+
+        <!-- Top Products & Areas -->
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
+            <h3 class="text-sm font-bold text-slate-900 mb-3">Top Products by Revenue</h3>
+            ${topProducts.length > 0 ? `
+              <div class="space-y-2">
+                ${topProducts.map(([name, stats]) => `
+                  <div class="flex justify-between items-center p-2 bg-slate-50 rounded-lg hover:bg-slate-100">
+                    <div class="flex-1 min-w-0">
+                      <div class="text-xs font-medium text-slate-900 truncate">${salesSafe(name)}</div>
+                      <div class="text-[10px] text-slate-500">${stats.qty} sold • ${stats.orders} orders</div>
+                    </div>
+                    <div class="text-sm font-bold text-emerald-600 ml-2">R${Math.round(stats.revenue).toLocaleString()}</div>
+                  </div>
+                `).join('')}
+              </div>
+            ` : '<div class="text-xs text-slate-400 text-center py-3">No product data</div>'}
+          </div>
+
+          <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
+            <h3 class="text-sm font-bold text-slate-900 mb-3">Top Areas by Revenue</h3>
+            ${topAreas.length > 0 ? `
+              <div class="space-y-2">
+                ${topAreas.map(([name, stats]) => `
+                  <div class="flex justify-between items-center p-2 bg-slate-50 rounded-lg hover:bg-slate-100">
+                    <div class="flex-1 min-w-0">
+                      <div class="text-xs font-medium text-slate-900 truncate">${salesSafe(name)}</div>
+                      <div class="text-[10px] text-slate-500">${stats.orders} orders</div>
+                    </div>
+                    <div class="text-sm font-bold text-blue-600 ml-2">R${Math.round(stats.revenue).toLocaleString()}</div>
+                  </div>
+                `).join('')}
+              </div>
+            ` : '<div class="text-xs text-slate-400 text-center py-3">No area data</div>'}
           </div>
         </div>
       </div>
     `;
 
-    // Show metrics container, hide others
-    console.log('Showing metrics, hiding others');
+    showContainer(container);
+    console.log('KPIs rendered successfully');
+  }
+
+  function showContainer(container) {
+    // Show KPIs container
     container.classList.remove('hidden');
     
+    // Hide other containers
     const ordersWrapper = document.getElementById('ordersList')?.parentElement;
     const driversWrapper = document.getElementById('driversList')?.parentElement;
     const statsContainer = document.getElementById('statsContainer');
+    const metricsContainer = document.getElementById('metricsContainer');
     
-    if (ordersWrapper) {
-      ordersWrapper.classList.add('hidden');
-      console.log('Orders hidden');
-    }
-    if (driversWrapper) {
-      driversWrapper.classList.add('hidden');
-      console.log('Drivers hidden');
-    }
-    if (statsContainer) {
-      statsContainer.classList.add('hidden');
-      console.log('Stats hidden');
-    }
-    
-    console.log('Metrics render complete');
+    if (ordersWrapper) ordersWrapper.classList.add('hidden');
+    if (driversWrapper) driversWrapper.classList.add('hidden');
+    if (statsContainer) statsContainer.classList.add('hidden');
+    if (metricsContainer) metricsContainer.classList.add('hidden');
   }
 
-  console.log('Metrics Tab script loaded successfully');
+  console.log('KPIs Tab script loaded');
 })();
 </script>
 
