@@ -1763,6 +1763,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   // ========================================================================
   // ADMIN STATS (LIVE FROM API)
   // ========================================================================
+// === ADMIN STATS (live from API) ==========================================
   async function fetchAllOrders(){
     try{
       const r = await fetch(`${BASE_API}/orders`);
@@ -1779,232 +1780,107 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     try{
       const r = await fetch(`${BASE_API}/drivers`);
       const j = await r.json().catch(()=>({}));
-      if(!r.ok || !j.ok) { DRIVERS=[]; DRIVERS_BY_ID={}; API_DRIVERS_MAP={}; return; }
+      if(!r.ok || !j.ok) { DRIVERS=[]; DRIVERS_BY_ID={}; return; }
       DRIVERS = Array.isArray(j.drivers) ? j.drivers : [];
       DRIVERS_BY_ID = Object.create(null);
-      API_DRIVERS_MAP = {};
       for(const d of DRIVERS){
-        const key = d._internal_id || d.driver_id || d.id;
-        if(key){
-          DRIVERS_BY_ID[key] = d;
-          API_DRIVERS_MAP[key] = d;
-        }
+        if(d && d._internal_id) DRIVERS_BY_ID[d._internal_id] = d;
       }
     }catch(e){
       console.error("fetchDrivers", e);
-      DRIVERS=[]; DRIVERS_BY_ID={}; API_DRIVERS_MAP={};
+      DRIVERS=[]; DRIVERS_BY_ID={};
     }
-  }
-
-  function recalcAdminPayoutWidgets(){
-    if(!adminDriversCountEl || !adminPayPendingEl || !adminPayApprovedEl) return;
-
-    adminDriversCountEl.textContent = String(DRIVERS.length || 0);
-
-    let pending = 0;
-    let approved = 0;
-    const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
-
-    Object.values(source).forEach(o=>{
-      if(o.driver_pay_status === 'pending'){
-        pending += Number(o.driver_pay_pending || 0);
-      }
-      if(o.driver_pay_status === 'approved'){
-        approved += Number(o.driver_pay_approved || 0);
-      }
-    });
-
-    adminPayPendingEl.textContent  = `R${Math.round(pending)}`;
-    adminPayApprovedEl.textContent = `R${Math.round(approved)}`;
-
-    // Also mirror to KPI tiles
-    if(adminKpiOrdersTodayEl) {
-      // Orders Today already set below; nothing here.
-    }
-    if(adminKpiTotalOrdersEl) adminKpiTotalOrdersEl.textContent = adminStatsOrdersEl?.textContent || '0';
-    if(adminKpiRevenueEl)     adminKpiRevenueEl.textContent     = adminStatsRevenueEl?.textContent || 'R0';
-  }
-
-  // ---- helper to compute "orders today"
-  function countOrdersToday(orders){
-    const today = new Date();
-    const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
-    const start = new Date(y, m, d, 0, 0, 0).getTime();
-    const end   = new Date(y, m, d, 23, 59, 59, 999).getTime();
-
-    let c = 0;
-    for(const o of orders){
-      const raw = o.created_at_iso || o.created_at || o.createdAt || o.meta?.created_at;
-      const t = raw ? new Date(raw).getTime() : NaN;
-      if(Number.isFinite(t) && t >= start && t <= end) c++;
-    }
-    return c;
   }
 
   async function renderAdminStats(){
-    if(!ordersPanel) return;
+    // Ensure stats container exists with correct layout (label over value)
+    adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
+    adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
+    adminTopProductsEl  = document.getElementById('adminTopProducts');
+    adminTopAreasEl     = document.getElementById('adminTopAreas');
 
-    // Ensure container
-    if(!statsContainer){
-      statsContainer = document.createElement('div');
-      statsContainer.id = 'statsContainer';
-      statsContainer.className = 'mt-4';
-      ordersPanel.appendChild(statsContainer);
-    }
-
-    // Ensure layout (KPI row + existing blocks)
     if(!document.getElementById('adminStatsWrap')){
-      statsContainer.innerHTML = `
-        <div id="adminStatsWrap" class="space-y-4">
-          <!-- KPI ROW -->
-          <div class="grid gap-3 sm:grid-cols-4">
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-              <div id="adminKpiTotalOrders" class="text-2xl font-semibold">0</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-xs text-slate-500 mb-1">Revenue</div>
-              <div id="adminKpiRevenue" class="text-2xl font-semibold">R0</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-xs text-slate-500 mb-1">Avg Order Value</div>
-              <div id="adminKpiAvgOrder" class="text-2xl font-semibold">R0</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-xs text-slate-500 mb-1">Orders Today</div>
-              <div id="adminKpiOrdersToday" class="text-2xl font-semibold">0</div>
-            </div>
+      const stats = document.createElement('div');
+      stats.id = 'adminStatsWrap';
+      stats.className = 'hidden';
+      stats.innerHTML = `
+        <div class="grid gap-3 sm:grid-cols-3">
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+            <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
           </div>
-
-          <!-- EXISTING SUMMARY ROW -->
-          <div class="grid gap-3 sm:grid-cols-3">
-            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-              <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-              <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-              <div class="text-xs text-slate-500 mb-1">Revenue</div>
-              <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-              <div class="text-xs text-slate-500 mb-1">Drivers &amp; Payouts</div>
-              <div class="text-sm">
-                Drivers: <b id="adminDriversCount">0</b>
-              </div>
-              <div class="text-xs text-slate-500 mt-2">
-                Pending: <b id="adminPayPending">R0</b>
-              </div>
-              <div class="text-xs text-slate-500">
-                Approved: <b id="adminPayApproved">R0</b>
-              </div>
-            </div>
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Revenue</div>
+            <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
           </div>
-
-          <div class="grid gap-3 sm:grid-cols-2 mt-2">
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-sm font-medium mb-2">Top Products</div>
-              <ul id="adminTopProducts" class="space-y-1 text-sm"></ul>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-sm font-medium mb-2">Top Areas</div>
-              <ul id="adminTopAreas" class="space-y-1 text-sm"></ul>
-            </div>
+          <div class="border rounded-xl p-3 flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Drivers</div>
+            <div class="text-sm"><b id="adminDriversCount">0</b></div>
+            <div class="text-xs text-slate-500 mt-2">Payouts</div>
+            <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
+            <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
+          </div>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 mt-4">
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Products</div>
+            <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
+          </div>
+          <div class="border rounded-xl p-3">
+            <div class="text-sm font-medium mb-2">Top Areas</div>
+            <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
           </div>
         </div>
       `;
+      (ordersPanel || document.body).appendChild(stats);
+      adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
+      adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
+      adminTopProductsEl  = document.getElementById('adminTopProducts');
+      adminTopAreasEl     = document.getElementById('adminTopAreas');
+      adminDriversCountEl = document.getElementById('adminDriversCount');
+      adminPayPendingEl   = document.getElementById('adminPayPending');
+      adminPayApprovedEl  = document.getElementById('adminPayApproved');
     }
 
-    // Refs
-    adminStatsOrdersEl    = document.getElementById('adminStatsOrders');
-    adminStatsRevenueEl   = document.getElementById('adminStatsRevenue');
-    adminTopProductsEl    = document.getElementById('adminTopProducts');
-    adminTopAreasEl       = document.getElementById('adminTopAreas');
-    adminDriversCountEl   = document.getElementById('adminDriversCount');
-    adminPayPendingEl     = document.getElementById('adminPayPending');
-    adminPayApprovedEl    = document.getElementById('adminPayApproved');
-    adminKpiTotalOrdersEl = document.getElementById('adminKpiTotalOrders');
-    adminKpiRevenueEl     = document.getElementById('adminKpiRevenue');
-    adminKpiAvgOrderEl    = document.getElementById('adminKpiAvgOrder');
-    adminKpiOrdersTodayEl = document.getElementById('adminKpiOrdersToday');
-
-    // Orders
-    let orders;
-    if(DEMO_MODE){
-      orders = Object.values(DEMO_ORDERS_DB);
-      ALL_ORDERS = orders;
-      syncAllOrdersMapFromArray();
-    } else {
-      if(ALL_ORDERS.length === 0){
-        orders = await fetchAllOrders();
-        ALL_ORDERS = orders;
-        syncAllOrdersMapFromArray();
-      } else {
-        orders = ALL_ORDERS;
-      }
-    }
-
-    // Drivers
-    await fetchDrivers();
-
+    // Pull fresh data
+    const [orders] = await Promise.all([fetchAllOrders()]);
     const totalOrders = orders.length;
     const revenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
 
-    // Update existing summary
     if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
-    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${Math.round(revenue)}`;
-
-    // ---- KPIs (always visible)
-    const avgOrder = totalOrders ? Math.round(revenue / totalOrders) : 0;
-    const todayCount = countOrdersToday(orders);
-
-    if(adminKpiTotalOrdersEl) adminKpiTotalOrdersEl.textContent = String(totalOrders);
-    if(adminKpiRevenueEl)     adminKpiRevenueEl.textContent     = `R${Math.round(revenue)}`;
-    if(adminKpiAvgOrderEl)    adminKpiAvgOrderEl.textContent    = `R${avgOrder}`;
-    if(adminKpiOrdersTodayEl) adminKpiOrdersTodayEl.textContent = String(todayCount);
+    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${revenue}`;
 
     // Top products
     const prodMap = new Map();
     orders.forEach(o=>{
       (o.items||[]).forEach(it=>{
-        if(!it || !it.name) return;
-        prodMap.set(it.name, (prodMap.get(it.name)||0) + Number(it.qty||1));
+        prodMap.set(it.name, (prodMap.get(it.name)||0) + (it.qty||1));
       });
     });
-    const topProducts = Array.from(prodMap.entries())
-      .sort((a,b)=>b[1]-a[1])
-      .slice(0,5);
+    const topProducts = Array.from(prodMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
     if(adminTopProductsEl){
       adminTopProductsEl.innerHTML = topProducts.length
-        ? topProducts.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
+        ? topProducts.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
         : '<li class="text-slate-500">No data yet</li>';
     }
 
-    // Top areas
+    // Top areas (by meta.collection_name)
     const areaMap = new Map();
     orders.forEach(o=>{
       const k = o.meta?.collection_name || '—';
       areaMap.set(k, (areaMap.get(k)||0)+1);
     });
-    const topAreas = Array.from(areaMap.entries())
-      .sort((a,b)=>b[1]-a[1])
-      .slice(0,5);
+    const topAreas = Array.from(areaMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
     if(adminTopAreasEl){
       adminTopAreasEl.innerHTML = topAreas.length
-        ? topAreas.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
+        ? topAreas.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
         : '<li class="text-slate-500">No data yet</li>';
     }
 
+    // Also refresh driver/payout widgets from live drivers
+    await fetchDrivers();
     recalcAdminPayoutWidgets();
-
-    // Make sure visible when used
-    if(statsContainer){
-      statsContainer.classList.remove('hidden');
-    }
-  }
-
-  function renderStats(){
-    renderAdminStats();
-  }
+  }  
 
   // ========================================================================
   // ADMIN TABS
