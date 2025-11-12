@@ -1814,14 +1814,14 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     adminPayApprovedEl.textContent = `R${Math.round(approved)}`;
   }
 
-  async function renderAdminStats(){
+ async function renderAdminStats(){
     if(!ordersPanel) return;
 
     // Ensure container
     if(!statsContainer){
       statsContainer = document.createElement('div');
       statsContainer.id = 'statsContainer';
-      statsContainer.className = 'mt-4';
+      statsContainer.className = 'mt-4 hidden';
       ordersPanel.appendChild(statsContainer);
     }
 
