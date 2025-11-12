@@ -946,8 +946,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ========================================================================
   const waText = (str) => encodeURIComponent(str);
   const digits = (val) => (val || "").replace(/\D+/g, "");
-  const clamp  = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  const pad2   = (n) => String(n).padStart(2,'0');
+  const clamp  = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
+  const pad2   = (n)=> String(n).padStart(2,'0');
 
   const kmBetween = (a,b)=>{
     if(!a||!b) return 0;
@@ -1016,35 +1016,31 @@ window.addEventListener('DOMContentLoaded', () => {
   let botStage = 0;
 
   const currentOrdersByTab = {};
+  let ALL_ORDERS_MAP   = {};   // _internal_id -> order
+  let DEMO_ORDERS_DB   = {};
+  let DEMO_DRIVERS_DB  = {};
 
-  let ALL_ORDERS     = [];   // shared source for non-demo
-  let ALL_ORDERS_MAP = {};   // key -> order
-  let DEMO_ORDERS_DB = {};
-  let DEMO_DRIVERS_DB= {};
+  let API_DRIVERS_MAP  = {};   // driver_id/_internal_id -> driver
+  let DRIVERS          = [];   // for stats & drivers cards
+  let DRIVERS_BY_ID    = {};
 
-  let API_DRIVERS_MAP = {};  // driver_id/_internal_id -> driver
-  let DRIVERS         = [];
-  let DRIVERS_BY_ID   = {};
+  let REMOTE_STATS     = null; // (not required, but kept if you add /stats/overview)
 
-  const driverTotals = { pending: 0, approved: 0 };
+  const driverTotals   = { pending: 0, approved: 0 };
 
   let DELIVERY_COORDS   = null;
   let COLLECTION_COORDS = {lat:-33.590, lng:26.890};
 
   const storeItems = [];
 
-  // Admin stats DOM refs
+  // Admin stats DOM refs (inside admin panel)
   let adminStatsOrdersEl,
       adminStatsRevenueEl,
       adminTopProductsEl,
       adminTopAreasEl,
       adminDriversCountEl,
       adminPayPendingEl,
-      adminPayApprovedEl,
-      adminKpiTotalOrdersEl,
-      adminKpiRevenueEl,
-      adminKpiAvgOrderEl,
-      adminKpiOrdersTodayEl;
+      adminPayApprovedEl;
 
   // ========================================================================
   // YEAR
@@ -1055,81 +1051,81 @@ window.addEventListener('DOMContentLoaded', () => {
   // ========================================================================
   // ELEMENT REFS
   // ========================================================================
-  const mobileBtn        = document.getElementById('mobileMenuBtn');
-  const mobileDropdown   = document.getElementById('mobileNavDropdown');
-  const mobileIconOpen   = document.getElementById('mobileMenuIconOpen');
-  const mobileIconClose  = document.getElementById('mobileMenuIconClose');
+  const mobileBtn       = document.getElementById('mobileMenuBtn');
+  const mobileDropdown  = document.getElementById('mobileNavDropdown');
+  const mobileIconOpen  = document.getElementById('mobileMenuIconOpen');
+  const mobileIconClose = document.getElementById('mobileMenuIconClose');
 
-  const modal            = document.getElementById('orderBuilder');
-  const closeBtn         = document.getElementById('closeOrderBuilder');
-  const cancelOrderBuilder = document.getElementById('cancelOrderBuilder');
-  const itemsList        = document.getElementById('itemsList');
+  const modal               = document.getElementById('orderBuilder');
+  const closeBtn            = document.getElementById('closeOrderBuilder');
+  const cancelOrderBuilder  = document.getElementById('cancelOrderBuilder');
+  const itemsList           = document.getElementById('itemsList');
 
-  const zoneSelect       = document.getElementById('zoneSelect');
-  const rushToggle       = document.getElementById('rushToggle');
-  const totalEl          = document.getElementById('orderTotal');
-  const rushNote         = document.getElementById('rushNote');
-  const depositBanner    = document.getElementById('depositBanner');
-  const depositAmtEl     = document.getElementById('depositAmt');
-  const custNameEl       = document.getElementById('custName');
-  const custPhoneEl      = document.getElementById('custPhone');
-  const custAddrEl       = document.getElementById('custAddress');
+  const zoneSelect          = document.getElementById('zoneSelect');
+  const rushToggle          = document.getElementById('rushToggle');
+  const totalEl             = document.getElementById('orderTotal');
+  const rushNote            = document.getElementById('rushNote');
+  const depositBanner       = document.getElementById('depositBanner');
+  const depositAmtEl        = document.getElementById('depositAmt');
+  const custNameEl          = document.getElementById('custName');
+  const custPhoneEl         = document.getElementById('custPhone');
+  const custAddrEl          = document.getElementById('custAddress');
 
-  const adminBtn         = document.getElementById('adminLoginBtn');
+  const adminBtn            = document.getElementById('adminLoginBtn');
 
-  const confirmBtn2      = document.getElementById('confirmOrderBtn');
-  const botModal         = document.getElementById('botChat');
-  const botFeed          = document.getElementById('botFeed');
-  const botNext          = document.getElementById('botNext');
-  const botSendWA        = document.getElementById('botSendWA');
-  const botNewOrder      = document.getElementById('botNewOrder');
-  const botPayChoice     = document.getElementById('botPayChoice');
-  const botDemoNote      = document.getElementById('botDemoNote');
+  const confirmBtn2         = document.getElementById('confirmOrderBtn');
+  const botModal            = document.getElementById('botChat');
+  const botFeed             = document.getElementById('botFeed');
+  const botNext             = document.getElementById('botNext');
+  const botSendWA           = document.getElementById('botSendWA');
+  const botNewOrder         = document.getElementById('botNewOrder');
+  const botPayChoice        = document.getElementById('botPayChoice');
+  const botDemoNote         = document.getElementById('botDemoNote');
 
-  const payModal         = document.getElementById('payModal');
-  const payOrderRef      = document.getElementById('payOrderRef');
-  const payAmountEl      = document.getElementById('payAmount');
-  const closePayModalBtn = document.getElementById('closePayModal');
-  const btnFakePayNow    = document.getElementById('btnFakePayNow');
-  const btnCancelPay     = document.getElementById('btnCancelPay');
+  const payModal            = document.getElementById('payModal');
+  const payOrderRef         = document.getElementById('payOrderRef');
+  const payAmountEl         = document.getElementById('payAmount');
+  const closePayModalBtn    = document.getElementById('closePayModal');
+  const btnFakePayNow       = document.getElementById('btnFakePayNow');
+  const btnCancelPay        = document.getElementById('btnCancelPay');
 
-  const driverModal      = document.getElementById('driverModal');
-  const closeDriver      = document.getElementById('closeDriverModal');
-  const tabSignup        = document.getElementById('tabSignup');
-  const tabLogin         = document.getElementById('tabLogin');
-  const formSignup       = document.getElementById('driverFormSignup');
-  const formLogin        = document.getElementById('driverFormLogin');
+  const driverModal         = document.getElementById('driverModal');
+  const closeDriver         = document.getElementById('closeDriverModal');
+  const tabSignup           = document.getElementById('tabSignup');
+  const tabLogin            = document.getElementById('tabLogin');
+  const formSignup          = document.getElementById('driverFormSignup');
+  const formLogin           = document.getElementById('driverFormLogin');
 
-  const driverDashModal  = document.getElementById('driverDashModal');
-  const closeDriverDash  = document.getElementById('closeDriverDash');
-  const driverPayoutPendingEl  = document.getElementById('driverPayoutPending');
-  const driverPayoutApprovedEl = document.getElementById('driverPayoutApproved');
-  const driverNextWindowEl     = document.getElementById('driverNextWindow');
-  const driverZoneDisplayEl    = document.getElementById('driverZoneDisplay');
-  const driverRadiusDisplayEl  = document.getElementById('driverRadiusDisplay');
+  const driverDashModal         = document.getElementById('driverDashModal');
+  const closeDriverDash         = document.getElementById('closeDriverDash');
+  const driverPayoutPendingEl   = document.getElementById('driverPayoutPending');
+  const driverPayoutApprovedEl  = document.getElementById('driverPayoutApproved');
+  const driverNextWindowEl      = document.getElementById('driverNextWindow');
+  const driverZoneDisplayEl     = document.getElementById('driverZoneDisplay');
+  const driverRadiusDisplayEl   = document.getElementById('driverRadiusDisplay');
 
-  const ordersPanel      = document.getElementById('ordersPanel');
-  const ordersList       = document.getElementById('ordersList');
-  const ordersClose      = document.getElementById('closeOrdersPanel');
-  const ordersAssign     = document.getElementById('ordersAssign');
-  const ordersRefresh    = document.getElementById('ordersRefresh');
+  const ordersPanel         = document.getElementById('ordersPanel');
+  const ordersList          = document.getElementById('ordersList');
+  const ordersClose         = document.getElementById('closeOrdersPanel');
+  const ordersAssign        = document.getElementById('ordersAssign');
+  const ordersRefresh       = document.getElementById('ordersRefresh');
 
-  const driversList      = document.getElementById('driversList');
-  const driversRefresh   = document.getElementById('driversRefresh');
+  const driversList         = document.getElementById('driversList');
+  const driversRefresh      = document.getElementById('driversRefresh');
 
   const ordersTabsContainer = document.getElementById('ordersTabs');
-  let statsContainer     = document.getElementById('statsContainer');
+  let   statsContainer      = document.getElementById('statsContainer'); // created if missing
 
-  const storeModal       = document.getElementById('storeModal');
-  const openStoreFooter  = document.getElementById('openStoreModalFooter');
-  const closeStoreModalBtn = document.getElementById('closeStoreModal');
-  const cancelStoreBtn   = document.getElementById('cancelStore');
-  const submitStoreBtn   = document.getElementById('submitStore');
-  const addStoreItemBtn  = document.getElementById('addStoreItem');
-  const storeItemsList   = document.getElementById('storeItemsList');
-  const storeNameEl      = document.getElementById('storeName');
-  const storePhoneEl     = document.getElementById('storePhone');
-  const storeZoneEl      = document.getElementById('storeZone');
+  const storeModal          = document.getElementById('storeModal');
+  const openStoreFooter     = document.getElementById('openStoreModalFooter');
+  const closeStoreModalBtn  = document.getElementById('closeStoreModal');
+  const cancelStoreBtn      = document.getElementById('cancelStore');
+  const submitStoreBtn      = document.getElementById('submitStore');
+  const addStoreItemBtn     = document.getElementById('addStoreItem');
+  const storeItemsList      = document.getElementById('storeItemsList');
+  const storeNameEl         = document.getElementById('storeName');
+  const storePhoneEl        = document.getElementById('storePhone');
+  const storeZoneEl         = document.getElementById('storeZone');
 
   // ========================================================================
   // COLLECTION POINTS
@@ -1166,11 +1162,11 @@ window.addEventListener('DOMContentLoaded', () => {
   // CATALOG
   // ========================================================================
   const CATALOG = [
-    {name:'Panado 500mg (24s)', price:35},
-    {name:'Allergex 10mg (10s)', price:30},
-    {name:'Cough Syrup 100ml',   price:55},
-    {name:'Electrolyte Sachet',  price:15},
-    {name:'Bandages (set)',      price:25}
+    {name:'Panado 500mg (24s)',price:35},
+    {name:'Allergex 10mg (10s)',price:30},
+    {name:'Cough Syrup 100ml',price:55},
+    {name:'Electrolyte Sachet',price:15},
+    {name:'Bandages (set)',price:25}
   ];
 
   // ========================================================================
@@ -1196,18 +1192,12 @@ window.addEventListener('DOMContentLoaded', () => {
   function seedIfEmpty(){
     if(!DEMO_DRIVERS_DB || Object.keys(DEMO_DRIVERS_DB).length===0){
       DEMO_DRIVERS_DB = {
-        "DRV-100001": {
-          driver_id:"DRV-100001", name:"Sipho N", phone:"27810000001", vehicle:"Bike",
-          stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0
-        },
-        "DRV-100002": {
-          driver_id:"DRV-100002", name:"Anele M", phone:"27810000002", vehicle:"Car",
-          stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0
-        },
-        "DRV-100003": {
-          driver_id:"DRV-100003", name:"Thandi D", phone:"27810000003", vehicle:"Car",
-          stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0
-        }
+        "DRV-100001": { driver_id:"DRV-100001", name:"Sipho N", phone:"27810000001", vehicle:"Bike",
+                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
+        "DRV-100002": { driver_id:"DRV-100002", name:"Anele M", phone:"27810000002", vehicle:"Car",
+                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
+        "DRV-100003": { driver_id:"DRV-100003", name:"Thandi D", phone:"27810000003", vehicle:"Car",
+                        stats:{assigned:0,in_transit:0,delivered:0}, payout_pending:0, payout_approved:0 },
       };
     }
     if(!DEMO_ORDERS_DB || Object.keys(DEMO_ORDERS_DB).length===0){
@@ -1218,10 +1208,7 @@ window.addEventListener('DOMContentLoaded', () => {
         status,
         total,
         delivery_fee,
-        items: [
-          {name:"Panado 500mg (24s)",qty:1},
-          {name:"Cough Syrup 100ml",qty:1}
-        ],
+        items: [{name:"Panado 500mg (24s)",qty:1},{name:"Cough Syrup 100ml",qty:1}],
         meta: { collection_name: 'Port Alfred Depot', distance_km: 3.2 },
         fraud_score: 0.04,
         driver_id,
@@ -1230,10 +1217,10 @@ window.addEventListener('DOMContentLoaded', () => {
         driver_pay_approved: status === 'delivered' ? clamp(delivery_fee,25,45) : 0
       });
       DEMO_ORDERS_DB = {
-        "demo-abc123": o("demo-abc123",180,35,"pending",   "DRV-100001"),
-        "demo-def456": o("demo-def456",240,45,"assigned",  "DRV-100002"),
-        "demo-ghi789": o("demo-ghi789",120,25,"in_transit","DRV-100002"),
-        "demo-jkl012": o("demo-jkl012",220,30,"delivered", "DRV-100003")
+        "demo-abc123": o("demo-abc123",180,35,"pending",    "DRV-100001"),
+        "demo-def456": o("demo-def456",240,45,"assigned",   "DRV-100002"),
+        "demo-ghi789": o("demo-ghi789",120,25,"in_transit", "DRV-100002"),
+        "demo-jkl012": o("demo-jkl012",220,30,"delivered",  "DRV-100003"),
       };
     }
   }
@@ -1242,7 +1229,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if(DEMO_MODE){
       const o = loadOrdersFromLS();
       const d = loadDriversFromLS();
-      DEMO_ORDERS_DB = o || {};
+      DEMO_ORDERS_DB  = o || {};
       DEMO_DRIVERS_DB = d || {};
       seedIfEmpty();
 
@@ -1258,10 +1245,8 @@ window.addEventListener('DOMContentLoaded', () => {
           if(ord.status === 'assigned')   dr.stats.assigned++;
           if(ord.status === 'in_transit') dr.stats.in_transit++;
           if(ord.status === 'delivered')  dr.stats.delivered++;
-          if(ord.driver_pay_status === 'pending')
-            dr.payout_pending  += (ord.driver_pay_pending||0);
-          if(ord.driver_pay_status === 'approved')
-            dr.payout_approved += (ord.driver_pay_approved||0);
+          if(ord.driver_pay_status === 'pending')  dr.payout_pending  += (ord.driver_pay_pending||0);
+          if(ord.driver_pay_status === 'approved') dr.payout_approved += (ord.driver_pay_approved||0);
         }
       });
       saveOrdersToLS();
@@ -1269,24 +1254,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
   hydrateState();
-
-  function syncAllOrdersMapFromArray(){
-    const map = {};
-    ALL_ORDERS.forEach(o=>{
-      const key =
-        o._internal_id || o.internal_id ||
-        o.order_public_id || o.order_id;
-      if(key){
-        map[key] = o;
-        if(!o._rowKey) o._rowKey = key;
-      }
-    });
-    ALL_ORDERS_MAP = map;
-  }
-  function syncAllOrdersFromDemo(){
-    ALL_ORDERS = Object.values(DEMO_ORDERS_DB);
-    syncAllOrdersMapFromArray();
-  }
 
   // ========================================================================
   // CUSTOMER UI: items + totals
@@ -1367,7 +1334,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const items = Array.from(document.querySelectorAll('.itemCheck'))
       .filter(c => c.checked)
       .map(c => {
-        const i = Number(c.dataset.idx);
+        const i   = Number(c.dataset.idx);
         const qtyInput = document.querySelector(`.itemQty[data-idx="${i}"]`);
         const qty = Math.max(1, Number(qtyInput?.value || 1));
         return { name: CATALOG[i].name, price: Number(CATALOG[i].price), qty };
@@ -1412,7 +1379,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   function nextETA(rush){
-    const now = new Date();
+    const now     = new Date();
     const windows = [[8,10],[12,14],[16,18]];
     const allowed = new Set([0,3,4,5,6]);
     const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -1454,7 +1421,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ========================================================================
   // MODALS & NAV
   // ========================================================================
-  const openOrder = async ()=>{
+  const openOrder  = async ()=>{
     openFlex(modal);
     const s = await computeTotal();
     toggleDepositBanner(s.total);
@@ -1474,7 +1441,7 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   const closeBot = ()=>{ if(botFeed) botFeed.innerHTML=''; closeFlex(botModal); };
 
-  const openPayModal = (orderRef, amount)=>{
+  const openPayModal  = (orderRef, amount)=>{
     if(!payModal) return;
     if(payOrderRef) payOrderRef.textContent = orderRef || '--';
     if(payAmountEl) payAmountEl.textContent = amount || '0';
@@ -1482,7 +1449,7 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   const closePayModal = ()=> closeFlex(payModal);
 
-  const openDriverWindow = ()=> openFlex(driverModal);
+  const openDriverWindow  = ()=> openFlex(driverModal);
   const closeDriverWindow = ()=> closeFlex(driverModal);
 
   const openStore = ()=> openFlex(storeModal);
@@ -1494,12 +1461,13 @@ window.addEventListener('DOMContentLoaded', () => {
     if(!ordersPanel) return;
     openFlex(ordersPanel);
     ensureAdminTabs();
-    refreshAllData().then(()=> setActiveAdminTab(ordersTab));
+    setActiveAdminTab(ordersTab);
+    refreshAllData();
   };
   const closeOrders= ()=> closeFlex(ordersPanel);
 
   const openDriverDash = ()=>{
-    if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent  = String(driverTotals.pending);
+    if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
     if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
     openFlex(driverDashModal);
   };
@@ -1577,7 +1545,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const t = e.target;
     if(
       (t?.classList && t.classList.contains('itemCheck')) ||
-      (t?.classList && t.classList.contains('itemQty')) ||
+      (t?.classList && t.classList.contains('itemQty'))   ||
       t?.name === 'pay'
     ){
       const s = await computeTotal(); toggleDepositBanner(s.total);
@@ -1592,32 +1560,7 @@ window.addEventListener('DOMContentLoaded', () => {
     el.addEventListener('input', ()=> localStorage.setItem(key, el.value));
   });
 
-  // Store items
-  function renderStoreItems(){
-    if(!storeItemsList) return;
-    storeItemsList.innerHTML = '';
-    storeItems.forEach((it,idx)=>{
-      const row = document.createElement('div');
-      row.className = "flex items-center justify-between border rounded-lg p-2";
-      row.innerHTML = `
-        <div class="text-sm">
-          <div class="font-medium">${it.name}</div>
-          <div class="text-xs text-slate-500">R${it.price}</div>
-        </div>
-        <button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline" aria-label="Remove ${it.name}">remove</button>
-      `;
-      storeItemsList.appendChild(row);
-    });
-
-    storeItemsList.querySelectorAll('.removeStoreItem').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const i = Number(btn.getAttribute('data-idx'));
-        storeItems.splice(i,1);
-        renderStoreItems();
-      });
-    });
-  }
-
+  // Store items add
   addStoreItemBtn?.addEventListener('click', e=>{
     e.preventDefault();
     const name = prompt('Item name');
@@ -1628,62 +1571,6 @@ window.addEventListener('DOMContentLoaded', () => {
     storeItems.push({name,price});
     renderItems();
     computeTotal().then(s=>toggleDepositBanner(s.total));
-    renderStoreItems();
-  });
-
-  openStoreFooter?.addEventListener('click', openStore);
-  closeStoreModalBtn?.addEventListener('click', closeStore);
-  cancelStoreBtn?.addEventListener('click', closeStore);
-
-  submitStoreBtn?.addEventListener('click', async ()=>{
-    const storeName = storeNameEl?.value.trim();
-    const storePhone = digits(storePhoneEl?.value.trim());
-    const zone = storeZoneEl?.value || 'A';
-    if(!storeName || !storePhone){
-      alert("Please add store name & WhatsApp.");
-      return;
-    }
-    if(storeItems.length === 0){
-      if(!confirm("No items added yet. Submit anyway?")) return;
-    }
-
-    const payload = {
-      name: storeName,
-      owner_name: storeName,
-      phone: storePhone,
-      zone,
-      address: {}
-    };
-
-    if(!DEMO_MODE){
-      try{
-        const r = await fetch(`${BASE_API}/stores`, {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify(payload)
-        });
-        const j = await r.json().catch(()=>({}));
-        if(!r.ok || j.ok === false){ alert("Store save failed on server."); }
-      }catch(err){ console.error("store create failed",err); }
-    }
-
-    const adminMsg =
-`New store signup:
-Name: ${storeName}
-Phone: ${storePhone}
-Items:
-${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
-
-    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(adminMsg)}`,'_blank');
-
-    alert("Thanks! We'll review your store.");
-    closeStore();
-
-    if(storeNameEl) storeNameEl.value = '';
-    if(storePhoneEl) storePhoneEl.value = '';
-    if(storeZoneEl) storeZoneEl.value = 'A';
-    storeItems.splice(0,storeItems.length);
-    renderStoreItems();
   });
 
   // ========================================================================
@@ -1750,6 +1637,89 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   });
 
   // ========================================================================
+  // STORE MODAL
+  // ========================================================================
+  function renderStoreItems(){
+    if(!storeItemsList) return;
+    storeItemsList.innerHTML = '';
+    storeItems.forEach((it,idx)=>{
+      const row = document.createElement('div');
+      row.className = "flex items-center justify-between border rounded-lg p-2";
+      row.innerHTML = `
+        <div class="text-sm">
+          <div class="font-medium">${it.name}</div>
+          <div class="text-xs text-slate-500">R${it.price}</div>
+        </div>
+        <button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline" aria-label="Remove ${it.name}">remove</button>
+      `;
+      storeItemsList.appendChild(row);
+    });
+
+    storeItemsList.querySelectorAll('.removeStoreItem').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const i = Number(btn.getAttribute('data-idx'));
+        storeItems.splice(i,1);
+        renderStoreItems();
+      });
+    });
+  }
+
+  openStoreFooter?.addEventListener('click', openStore);
+  closeStoreModalBtn?.addEventListener('click', closeStore);
+  cancelStoreBtn?.addEventListener('click', closeStore);
+
+  submitStoreBtn?.addEventListener('click', async ()=>{
+    const storeName  = storeNameEl?.value.trim();
+    const storePhone = digits(storePhoneEl?.value.trim());
+    const zone       = storeZoneEl?.value || 'A';
+    if(!storeName || !storePhone){
+      alert("Please add store name & WhatsApp.");
+      return;
+    }
+    if(storeItems.length === 0){
+      if(!confirm("No items added yet. Submit anyway?")) return;
+    }
+
+    const payload = {
+      name: storeName,
+      owner_name: storeName,
+      phone: storePhone,
+      zone,
+      address: {}
+    };
+
+    if(!DEMO_MODE){
+      try{
+        const r = await fetch(`${BASE_API}/stores`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(payload)
+        });
+        const j = await r.json().catch(()=>({}));
+        if(!r.ok || j.ok === false){ alert("Store save failed on server."); }
+      }catch(err){ console.error("store create failed",err); }
+    }
+
+    const adminMsg =
+`New store signup:
+Name: ${storeName}
+Phone: ${storePhone}
+Items:
+${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
+
+    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${waText(adminMsg)}`,'_blank');
+
+    alert("Thanks! We'll review your store.");
+    closeStore();
+
+    if(storeNameEl) storeNameEl.value = '';
+    if(storePhoneEl) storePhoneEl.value = '';
+    if(storeZoneEl)  storeZoneEl.value = 'A';
+    storeItems.splice(0,storeItems.length);
+    renderStoreItems();
+  });
+
+  // ========================================================================
   // DATA EVENTS
   // ========================================================================
   window.addEventListener('yt-orders-updated', ()=>{
@@ -1761,15 +1731,23 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   });
 
   // ========================================================================
-  // ADMIN STATS (LIVE FROM API)
+  // ADMIN STATS (LIVE FROM API) - USED TO POPULATE STATS & DRIVERS
   // ========================================================================
-// === ADMIN STATS (live from API) ==========================================
   async function fetchAllOrders(){
+    if (DEMO_MODE){
+      return Object.values(DEMO_ORDERS_DB);
+    }
     try{
       const r = await fetch(`${BASE_API}/orders`);
       const j = await r.json().catch(()=>({}));
-      if(!r.ok || !j.ok) return [];
-      return Array.isArray(j.orders) ? j.orders : [];
+      if(!r.ok || j.ok === false) return [];
+      return Array.isArray(j.orders)
+        ? j.orders
+        : Array.isArray(j.data)
+        ? j.data
+        : Array.isArray(j)
+        ? j
+        : [];
     }catch(e){
       console.error("fetchAllOrders", e);
       return [];
@@ -1777,110 +1755,197 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   async function fetchDrivers(){
+    if(DEMO_MODE){
+      DRIVERS = Object.values(DEMO_DRIVERS_DB);
+      DRIVERS_BY_ID = Object.create(null);
+      API_DRIVERS_MAP = {};
+      for(const d of DRIVERS){
+        const key = d._internal_id || d.driver_id;
+        if(key){
+          DRIVERS_BY_ID[key] = d;
+          API_DRIVERS_MAP[key] = d;
+        }
+      }
+      return;
+    }
+
     try{
       const r = await fetch(`${BASE_API}/drivers`);
       const j = await r.json().catch(()=>({}));
-      if(!r.ok || !j.ok) { DRIVERS=[]; DRIVERS_BY_ID={}; return; }
-      DRIVERS = Array.isArray(j.drivers) ? j.drivers : [];
+      if(!r.ok || j.ok === false){
+        DRIVERS = [];
+        DRIVERS_BY_ID = {};
+        API_DRIVERS_MAP = {};
+        return;
+      }
+      DRIVERS = Array.isArray(j.drivers)
+        ? j.drivers
+        : Array.isArray(j.data)
+        ? j.data
+        : Array.isArray(j)
+        ? j
+        : [];
       DRIVERS_BY_ID = Object.create(null);
+      API_DRIVERS_MAP = {};
       for(const d of DRIVERS){
-        if(d && d._internal_id) DRIVERS_BY_ID[d._internal_id] = d;
+        const key = d._internal_id || d.driver_id || d.id;
+        if(key){
+          DRIVERS_BY_ID[key] = d;
+          API_DRIVERS_MAP[key] = d;
+        }
       }
     }catch(e){
       console.error("fetchDrivers", e);
-      DRIVERS=[]; DRIVERS_BY_ID={};
+      DRIVERS = [];
+      DRIVERS_BY_ID = {};
+      API_DRIVERS_MAP = {};
     }
   }
 
+  function recalcAdminPayoutWidgets(){
+    if(!adminDriversCountEl || !adminPayPendingEl || !adminPayApprovedEl) return;
+
+    adminDriversCountEl.textContent = String(DRIVERS.length || 0);
+
+    let pending = 0;
+    let approved = 0;
+    const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
+
+    Object.values(source).forEach(o=>{
+      if(o.driver_pay_status === 'pending'){
+        pending += Number(o.driver_pay_pending || 0);
+      }
+      if(o.driver_pay_status === 'approved'){
+        approved += Number(o.driver_pay_approved || 0);
+      }
+    });
+
+    adminPayPendingEl.textContent  = `R${Math.round(pending)}`;
+    adminPayApprovedEl.textContent = `R${Math.round(approved)}`;
+  }
+
   async function renderAdminStats(){
-    // Ensure stats container exists with correct layout (label over value)
+    if(!ordersPanel) return;
+
+    if(!statsContainer){
+      statsContainer = document.createElement('div');
+      statsContainer.id = 'statsContainer';
+      statsContainer.className = 'mt-4';
+      ordersPanel.appendChild(statsContainer);
+    }
+
+    // Ensure base layout exists
+    if(!document.getElementById('adminStatsWrap')){
+      statsContainer.innerHTML = `
+        <div id="adminStatsWrap" class="space-y-4">
+          <div class="grid gap-3 sm:grid-cols-3">
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+              <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Revenue</div>
+              <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+              <div class="text-xs text-slate-500 mb-1">Drivers &amp; Payouts</div>
+              <div class="text-sm">
+                Drivers: <b id="adminDriversCount">0</b>
+              </div>
+              <div class="text-xs text-slate-500 mt-2">
+                Pending: <b id="adminPayPending">R0</b>
+              </div>
+              <div class="text-xs text-slate-500">
+                Approved: <b id="adminPayApproved">R0</b>
+              </div>
+            </div>
+          </div>
+          <div class="grid gap-3 sm:grid-cols-2 mt-2">
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Top Products</div>
+              <ul id="adminTopProducts" class="space-y-1 text-sm"></ul>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Top Areas</div>
+              <ul id="adminTopAreas" class="space-y-1 text-sm"></ul>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
     adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
     adminTopProductsEl  = document.getElementById('adminTopProducts');
     adminTopAreasEl     = document.getElementById('adminTopAreas');
+    adminDriversCountEl = document.getElementById('adminDriversCount');
+    adminPayPendingEl   = document.getElementById('adminPayPending');
+    adminPayApprovedEl  = document.getElementById('adminPayApproved');
 
-    if(!document.getElementById('adminStatsWrap')){
-      const stats = document.createElement('div');
-      stats.id = 'adminStatsWrap';
-      stats.className = 'hidden';
-      stats.innerHTML = `
-        <div class="grid gap-3 sm:grid-cols-3">
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-            <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
-          </div>
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Revenue</div>
-            <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
-          </div>
-          <div class="border rounded-xl p-3 flex flex-col">
-            <div class="text-xs text-slate-500 mb-1">Drivers</div>
-            <div class="text-sm"><b id="adminDriversCount">0</b></div>
-            <div class="text-xs text-slate-500 mt-2">Payouts</div>
-            <div class="text-xs">Pending: <b id="adminPayPending">R0</b></div>
-            <div class="text-xs">Approved: <b id="adminPayApproved">R0</b></div>
-          </div>
-        </div>
-        <div class="grid gap-3 sm:grid-cols-2 mt-4">
-          <div class="border rounded-xl p-3">
-            <div class="text-sm font-medium mb-2">Top Products</div>
-            <ul id="adminTopProducts" class="text-sm space-y-1"></ul>
-          </div>
-          <div class="border rounded-xl p-3">
-            <div class="text-sm font-medium mb-2">Top Areas</div>
-            <ul id="adminTopAreas" class="text-sm space-y-1"></ul>
-          </div>
-        </div>
-      `;
-      (ordersPanel || document.body).appendChild(stats);
-      adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
-      adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
-      adminTopProductsEl  = document.getElementById('adminTopProducts');
-      adminTopAreasEl     = document.getElementById('adminTopAreas');
-      adminDriversCountEl = document.getElementById('adminDriversCount');
-      adminPayPendingEl   = document.getElementById('adminPayPending');
-      adminPayApprovedEl  = document.getElementById('adminPayApproved');
+    // Pull fresh orders + drivers from API/DEMO
+    const orders = await fetchAllOrders();
+    await fetchDrivers();
+
+    // Build ALL_ORDERS_MAP from fresh orders (used by other parts)
+    const map = {};
+    orders.forEach(o=>{
+      const key =
+        o._internal_id || o.internal_id ||
+        o.order_public_id || o.order_id ||
+        Math.random().toString(36).slice(2);
+      map[key] = o;
+    });
+    if(!DEMO_MODE){
+      ALL_ORDERS_MAP = map;
     }
 
-    // Pull fresh data
-    const [orders] = await Promise.all([fetchAllOrders()]);
+    // Totals
     const totalOrders = orders.length;
     const revenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
 
     if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
-    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${revenue}`;
+    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${Math.round(revenue)}`;
 
     // Top products
     const prodMap = new Map();
     orders.forEach(o=>{
       (o.items||[]).forEach(it=>{
-        prodMap.set(it.name, (prodMap.get(it.name)||0) + (it.qty||1));
+        if(!it || !it.name) return;
+        prodMap.set(it.name, (prodMap.get(it.name)||0) + Number(it.qty||1));
       });
     });
-    const topProducts = Array.from(prodMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const topProducts = Array.from(prodMap.entries())
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0,5);
     if(adminTopProductsEl){
       adminTopProductsEl.innerHTML = topProducts.length
-        ? topProducts.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
+        ? topProducts.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
         : '<li class="text-slate-500">No data yet</li>';
     }
 
-    // Top areas (by meta.collection_name)
+    // Top areas
     const areaMap = new Map();
     orders.forEach(o=>{
       const k = o.meta?.collection_name || '—';
       areaMap.set(k, (areaMap.get(k)||0)+1);
     });
-    const topAreas = Array.from(areaMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const topAreas = Array.from(areaMap.entries())
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0,5);
     if(adminTopAreasEl){
       adminTopAreasEl.innerHTML = topAreas.length
-        ? topAreas.map(([name,c])=>`<li>${name} — <b>${c}</b></li>`).join('')
+        ? topAreas.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
         : '<li class="text-slate-500">No data yet</li>';
     }
 
-    // Also refresh driver/payout widgets from live drivers
-    await fetchDrivers();
+    // Driver + payouts
     recalcAdminPayoutWidgets();
-  }  
+  }
+
+  // Wrapper so any existing calls still work
+  function renderStats(){
+    renderAdminStats();
+  }
 
   // ========================================================================
   // ADMIN TABS
@@ -1930,7 +1995,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   function setActiveAdminTab(tabKey){
     ordersTab = tabKey;
 
-    // Tab styling
     document.querySelectorAll('.yt-o-tab').forEach(x=>{
       x.classList.remove('bg-emerald-600','text-white');
       x.setAttribute('aria-selected','false');
@@ -1948,22 +2012,20 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     if (ordersWrapper)  ordersWrapper.classList.toggle('hidden', showDrivers || showStats);
     if (driversWrapper) driversWrapper.classList.toggle('hidden', !showDrivers);
+    if (statsContainer) statsContainer.classList.toggle('hidden', !showStats);
 
-    if (showStats) {
-      renderAdminStats();
-    } else if (statsContainer) {
-      statsContainer.classList.add('hidden');
-    }
-
-    if (showDrivers) {
+    if(showDrivers){
       renderDrivers();
-    } else if (!showStats) {
+    } else if(showStats){
+      renderAdminStats();
+    } else {
       renderOrders();
     }
   }
 
   function hardRefresh(){
-    refreshAllData().then(()=> setActiveAdminTab(ordersTab));
+    refreshAllData();
+    setActiveAdminTab(ordersTab);
   }
   ordersRefresh?.addEventListener('click', hardRefresh);
   driversRefresh?.addEventListener('click', hardRefresh);
@@ -1987,7 +2049,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       mut(o);
       saveOrdersToLS();
       hydrateState();
-      syncAllOrdersFromDemo();
       window.dispatchEvent(new Event('yt-orders-updated'));
       return o;
     }
@@ -2043,10 +2104,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     if(DEMO_MODE){
       mutateOrder(internalId, (o)=>{
         const pay = calcDriverPayout(o);
-        o.status             = 'delivered';
-        o.driver_pay_status  = 'approved';
-        o.driver_pay_approved= pay;
-        o.driver_pay_pending = 0;
+        o.status = 'delivered';
+        o.driver_pay_status   = 'approved';
+        o.driver_pay_approved = pay;
+        o.driver_pay_pending  = 0;
       });
       renderOrders(); renderDrivers(); renderStats();
       alert(`[DEMO] Delivered ${internalId}.`);
@@ -2076,7 +2137,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
     const ids = Object.values(source)
       .filter(o => o.status === 'pending')
-      .map(o => o._internal_id || o.internal_id || o._rowKey);
+      .map(o => o._internal_id || o.internal_id);
 
     if (ids.length === 0){ alert("No pending orders to assign."); return; }
 
@@ -2086,9 +2147,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         mutateOrder(internalId, (o)=>{
           if(!o.driver_id){ o.driver_id = pickDriverId(); }
           const pay = calcDriverPayout(o);
-          o.driver_pay_status   = 'pending';
-          o.driver_pay_pending  = pay;
-          o.status              = 'assigned';
+          o.driver_pay_status  = 'pending';
+          o.driver_pay_pending = pay;
+          o.status             = 'assigned';
           results.push(`✅ (demo) ${internalId} -> ${o.driver_id} (R${pay})`);
         });
         continue;
@@ -2125,35 +2186,30 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   async function renderOrders(){
     if(!ordersList) return;
 
-    if(!DEMO_MODE && ALL_ORDERS.length === 0){
-      ALL_ORDERS = await fetchAllOrders();
-      syncAllOrdersMapFromArray();
-    }
-    if(DEMO_MODE){
-      syncAllOrdersFromDemo();
-    }
-
-    // by_driver tab
+    // by driver tab
     if((ordersTab||'').startsWith('by_driver:')){
       const did = ordersTab.split(':',2)[1];
-      const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : ALL_ORDERS;
+      const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : Object.values(ALL_ORDERS_MAP);
       const data = src.filter(o => {
         const assigned = o.assigned_driver_id || o.driver_id;
         return assigned === did;
       });
 
       currentOrdersByTab[ordersTab] = data;
+
       ordersList.innerHTML = data.length
         ? ''
         : `<div class="text-sm text-slate-500 p-4">No orders for that driver.</div>`;
+
       data.forEach(o => ordersList.appendChild(buildOrderRow(o)));
       wireOrderRowButtons(ordersList);
       return;
     }
 
     // status tabs
-    const src = DEMO_MODE ? Object.values(DEMO_ORDERS_DB) : ALL_ORDERS;
-    const data = src.filter(o => o.status === ordersTab);
+    const data = DEMO_MODE
+      ? Object.values(DEMO_ORDERS_DB).filter(o=>o.status===ordersTab)
+      : Object.values(ALL_ORDERS_MAP).filter(o=>o.status===ordersTab);
 
     currentOrdersByTab[ordersTab] = data;
 
@@ -2167,9 +2223,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   function buildOrderRow(o){
     const itemsText = (o.items || []).map(i=>`${i.name} x${i.qty}`).join(', ');
-    const internalId = o._internal_id || o.internal_id || o._rowKey || null;
-    const refDisplay = o.order_public_id || o.order_id || internalId || "REF?";
-    const kmText = (o.meta && Number.isFinite(o.meta.distance_km))
+    const internalId  = o._internal_id || o.internal_id || null;
+    const refDisplay  = o.order_public_id || o.order_id || internalId || "REF?";
+    const kmText      = (o.meta && Number.isFinite(o.meta.distance_km))
       ? ` • ${Number(o.meta.distance_km).toFixed(1)} km`
       : "";
     const fraudDisplay = (typeof o.fraud_score === "number")
@@ -2189,10 +2245,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     let driverPayText = "Driver pay: R0";
     let driverPayStatusText = "Pay: –";
     if(o.driver_pay_status === "pending"){
-      driverPayText       = `Driver pay: R${o.driver_pay_pending || 0}`;
+      driverPayText = `Driver pay: R${o.driver_pay_pending || 0}`;
       driverPayStatusText = "Pay: pending";
     } else if(o.driver_pay_status === "approved"){
-      driverPayText       = `Driver pay: R${o.driver_pay_approved || 0}`;
+      driverPayText = `Driver pay: R${o.driver_pay_approved || 0}`;
       driverPayStatusText = "Pay: approved";
     }
 
@@ -2226,8 +2282,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           ${driverPayText} • ${driverPayStatusText}
         </div>
         ${ createdText
-          ? `<div class="text-[9px] text-slate-400 mt-0.5">Created: ${salesSafe(createdText)}</div>`
-          : ''
+            ? `<div class="text-[9px] text-slate-400 mt-0.5">Created: ${salesSafe(createdText)}</div>`
+            : ''
         }
       </div>
       <div class="flex flex-row flex-wrap gap-2 text-xs sm:justify-end">
@@ -2280,11 +2336,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   // DRIVER METRICS & RENDERING
   // ========================================================================
   function computeDriverDerived(driverKey){
-    const src = DEMO_MODE
-      ? Object.values(DEMO_ORDERS_DB)
-      : ALL_ORDERS;
-
-    const mine = src.filter(o => {
+    const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
+    const mine = Object.values(source).filter(o => {
       const assigned = o.assigned_driver_id || o.driver_id;
       return assigned === driverKey;
     });
@@ -2307,10 +2360,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         totalFee += Number(o.delivery_fee);
         feeCount++;
       }
-      if(o.driver_pay_status === 'pending')
-        pendingPay += Number(o.driver_pay_pending || 0);
-      if(o.driver_pay_status === 'approved')
-        approvedPay += Number(o.driver_pay_approved || 0);
+      if(o.driver_pay_status === 'pending')  pendingPay  += Number(o.driver_pay_pending  || 0);
+      if(o.driver_pay_status === 'approved') approvedPay += Number(o.driver_pay_approved || 0);
     });
 
     const avgFee = feeCount ? Math.round(totalFee / feeCount) : 0;
@@ -2398,9 +2449,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         ${
           stats.lastDeliveries.length
             ? `<div class="text-[8px] text-slate-400">
-                Recent refs:
-                ${stats.lastDeliveries.map(x=>`<code>${salesSafe(x)}</code>`).join(', ')}
-              </div>`
+                 Recent refs:
+                 ${stats.lastDeliveries.map(x=>`<code>${salesSafe(x)}</code>`).join(', ')}
+               </div>`
             : ''
         }
 
@@ -2418,11 +2469,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           ${
             dr.phone
               ? `<a
-                  class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-                  href="https://wa.me/${salesSafe(dr.phone)}"
-                  target="_blank" rel="noopener">
-                  WhatsApp
-                </a>`
+                   class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
+                   href="https://wa.me/${salesSafe(dr.phone)}"
+                   target="_blank" rel="noopener">
+                   WhatsApp
+                 </a>`
               : ''
           }
         </div>
@@ -2443,7 +2494,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             const assigned = o.assigned_driver_id || o.driver_id;
             if(assigned===did && o.driver_pay_status==='pending'){
               const amount = o.driver_pay_pending || 0;
-              o.driver_pay_status   = 'approved';
+              o.driver_pay_status = 'approved';
               o.driver_pay_approved = amount;
               o.driver_pay_pending  = 0;
               count++;
@@ -2451,7 +2502,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           });
           saveOrdersToLS();
           hydrateState();
-          syncAllOrdersFromDemo();
           renderDrivers(); renderOrders(); renderStats();
           alert(count ? `Approved ${count} payout(s) for driver.` : `No pending payouts.`);
           return;
@@ -2476,7 +2526,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       });
     });
 
-    // View orders by driver
+    // View orders for driver
     driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const did = btn.getAttribute('data-id');
@@ -2490,7 +2540,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   // MAP + ANIMATION
   // ========================================================================
   (function initMapSafely(){
-    const heroEl = document.getElementById('heroMap');
+    const heroEl  = document.getElementById('heroMap');
     if(!heroEl) return;
 
     let heroMap;
@@ -2499,20 +2549,20 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     function carIcon(){
       const svg=`<svg viewBox='0 0 64 28' aria-hidden='true'><g>
-<rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='${emerald[600]}' opacity='.95'/>
-<rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
-<rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
-<rect x='10' y='9' width='4' height='3' fill='#f59e0b'/>
-<rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
-<circle cx='18' cy='20' r='3' fill='#111827'/>
-<circle cx='46' cy='20' r='3' fill='#111827'/>
-</g></svg>`;
+        <rect x='6' y='10' rx='6' ry='6' width='52' height='10' fill='${emerald[600]}' opacity='.95'/>
+        <rect x='10' y='5' rx='6' ry='6' width='44' height='14' fill='#ffffff'/>
+        <rect x='24' y='6' width='16' height='7' rx='2' fill='#e5e7eb'/>
+        <rect x='10' y='9' width='4' height='3' fill='#f59e0b'/>
+        <rect x='50' y='9' width='4' height='3' fill='#f59e0b'/>
+        <circle cx='18' cy='20' r='3' fill='#111827'/>
+        <circle cx='46' cy='20' r='3' fill='#111827'/>
+      </g></svg>`;
       return L.divIcon({ className:'car-dot', html:svg, iconSize:[28,14], iconAnchor:[14,7] });
     }
 
     const pkgSvg=`<svg viewBox='0 0 24 24' aria-hidden='true'>
-<path fill='${emerald[600]}' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
-</svg>`;
+      <path fill='${emerald[600]}' d='M3 7l9-4 9 4-9 4-9-4zm0 3l9 4 9-4v7c0 .4-.2.8-.6 1l-7.8 3.5c-.4.2-.8.2-1.2 0L3.6 18c-.4-.2-.6-.6-.6-1V10z'/>
+    </svg>`;
     const pkgIcon = () => L.divIcon({ className:'pkg-dot', html:pkgSvg, iconSize:[20,20], iconAnchor:[10,10] });
 
     async function osrmRoute(a,b){
@@ -2534,9 +2584,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       const lens=[0];
       let acc=0;
       for(let i=1;i<latlngs.length;i++){
-        const A = {lat:latlngs[i-1][0], lng:latlngs[i-1][1]};
-        const B = {lat:latlngs[i][0],   lng:latlngs[i][1]};
-        acc += kmBetween(A,B);
+        const a = {lat:latlngs[i-1][0], lng:latlngs[i-1][1]};
+        const b = {lat:latlngs[i][0],   lng:latlngs[i][1]};
+        acc += kmBetween(a,b);
         lens.push(acc);
       }
       return { lensKm:lens, totalKm:acc };
@@ -2557,10 +2607,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     function spawnLocalTraffic(center, count){
       for(let i=0;i<count;i++){
-        const r = 0.01 + Math.random()*0.02;
+        const r    = 0.01 + Math.random()*0.02;
         const ang0 = Math.random()*Math.PI*2;
-        const spd = 0.10 + Math.random()*0.15;
-        const m = L.marker(
+        const spd  = 0.10 + Math.random()*0.15;
+        const m    = L.marker(
           [center.lat + r*Math.sin(ang0), center.lng + r*Math.cos(ang0)],
           { icon:carIcon() }
         ).addTo(heroMap);
@@ -2572,13 +2622,12 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       DELIVERY_COORDS = DELIVERY_COORDS || await tryGetCustomerCoords();
 
       const centerLatLng = [-33.20, 26.55];
-      const centerZoom = 7;
+      const centerZoom   = 7;
 
       if(!DELIVERY_COORDS){
         heroMap.setView(centerLatLng, centerZoom);
         COLLECTIONS.slice(0,3).forEach(c=>{
-          L.marker([c.lat, c.lng], { icon: pkgIcon(), title: c.name })
-            .addTo(heroMap).bindTooltip(c.name);
+          L.marker([c.lat, c.lng], { icon: pkgIcon(), title: c.name }).addTo(heroMap).bindTooltip(c.name);
         });
         spawnLocalTraffic({lat:centerLatLng[0], lng:centerLatLng[1]}, 4);
         return;
@@ -2591,11 +2640,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
       const depot = best.c;
 
-      document.getElementById('coverageBadge')
-        ?.classList.add('bg-[rgba(15,23,42,.75)]');
+      document.getElementById('coverageBadge')?.classList.add('bg-[rgba(15,23,42,.75)]');
 
-      L.marker([depot.lat,depot.lng], { icon: pkgIcon(), title: depot.name })
-        .addTo(heroMap).bindTooltip(depot.name);
+      L.marker([depot.lat,depot.lng], { icon: pkgIcon(), title: depot.name }).addTo(heroMap).bindTooltip(depot.name);
       L.circleMarker([DELIVERY_COORDS.lat, DELIVERY_COORDS.lng], {
         radius: 7, color: emerald[600], fillColor: emerald[600], fillOpacity: 0.95
       }).addTo(heroMap).bindTooltip('You');
@@ -2631,7 +2678,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         const r = pulse.getRadius();
         pulse.setRadius(grow ? r+6 : r-6);
         if(pulse.getRadius()>120) grow=false;
-        if(pulse.getRadius()<40) grow=true;
+        if(pulse.getRadius()<40)  grow=true;
       }, 220);
     }
 
@@ -2714,10 +2761,10 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         // Driver signup via map
         formSignup?.addEventListener('submit', async e=>{
           e.preventDefault();
-          const name   = document.getElementById('drvName')?.value.trim();
-          const phone  = digits(document.getElementById('drvPhone')?.value.trim());
-          const radius = Math.max(1, Number(document.getElementById('drvRadius')?.value || 10));
-          const vehicle= document.getElementById('drvVehicle')?.value.trim() || 'Car';
+          const name    = document.getElementById('drvName')?.value.trim();
+          const phone   = digits(document.getElementById('drvPhone')?.value.trim());
+          const radius  = Math.max(1, Number(document.getElementById('drvRadius')?.value || 10));
+          const vehicle = document.getElementById('drvVehicle')?.value.trim() || 'Car';
           if(!name || !phone){
             alert("Please enter name and phone.");
             return;
@@ -2743,7 +2790,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
               payout_pending:0, payout_approved:0
             };
             saveDriversToLS();
-            syncAllOrdersFromDemo();
             renderDrivers();
             renderStats();
           } else {
@@ -2796,16 +2842,16 @@ Vehicle: ${vehicle}`;
         return;
       }
 
-      const custName = (custNameEl?.value||'').trim();
+      const custName  = (custNameEl?.value||'').trim();
       const custPhone = digits((custPhoneEl?.value||'').trim());
-      const custAddr = (custAddrEl?.value||'').trim();
+      const custAddr  = (custAddrEl?.value||'').trim();
       if(!custName || !custPhone || !custAddr){
         alert('Please fill name, WhatsApp and address.');
         return;
       }
 
       const paymentMethod = selectedPay();
-      const eta = nextETA(Boolean(summary.rush));
+      const eta           = nextETA(Boolean(summary.rush));
 
       const orderPayload = {
         customer: {
@@ -2836,10 +2882,10 @@ Vehicle: ${vehicle}`;
         const refStub = Date.now().toString().slice(-6);
         const internalId = "demo-" + refStub.toLowerCase();
         const driverPay  = clamp(orderPayload.delivery_fee,25,45);
-        const did        = pickDriverId();
+        const did = pickDriverId();
         DEMO_ORDERS_DB[internalId] = {
           _internal_id: internalId,
-          order_id: ("YI-" + refStub).toUpperCase(),
+          order_id:     ("YI-" + refStub).toUpperCase(),
           order_public_id: ("DEMO-" + refStub).toUpperCase(),
           status: "pending",
           total: orderPayload.total,
@@ -2858,7 +2904,6 @@ Vehicle: ${vehicle}`;
         };
         saveOrdersToLS();
         hydrateState();
-        syncAllOrdersFromDemo();
         window.dispatchEvent(new Event('yt-orders-updated'));
 
         latestOrderData = {
@@ -2870,14 +2915,14 @@ Vehicle: ${vehicle}`;
           eta,
           payment_method: paymentMethod,
           wa_message:
-`Yi Thume, my order is:
-Ref: DEMO-${refStub}
-Deliver to: ${custAddr}
-Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}
-Total: R${summary.total}
-Expected: ${eta}
-Payment: ${paymentMethod}
-Please confirm + send payment link.`
+            `Yi Thume, my order is:\n` +
+            `Ref: DEMO-${refStub}\n` +
+            `Deliver to: ${custAddr}\n` +
+            `Items: ${summary.items.map(i=>`${i.name} x${i.qty}`).join(', ')}\n` +
+            `Total: R${summary.total}\n` +
+            `Expected: ${eta}\n` +
+            `Payment: ${paymentMethod}\n` +
+            `Please confirm + send payment link.`
         };
       } else {
         let data = null;
@@ -2901,15 +2946,16 @@ Please confirm + send payment link.`
 
           latestOrderData = {
             order_public_id: data.order_public_id || data.order_id || ("YI-" + Date.now().toString().slice(-6)),
-            status: data.status || "pending",
-            fraud_score: data.fraud_score ?? null,
-            total: summary.total,
-            items: summary.items,
+            status:         data.status || "pending",
+            fraud_score:    data.fraud_score ?? null,
+            total:          summary.total,
+            items:          summary.items,
             eta,
             payment_method: paymentMethod,
-            wa_message: data.wa_message || null
+            wa_message:     data.wa_message || null
           };
 
+          // refresh orders & drivers so stats & cards pick it up
           await refreshAllData();
         }catch(err){
           console.error("Network/Fetch error", err);
@@ -2922,12 +2968,12 @@ Please confirm + send payment link.`
       openBot();
 
       appendBot(
-`<b>YiThume</b> 🤖<br/>
-Thanks for your order!<br/>
-<b>Ref:</b> ${latestOrderData.order_public_id}<br/>
-<b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
-<b>Total:</b> R${latestOrderData.total}<br/>
-<b>Estimated window:</b> ${eta}`
+        `<b>YiThume</b> 🤖<br/>
+         Thanks for your order!<br/>
+         <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
+         <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
+         <b>Total:</b> R${latestOrderData.total}<br/>
+         <b>Estimated window:</b> ${eta}`
       );
 
       if(latestOrderData.status === "review_required"){
@@ -2956,21 +3002,22 @@ Thanks for your order!<br/>
     if(botStage === 0){
       if(pay === 'eft'){
         appendBot(
-`<b>Instant EFT (Ozow)</b><br/>
-We'll WhatsApp you a secure Ozow link.<br/>
-Use ref <code>${latestOrderData.order_public_id}</code>.`
+          `<b>Instant EFT (Ozow)</b><br/>
+           We'll WhatsApp you a secure Ozow link.<br/>
+           Use ref <code>${latestOrderData.order_public_id}</code>.`
         );
       } else if(pay === 'card'){
         appendBot(
-`We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
-Use ref <code>${latestOrderData.order_public_id}</code>.`
+          `We'll WhatsApp you a secure <b>card link</b> (Yoco).<br/>
+           Use ref <code>${latestOrderData.order_public_id}</code>.`
         );
       } else {
         const deposit = Math.ceil(latestOrderData.total*0.5);
         appendBot(
-`<b>50% deposit + COD</b><br/>
-Pay deposit now: <b>R${deposit}</b>.<br/>
-Ref <code>${latestOrderData.order_public_id}</code>.`
+          `<b>50% deposit + COD</b><br/>
+           Pay deposit now: <b>R${deposit}</b>.<br/>
+           Balance due at delivery.<br/>
+           Ref <code>${latestOrderData.order_public_id}</code>.`
         );
       }
 
@@ -3014,12 +3061,19 @@ Ref <code>${latestOrderData.order_public_id}</code>.`
   });
 
   // ========================================================================
-  // REFRESH ALL DATA
+  // REFRESH ALL DATA (uses live API helpers)
   // ========================================================================
   async function refreshAllData(){
     if(DEMO_MODE){
       hydrateState();
-      syncAllOrdersFromDemo();
+      // Build ALL_ORDERS_MAP from demo for consistency
+      const map = {};
+      Object.values(DEMO_ORDERS_DB).forEach(o=>{
+        const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id;
+        if(key) map[key] = o;
+      });
+      ALL_ORDERS_MAP = map;
+      // Drivers already in DEMO_DRIVERS_DB
       renderOrders();
       renderDrivers();
       renderStats();
@@ -3027,13 +3081,21 @@ Ref <code>${latestOrderData.order_public_id}</code>.`
     }
 
     const orders = await fetchAllOrders();
-    ALL_ORDERS = orders;
-    syncAllOrdersMapFromArray();
-
     await fetchDrivers();
+
+    const map = {};
+    orders.forEach(o=>{
+      const key =
+        o._internal_id || o.internal_id ||
+        o.order_public_id || o.order_id ||
+        Math.random().toString(36).slice(2);
+      map[key] = o;
+    });
+    ALL_ORDERS_MAP = map;
 
     renderOrders();
     renderDrivers();
+    // Stats tab pulls fresh again when opened, but also update now:
     renderStats();
   }
 
@@ -3042,7 +3104,13 @@ Ref <code>${latestOrderData.order_public_id}</code>.`
   // ========================================================================
   renderStoreItems();
   if (DEMO_MODE) {
-    syncAllOrdersFromDemo();
+    // demo preload
+    const map = {};
+    Object.values(DEMO_ORDERS_DB).forEach(o=>{
+      const key = o._internal_id || o.internal_id || o.order_public_id || o.order_id;
+      if(key) map[key] = o;
+    });
+    ALL_ORDERS_MAP = map;
     DRIVERS = Object.values(DEMO_DRIVERS_DB);
     DRIVERS_BY_ID = {};
     API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
