@@ -2792,7 +2792,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           }
           for(const [A,B] of bgPairs){
             let latlngs = await osrmRoute({lat:A.lat,lng:A.lng}, {lat:B.lat,lng:B.lng});
-            if(!latlngs){ latlngs = buildStraight({lat:A.lat,lng:A.lng}, {lat:B.lat,lng%B.lng}); }
+            if(!latlngs){ latlngs = buildStraight({lat:A.lat,lng:A.lng}, {lat:B.lat,lng:B.lng}); }
             const { lensKm } = cumulativeLengths(latlngs);
             L.polyline(latlngs, { weight:2, color:emerald[500], opacity:0.25 }).addTo(heroMap);
 
