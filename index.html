@@ -1169,7 +1169,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const custPhoneEl         = document.getElementById('custPhone');
   const custAddrEl          = document.getElementById('custAddress');
 
-  const adminBtn            = document.getElementById('adminLoginBtn');
+  let adminBtn              = document.getElementById('adminLoginBtn');
 
   const confirmBtn2         = document.getElementById('confirmOrderBtn');
   const botModal            = document.getElementById('botChat');
@@ -1202,17 +1202,17 @@ window.addEventListener('DOMContentLoaded', () => {
   const driverZoneDisplayEl     = document.getElementById('driverZoneDisplay');
   const driverRadiusDisplayEl   = document.getElementById('driverRadiusDisplay');
 
-  const ordersPanel         = document.getElementById('ordersPanel');
-  const ordersList          = document.getElementById('ordersList');
-  const ordersClose         = document.getElementById('closeOrdersPanel');
-  const ordersAssign        = document.getElementById('ordersAssign');
-  const ordersRefresh       = document.getElementById('ordersRefresh');
+  let ordersPanel         = document.getElementById('ordersPanel');
+  let ordersList          = document.getElementById('ordersList');
+  let ordersClose         = document.getElementById('closeOrdersPanel');
+  let ordersAssign        = document.getElementById('ordersAssign');
+  let ordersRefresh       = document.getElementById('ordersRefresh');
 
-  const driversList         = document.getElementById('driversList');
-  const driversRefresh      = document.getElementById('driversRefresh');
+  let driversList         = document.getElementById('driversList');
+  let driversRefresh      = document.getElementById('driversRefresh');
 
-  const ordersTabsContainer = document.getElementById('ordersTabs');
-  let   statsContainer      = document.getElementById('statsContainer'); // created if missing
+  let ordersTabsContainer = document.getElementById('ordersTabs');
+  let   statsContainer    = document.getElementById('statsContainer'); // created if missing
 
   const storeModal          = document.getElementById('storeModal');
   const openStoreFooter     = document.getElementById('openStoreModalFooter');
@@ -1224,6 +1224,67 @@ window.addEventListener('DOMContentLoaded', () => {
   const storeNameEl         = document.getElementById('storeName');
   const storePhoneEl        = document.getElementById('storePhone');
   const storeZoneEl         = document.getElementById('storeZone');
+
+  // ========================================================================
+  // ADMIN PANEL SCAFFOLD (auto-create if missing)
+  // ========================================================================
+  function ensureOrdersPanelScaffold(){
+    let panel = document.getElementById('ordersPanel');
+    if (panel) return panel;
+
+    panel = document.createElement('div');
+    panel.id = 'ordersPanel';
+    panel.className = 'hidden fixed inset-0 z-[1000] items-center justify-center bg-black/40';
+
+    panel.innerHTML = `
+      <div class="bg-white w-[min(100%,1000px)] max-h-[85vh] rounded-2xl shadow-xl p-4 flex flex-col">
+        <div class="flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold">Orders / Admin</div>
+          <div class="flex items-center gap-2">
+            <button id="ordersAssign" class="px-2 py-1 text-xs rounded-lg border border-slate-300 hover:bg-slate-100">Auto-assign</button>
+            <button id="ordersRefresh" class="px-2 py-1 text-xs rounded-lg border border-slate-300 hover:bg-slate-100">Refresh</button>
+            <button id="closeOrdersPanel" class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white">Close</button>
+          </div>
+        </div>
+
+        <div id="ordersTabs" class="mt-3 flex flex-wrap gap-2"></div>
+
+        <div class="mt-3 grid grid-cols-1 gap-3 overflow-auto">
+          <div>
+            <div class="text-xs text-slate-500 mb-1">Orders</div>
+            <div id="ordersList" class="divide-y divide-slate-200"></div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500 mb-1">Drivers</div>
+            <div id="driversList"></div>
+          </div>
+        </div>
+
+        <div id="statsContainer" class="mt-4"></div>
+      </div>
+    `;
+    document.body.appendChild(panel);
+
+    // Re-bind globals now that elements exist
+    ordersPanel         = document.getElementById('ordersPanel');
+    ordersList          = document.getElementById('ordersList');
+    ordersClose         = document.getElementById('closeOrdersPanel');
+    ordersAssign        = document.getElementById('ordersAssign');
+    ordersRefresh       = document.getElementById('ordersRefresh');
+    driversList         = document.getElementById('driversList');
+    driversRefresh      = document.getElementById('driversRefresh'); // may not exist in scaffold
+    ordersTabsContainer = document.getElementById('ordersTabs');
+    statsContainer      = document.getElementById('statsContainer');
+
+    // Wire close button
+    ordersClose?.addEventListener('click', closeOrders);
+
+    // Wire header buttons
+    ordersAssign?.addEventListener('click', autoAssignForAll);
+    ordersRefresh?.addEventListener('click', hardRefresh);
+
+    return panel;
+  }
 
   // ========================================================================
   // COLLECTION POINTS
@@ -1555,14 +1616,15 @@ window.addEventListener('DOMContentLoaded', () => {
 
   let ordersTab = 'pending';
 
+  // SAFE open for Orders/Admin: scaffold if missing, then render
   const openOrders = ()=>{
-    if(!ordersPanel) return;
-    openFlex(ordersPanel);
+    const panel = ensureOrdersPanelScaffold();
+    openFlex(panel);
     ensureAdminTabs();
     setActiveAdminTab(ordersTab);
     refreshAllData();
   };
-  const closeOrders= ()=> closeFlex(ordersPanel);
+  const closeOrders= ()=> closeFlex(document.getElementById('ordersPanel'));
 
   const openDriverDash = ()=>{
     if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
@@ -1672,7 +1734,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // ========================================================================
-  // MODAL / ADMIN BTN WIRING
+  // MODAL / ADMIN BTN WIRING (delegated so it always works)
   // ========================================================================
   document.getElementById('closeBot')?.addEventListener('click', closeBot);
   closeBtn?.addEventListener('click', closeOrder);
@@ -1683,11 +1745,18 @@ window.addEventListener('DOMContentLoaded', () => {
   closeDriverDash?.addEventListener('click', closeDriverDashWindow);
   ordersClose?.addEventListener('click', closeOrders);
 
-  adminBtn?.addEventListener('click', (e)=>{
+  // Remove any stale type=submit behaviour
+  document.getElementById('adminLoginBtn')?.setAttribute('type','button');
+  document.getElementById('adminLoginBtnMobile')?.setAttribute('type','button');
+
+  // Delegation: works even if button is rendered later or replaced
+  document.addEventListener('click', (e)=>{
+    const adminEl = e.target.closest('#adminLoginBtn, #adminLoginBtnMobile');
+    if(!adminEl) return;
     e.preventDefault();
     const pw = prompt("Enter admin PIN:");
-    if (pw === null) return;
-    if (pw === ADMIN_PASS) {
+    if(pw === null) return;
+    if(pw === ADMIN_PASS){
       openOrders();
     } else {
       alert("Incorrect PIN");
@@ -1821,7 +1890,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   // DATA EVENTS
   // ========================================================================
   window.addEventListener('yt-orders-updated', ()=>{
-    if(ordersPanel && !ordersPanel.classList.contains('hidden')) {
+    if(document.getElementById('ordersPanel') && !document.getElementById('ordersPanel').classList.contains('hidden')) {
       renderOrders();
       renderDrivers();
       renderStats();
@@ -1932,14 +2001,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   async function renderAdminStats(){
-    if(!ordersPanel) return;
-
-    if(!statsContainer){
-      statsContainer = document.createElement('div');
-      statsContainer.id = 'statsContainer';
-      statsContainer.className = 'mt-4';
-      ordersPanel.appendChild(statsContainer);
-    }
+    const panel = ensureOrdersPanelScaffold();
 
     // Ensure base layout exists (KPI cards forced to show)
     if(!document.getElementById('adminStatsWrap')){
@@ -2090,7 +2152,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ['History','history'] // NEW: full history across all statuses
     ];
 
-    const host = ordersTabsContainer || ordersList?.parentElement || ordersPanel || document.body;
+    const host = ordersTabsContainer || ordersList?.parentElement || document.getElementById('ordersPanel') || document.body;
     const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
 
     wanted.forEach(([label,key])=>{
@@ -2123,8 +2185,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const showDrivers = (tabKey === 'drivers' || (tabKey||'').startsWith('by_driver:'));
     const showStats   = (tabKey === 'stats');
 
-    const ordersWrapper  = ordersList?.parentElement;
-    const driversWrapper = driversList?.parentElement;
+    const ordersWrapper  = document.getElementById('ordersList')?.parentElement;
+    const driversWrapper = document.getElementById('driversList')?.parentElement;
 
     if (ordersWrapper)  ordersWrapper.classList.toggle('hidden', showDrivers || showStats);
     if (driversWrapper) driversWrapper.classList.toggle('hidden', !showDrivers);
@@ -2143,6 +2205,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     refreshAllData();
     setActiveAdminTab(ordersTab);
   }
+  // Re-bound inside scaffold too
   ordersRefresh?.addEventListener('click', hardRefresh);
   driversRefresh?.addEventListener('click', hardRefresh);
 
@@ -2295,12 +2358,14 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     alert(results.join("\n"));
     refreshAllData();
   }
+  // (ordersAssign wired both here if present and inside scaffold)
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
   // ========================================================================
   // ORDER LIST RENDERING (History included)
   // ========================================================================
   async function renderOrders(){
+    ordersList = document.getElementById('ordersList');
     if(!ordersList) return;
 
     const sourceArr = DEMO_MODE
@@ -2512,6 +2577,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   function renderDrivers(){
+    driversList = document.getElementById('driversList');
     if(!driversList) return;
 
     let pairs;
