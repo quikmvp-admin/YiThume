@@ -948,6 +948,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const digits = (val) => (val || "").replace(/\D+/g, "");
   const clamp  = (v,lo,hi)=> Math.min(hi, Math.max(lo, v));
   const pad2   = (n)=> String(n).padStart(2,'0');
+  const fmtMoney = (n)=> `R${Math.round(Number(n||0))}`;
 
   const kmBetween = (a,b)=>{
     if(!a||!b) return 0;
@@ -1140,6 +1141,9 @@ window.addEventListener('DOMContentLoaded', () => {
       adminPayPendingEl,
       adminPayApprovedEl;
 
+  // Metrics DOM refs
+  let metricsContainer;
+
   // ========================================================================
   // YEAR
   // ========================================================================
@@ -1213,7 +1217,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
   let ordersTabsContainer = document.getElementById('ordersTabs');
   let   statsContainer    = document.getElementById('statsContainer'); // created if missing
-  let   metricsContainer  = document.getElementById('metricsContainer'); // created if missing
 
   const storeModal          = document.getElementById('storeModal');
   const openStoreFooter     = document.getElementById('openStoreModalFooter');
@@ -1238,7 +1241,7 @@ window.addEventListener('DOMContentLoaded', () => {
     panel.className = 'hidden fixed inset-0 z-[1000] items-center justify-center bg-black/40';
 
     panel.innerHTML = `
-      <div class="bg-white w=[min(100%,1000px)] w-[min(100%,1000px)] max-h-[85vh] rounded-2xl shadow-xl p-4 flex flex-col">
+      <div class="bg-white w-[min(100%,1000px)] max-h-[85vh] rounded-2xl shadow-xl p-4 flex flex-col">
         <div class="flex items-center justify-between gap-2">
           <div class="text-sm font-semibold">Orders / Admin</div>
           <div class="flex items-center gap-2">
@@ -1261,8 +1264,8 @@ window.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
 
-        <div id="statsContainer" class="mt-4 hidden"></div>
-        <div id="metricsContainer" class="mt-4 hidden"></div>
+        <div id="statsContainer" class="mt-4"></div>
+        <div id="metricsContainer" class="mt-4"></div>
       </div>
     `;
     document.body.appendChild(panel);
@@ -2000,8 +2003,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       }
     });
 
-    adminPayPendingEl.textContent  = `R${Math.round(pending)}`;
-    adminPayApprovedEl.textContent = `R${Math.round(approved)}`;
+    adminPayPendingEl.textContent  = fmtMoney(pending);
+    adminPayApprovedEl.textContent = fmtMoney(approved);
   }
 
   async function renderAdminStats(){
@@ -2083,7 +2086,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const revenue = orders.reduce((s,o)=> s + Number((o._normalized?o.total:normalizeOrder(o).total)||0), 0);
 
     if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
-    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = `R${Math.round(revenue)}`;
+    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = fmtMoney(revenue);
 
     // Top products
     const prodMap = new Map();
@@ -2123,158 +2126,186 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     recalcAdminPayoutWidgets();
   }
 
-  // NEW: METRICS TAB (draws from history / ALL_ORDERS_MAP)
-  function renderMetrics(){
-    const panel = ensureOrdersPanelScaffold();
-    metricsContainer = document.getElementById('metricsContainer');
-    if(!metricsContainer) return;
-
-    const orders = DEMO_MODE
-      ? Object.values(DEMO_ORDERS_DB).map(o=>normalizeOrder(o))
-      : Object.values(ALL_ORDERS_MAP).map(o=> o._normalized ? o : normalizeOrder(o));
-
-    // KPIs
-    const totalOrders = orders.length;
-    const delivered   = orders.filter(o=>o.status==='delivered');
-    const deliveredCount = delivered.length;
-
-    const revenueAll  = orders.reduce((s,o)=> s + Number(o.total||0), 0);
-    const revenueDelivered = delivered.reduce((s,o)=> s + Number(o.total||0), 0);
-
-    const avgOrderAll        = totalOrders ? Math.round(revenueAll / totalOrders) : 0;
-    const avgOrderDelivered  = deliveredCount ? Math.round(revenueDelivered / deliveredCount) : 0;
-
-    // Products: qty + estimated revenue (if item price present)
-    const products = new Map(); // name -> {qty, rev}
-    orders.forEach(o=>{
-      (o.items||[]).forEach(it=>{
-        const name = it?.name || 'Item';
-        const qty  = Number(it?.qty||1);
-        const rev  = Number(it?.price||0) * qty;
-        if(!products.has(name)) products.set(name, {qty:0, rev:0});
-        const p = products.get(name);
-        p.qty += qty;
-        p.rev += Number.isFinite(rev) ? rev : 0;
-      });
-    });
-    const topProducts = Array.from(products.entries())
-      .sort((a,b)=> b[1].qty - a[1].qty)
-      .slice(0,10);
-
-    // Areas: count + revenue
-    const areas = new Map(); // area -> {count, rev}
-    orders.forEach(o=>{
-      const area = o.meta?.collection_name || '—';
-      if(!areas.has(area)) areas.set(area, {count:0, rev:0});
-      const a = areas.get(area);
-      a.count += 1;
-      a.rev   += Number(o.total||0);
-    });
-    const topAreas = Array.from(areas.entries())
-      .sort((a,b)=> b[1].count - a[1].count)
-      .slice(0,10);
-
-    // Render
-    if(!document.getElementById('metricsWrap')){
-      metricsContainer.innerHTML = `
-        <div id="metricsWrap" class="space-y-4">
-          <div class="grid gap-3 sm:grid-cols-4">
-            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-              <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-              <div id="mxTotalOrders" class="text-2xl font-semibold">0</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-              <div class="text-xs text-slate-500 mb-1">Delivered Orders</div>
-              <div id="mxDelivered" class="text-2xl font-semibold">0</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-              <div class="text-xs text-slate-500 mb-1">Revenue (All)</div>
-              <div id="mxRevAll" class="text-2xl font-semibold">R0</div>
-              <div class="text-[11px] text-slate-500 mt-1">Avg order: <b id="mxAvgAll">R0</b></div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-              <div class="text-xs text-slate-500 mb-1">Revenue (Delivered)</div>
-              <div id="mxRevDelivered" class="text-2xl font-semibold">R0</div>
-              <div class="text-[11px] text-slate-500 mt-1">Avg order: <b id="mxAvgDelivered">R0</b></div>
-            </div>
-          </div>
-
-          <div class="grid gap-3 sm:grid-cols-2 mt-2">
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-sm font-medium mb-2">Products (qty &amp; est. revenue)</div>
-              <div class="overflow-auto">
-                <table class="w-full text-sm">
-                  <thead class="text-xs text-slate-500">
-                    <tr>
-                      <th class="text-left py-1 pr-2">Product</th>
-                      <th class="text-right py-1 pr-2">Qty</th>
-                      <th class="text-right py-1">Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody id="mxProducts"></tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-sm font-medium mb-2">Areas (orders &amp; revenue)</div>
-              <div class="overflow-auto">
-                <table class="w-full text-sm">
-                  <thead class="text-xs text-slate-500">
-                    <tr>
-                      <th class="text-left py-1 pr-2">Area</th>
-                      <th class="text-right py-1 pr-2">Orders</th>
-                      <th class="text-right py-1">Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody id="mxAreas"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    // Update KPI values
-    const el = (id)=> document.getElementById(id);
-    el('mxTotalOrders').textContent   = String(totalOrders);
-    el('mxDelivered').textContent     = String(deliveredCount);
-    el('mxRevAll').textContent        = `R${Math.round(revenueAll)}`;
-    el('mxAvgAll').textContent        = `R${avgOrderAll}`;
-    el('mxRevDelivered').textContent  = `R${Math.round(revenueDelivered)}`;
-    el('mxAvgDelivered').textContent  = `R${avgOrderDelivered}`;
-
-    // Update products
-    const prodTbody = el('mxProducts');
-    prodTbody.innerHTML = topProducts.length
-      ? topProducts.map(([name,stats]) =>
-          `<tr class="border-t">
-             <td class="py-1 pr-2">${salesSafe(name)}</td>
-             <td class="py-1 pr-2 text-right">${stats.qty}</td>
-             <td class="py-1 text-right">${stats.rev ? 'R'+Math.round(stats.rev) : '—'}</td>
-           </tr>`).join('')
-      : `<tr><td colspan="3" class="py-2 text-slate-500">No data yet</td></tr>`;
-
-    // Update areas
-    const areaTbody = el('mxAreas');
-    areaTbody.innerHTML = topAreas.length
-      ? topAreas.map(([name,stats]) =>
-          `<tr class="border-t">
-             <td class="py-1 pr-2">${salesSafe(name)}</td>
-             <td class="py-1 pr-2 text-right">${stats.count}</td>
-             <td class="py-1 text-right">R${Math.round(stats.rev)}</td>
-           </tr>`).join('')
-      : `<tr><td colspan="3" class="py-2 text-slate-500">No data yet</td></tr>`;
-  }
-
   // Wrapper so any existing calls still work
   function renderStats(){
     renderAdminStats();
   }
 
   // ========================================================================
-  // ADMIN TABS  (added "History" and new "Metrics")
+  // METRICS TAB (NEW)
+  // ========================================================================
+  function groupBy(arr, fn){
+    const m = new Map();
+    arr.forEach(x=>{
+      const k = fn(x);
+      m.set(k, (m.get(k)||[]).concat([x]));
+    });
+    return m;
+  }
+  function dayKey(d){
+    if(!d || !(d instanceof Date)) return 'unknown';
+    return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+  }
+  function simpleBars(list, maxVal){
+    // list: [{label, value, sub?}]
+    if(list.length===0){
+      return '<div class="text-slate-500 text-sm">No data yet</div>';
+    }
+    const safeMax = Math.max(1, maxVal ?? Math.max(...list.map(x=>x.value||0)));
+    return list.map(({label,value,sub})=>{
+      const w = Math.max(4, Math.round((value/safeMax)*100));
+      return `
+        <div class="mb-2">
+          <div class="flex items-center justify-between text-xs">
+            <span class="truncate pr-2">${salesSafe(label)}</span>
+            <span class="font-medium">${value}</span>
+          </div>
+          <div class="w-full h-2 bg-slate-100 rounded-full mt-1">
+            <div class="h-2 rounded-full" style="width:${w}% ; background:${emerald[600]};"></div>
+          </div>
+          ${sub ? `<div class="text-[10px] text-slate-500 mt-0.5">${salesSafe(sub)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderMetrics(){
+    const panel = ensureOrdersPanelScaffold();
+    metricsContainer = document.getElementById('metricsContainer');
+    if(!metricsContainer) return;
+
+    // Collect orders from history (i.e., all normalized orders sorted newest→oldest)
+    const sourceArr = DEMO_MODE
+      ? Object.values(DEMO_ORDERS_DB).map(o=>normalizeOrder(o))
+      : Object.values(ALL_ORDERS_MAP).map(o=> o._normalized ? o : normalizeOrder(o));
+
+    const orders = [...sourceArr].sort((a,b)=>{
+      const ta = a.created_at ? a.created_at.getTime() : 0;
+      const tb = b.created_at ? b.created_at.getTime() : 0;
+      return tb - ta;
+    });
+
+    const totalRevenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
+    const totalOrders  = orders.length;
+    const itemsSold    = orders.reduce((s,o)=> s + (o.items||[]).reduce((k,i)=> k + Number(i.qty||0),0), 0);
+    const avgOrder     = totalOrders ? Math.round(totalRevenue/totalOrders) : 0;
+
+    // Per-day sales (last 14 days)
+    const byDay = groupBy(orders, o=> dayKey(o.created_at));
+    const days = Array.from(byDay.entries())
+      .map(([key,arr])=> ({
+        label:key,
+        value: arr.length,
+        revenue: arr.reduce((s,o)=>s+Number(o.total||0),0)
+      }))
+      .sort((a,b)=> a.label.localeCompare(b.label))
+      .slice(-14); // last 14
+
+    // Top products by qty
+    const prod = new Map();
+    orders.forEach(o=>{
+      (o.items||[]).forEach(it=>{
+        if(!it || !it.name) return;
+        prod.set(it.name, (prod.get(it.name)||0) + Number(it.qty||1));
+      });
+    });
+    const topProducts = Array.from(prod.entries())
+      .map(([name,qty])=>({label:name, value:qty}))
+      .sort((a,b)=> b.value-a.value)
+      .slice(0,8);
+
+    // Top areas by order count and area revenue
+    const areaC = new Map();
+    const areaR = new Map();
+    orders.forEach(o=>{
+      const area = o.meta?.collection_name || '—';
+      areaC.set(area, (areaC.get(area)||0)+1);
+      areaR.set(area, (areaR.get(area)||0)+Number(o.total||0));
+    });
+    const topAreasByOrders = Array.from(areaC.entries())
+      .map(([label,value])=>({label,value, sub:`${fmtMoney(areaR.get(label)||0)} revenue`}))
+      .sort((a,b)=> b.value-a.value)
+      .slice(0,8);
+
+    // Build UI if missing
+    if(!document.getElementById('metricsWrap')){
+      metricsContainer.innerHTML = `
+        <div id="metricsWrap" class="space-y-4">
+          <div class="grid gap-3 sm:grid-cols-4">
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-xs text-slate-500 mb-1">Total Revenue</div>
+              <div class="text-2xl font-semibold">${fmtMoney(totalRevenue)}</div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+              <div class="text-2xl font-semibold">${totalOrders}</div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-xs text-slate-500 mb-1">Items Sold</div>
+              <div class="text-2xl font-semibold">${itemsSold}</div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-xs text-slate-500 mb-1">Avg Order Value</div>
+              <div class="text-2xl font-semibold">${fmtMoney(avgOrder)}</div>
+            </div>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Daily Orders (last 14 days)</div>
+              <div id="mxDailyOrders"></div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Daily Revenue (last 14 days)</div>
+              <div id="mxDailyRevenue"></div>
+            </div>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Top Products (qty)</div>
+              <div id="mxTopProducts"></div>
+            </div>
+            <div class="bg-white border rounded-2xl p-3 shadow-sm">
+              <div class="text-sm font-medium mb-2">Top Areas</div>
+              <div id="mxTopAreas"></div>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      // Update headline KPIs
+      const kpiCards = metricsContainer.querySelectorAll('.grid.sm\\:grid-cols-4 .text-2xl');
+      if(kpiCards[0]) kpiCards[0].textContent = fmtMoney(totalRevenue);
+      if(kpiCards[1]) kpiCards[1].textContent = String(totalOrders);
+      if(kpiCards[2]) kpiCards[2].textContent = String(itemsSold);
+      if(kpiCards[3]) kpiCards[3].textContent = fmtMoney(avgOrder);
+    }
+
+    // Render bar sections
+    const elDailyOrders  = document.getElementById('mxDailyOrders');
+    const elDailyRevenue = document.getElementById('mxDailyRevenue');
+    const elTopProducts  = document.getElementById('mxTopProducts');
+    const elTopAreas     = document.getElementById('mxTopAreas');
+
+    if(elDailyOrders){
+      const list = days.map(d=>({label:d.label, value:d.value}));
+      elDailyOrders.innerHTML = simpleBars(list);
+    }
+    if(elDailyRevenue){
+      const list = days.map(d=>({label:d.label, value:Math.round(d.revenue)}));
+      elDailyRevenue.innerHTML = simpleBars(list);
+    }
+    if(elTopProducts){
+      elTopProducts.innerHTML = simpleBars(topProducts);
+    }
+    if(elTopAreas){
+      elTopAreas.innerHTML = simpleBars(topAreasByOrders);
+    }
+  }
+
+  // ========================================================================
+  // ADMIN TABS  (added "History" & NEW "Metrics")
   // ========================================================================
   function ensureAdminTabs(){
     let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
@@ -2298,8 +2329,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ['Delivered','delivered'],
       ['Drivers','drivers'],
       ['Stats','stats'],
-      ['History','history'],
-      ['Metrics','metrics'] // NEW: after History
+      ['History','history'], // existing
+      ['Metrics','metrics']  // NEW: after History
     ];
 
     const host = ordersTabsContainer || ordersList?.parentElement || document.getElementById('ordersPanel') || document.body;
@@ -2338,6 +2369,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     const ordersWrapper  = document.getElementById('ordersList')?.parentElement;
     const driversWrapper = document.getElementById('driversList')?.parentElement;
+    metricsContainer     = document.getElementById('metricsContainer');
 
     if (ordersWrapper)  ordersWrapper.classList.toggle('hidden', showDrivers || showStats || showMetrics);
     if (driversWrapper) driversWrapper.classList.toggle('hidden', !showDrivers);
@@ -2625,7 +2657,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       <div class="flex-1 min-w-0">
         <div class="font-medium flex flex-wrap items-center gap-1">
           <span>Ref ${salesSafe(refDisplay)}</span>
-          <span>• Total R${o.total}</span>
+          <span>• Total ${fmtMoney(o.total)}</span>
           ${kmText}
         </div>
         <div class="text-xs text-slate-500 break-words">${salesSafe(itemsText || '')}</div>
@@ -2791,16 +2823,16 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
         <div class="text-[9px] text-slate-500">
           Delivered value:
-          <span class="font-semibold text-slate-900">R${stats.deliveredRevenue}</span>
+          <span class="font-semibold text-slate-900">${fmtMoney(stats.deliveredRevenue)}</span>
           &nbsp;• Avg fee:
-          <span class="font-semibold text-slate-900">R${stats.avgFee}</span>
+          <span class="font-semibold text-slate-900">${fmtMoney(stats.avgFee)}</span>
         </div>
 
         <div class="text-[9px] text-slate-500">
           Pending pay:
-          <span class="font-semibold text-amber-600">R${stats.pendingPay}</span>
+          <span class="font-semibold text-amber-600">${fmtMoney(stats.pendingPay)}</span>
           &nbsp;• Approved:
-          <span class="font-semibold text-emerald-700">R${stats.approvedPay}</span>
+          <span class="font-semibold text-emerald-700">${fmtMoney(stats.approvedPay)}</span>
         </div>
 
         ${
@@ -3331,7 +3363,7 @@ Vehicle: ${vehicle}`;
          Thanks for your order!<br/>
          <b>Ref:</b> ${latestOrderData.order_public_id}<br/>
          <b>Items:</b> ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br/>
-         <b>Total:</b> R${latestOrderData.total}<br/>
+         <b>Total:</b> ${fmtMoney(latestOrderData.total)}<br/>
          <b>Estimated window:</b> ${eta}`
       );
 
@@ -3375,7 +3407,7 @@ Vehicle: ${vehicle}`;
         const deposit = Math.ceil(latestOrderData.total*0.5);
         appendBot(
           `<b>50% deposit + COD</b><br/>
-           Pay deposit now: <b>R${deposit}</b>.<br/>
+           Pay deposit now: <b>${fmtMoney(deposit)}</b>.<br/>
            Balance due at delivery.<br/>
            Ref <code>${latestOrderData.order_public_id}</code>.`
         );
@@ -3402,7 +3434,7 @@ Vehicle: ${vehicle}`;
           "Yi Thume, my order is:",
           `Ref: ${latestOrderData.order_public_id}`,
           `Items: ${latestOrderData.items.map(i=>`${i.name} x${i.qty}`).join(', ')}`,
-          `Total: R${latestOrderData.total}`,
+          `Total: ${fmtMoney(latestOrderData.total)}`,
           `Expected: ${latestOrderData.eta}`,
           `Payment: ${latestOrderData.payment_method}`,
           "Please confirm + send payment link."
@@ -3469,11 +3501,6 @@ Vehicle: ${vehicle}`;
   // ========================================================================
   // FINAL INIT
   // ========================================================================
-  function ensureAdminTabsThenShow(){
-    ensureAdminTabs();
-    setActiveAdminTab(ordersTab);
-  }
-
   renderStoreItems();
   if (DEMO_MODE) {
     // demo preload
@@ -3487,409 +3514,19 @@ Vehicle: ${vehicle}`;
     DRIVERS = Object.values(DEMO_DRIVERS_DB);
     DRIVERS_BY_ID = {};
     API_DRIVERS_MAP = {...DEMO_DRIVERS_DB};
-    ensureAdminTabsThenShow();
+    ensureAdminTabs();
+    setActiveAdminTab(ordersTab);
     renderOrders();
     renderDrivers();
     renderStats();
     renderMetrics();
   } else {
-    refreshAllData().then(ensureAdminTabsThenShow);
+    refreshAllData().then(()=>{
+      ensureAdminTabs();
+      setActiveAdminTab(ordersTab);
+    });
   }
 });
-
-// ========================================================================
-// KPIs TAB - Standalone Script
-// Paste this after the main code loads
-// ========================================================================
-
-(function initKPIsTab() {
-  'use strict';
-
-  console.log('KPIs Tab script starting...');
-
-  // Wait for DOM to be ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-
-  function init() {
-    console.log('KPIs Tab initializing...');
-    
-    // Add KPIs tab to admin panel
-    addKPIsTab();
-    
-    // Listen for clicks on KPIs tab
-    document.addEventListener('click', (e) => {
-      const tab = e.target.closest('[data-o-tab="kpis"]');
-      if (tab) {
-        console.log('KPIs tab clicked');
-        renderKPIsTab();
-      }
-    });
-
-    // Listen for order updates
-    window.addEventListener('yt-orders-updated', () => {
-      const activeTab = document.querySelector('[data-o-tab].bg-emerald-600');
-      if (activeTab && activeTab.dataset.oTab === 'kpis') {
-        console.log('Refreshing KPIs after order update');
-        renderKPIsTab();
-      }
-    });
-
-    console.log('KPIs Tab ready');
-  }
-
-  function addKPIsTab() {
-    const tabsContainer = document.getElementById('ordersTabs');
-    if (!tabsContainer) {
-      console.warn('ordersTabs container not found');
-      return;
-    }
-
-    // Check if KPIs tab already exists
-    const existing = tabsContainer.querySelector('[data-o-tab="kpis"]');
-    if (existing) {
-      console.log('KPIs tab already exists');
-      return;
-    }
-
-    // Create KPIs tab button
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'yt-o-tab px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 text-xs';
-    btn.dataset.oTab = 'kpis';
-    btn.setAttribute('role', 'tab');
-    btn.setAttribute('aria-selected', 'false');
-    btn.textContent = 'KPIs';
-    
-    tabsContainer.appendChild(btn);
-    console.log('KPIs tab added');
-  }
-
-  function getHistoryOrders() {
-    // Get from history tab's current data first
-    if (typeof currentOrdersByTab !== 'undefined' && currentOrdersByTab['history']) {
-      console.log('Found orders in currentOrdersByTab.history:', currentOrdersByTab['history'].length);
-      return currentOrdersByTab['history'];
-    }
-
-    // Fallback to DEMO_ORDERS_DB
-    if (typeof DEMO_ORDERS_DB !== 'undefined' && DEMO_ORDERS_DB) {
-      const orders = Object.values(DEMO_ORDERS_DB);
-      console.log('Found orders in DEMO_ORDERS_DB:', orders.length);
-      return orders;
-    }
-    
-    // Fallback to ALL_ORDERS_MAP
-    if (typeof ALL_ORDERS_MAP !== 'undefined' && ALL_ORDERS_MAP) {
-      const orders = Object.values(ALL_ORDERS_MAP);
-      console.log('Found orders in ALL_ORDERS_MAP:', orders.length);
-      return orders;
-    }
-
-    console.warn('No orders found in any source');
-    return [];
-  }
-
-  function salesSafe(str) {
-    return (str || '').toString().replace(/[<>&]/g, c => 
-      c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'
-    );
-  }
-
-  function renderKPIsTab() {
-    console.log('Rendering KPIs tab...');
-    
-    // Get or create KPIs container
-    let container = document.getElementById('kpisContainer');
-    
-    if (!container) {
-      container = document.createElement('div');
-      container.id = 'kpisContainer';
-      container.className = 'mt-4 hidden';
-      
-      const panel = document.getElementById('ordersPanel');
-      if (panel) {
-        const targetParent = panel.querySelector('.grid.grid-cols-1.gap-3.overflow-auto') || 
-                            panel.querySelector('.overflow-auto')?.parentElement;
-        if (targetParent) {
-          targetParent.appendChild(container);
-        }
-      }
-    }
-
-    // Get all orders from history
-    const orders = getHistoryOrders();
-    console.log('Processing orders for KPIs:', orders.length);
-    
-    if (orders.length === 0) {
-      container.innerHTML = `
-        <div class="bg-white border rounded-2xl p-8 text-center">
-          <div class="text-slate-400 text-sm">No order history available yet</div>
-          <div class="text-slate-300 text-xs mt-2">Create some orders to see KPIs</div>
-        </div>
-      `;
-      showContainer(container);
-      return;
-    }
-
-    // Calculate KPIs
-    const totalOrders = orders.length;
-    
-    // Revenue calculations
-    const totalRevenue = orders.reduce((sum, o) => {
-      return sum + Number(o.total || 0);
-    }, 0);
-    
-    const deliveredOrders = orders.filter(o => 
-      (o.status || '').toLowerCase() === 'delivered'
-    );
-    const deliveredRevenue = deliveredOrders.reduce((sum, o) => {
-      return sum + Number(o.total || 0);
-    }, 0);
-    
-    // Costs (driver payouts)
-    const totalCosts = orders.reduce((sum, o) => {
-      const pending = Number(o.driver_pay_pending || 0);
-      const approved = Number(o.driver_pay_approved || 0);
-      return sum + pending + approved;
-    }, 0);
-    
-    const deliveredCosts = deliveredOrders.reduce((sum, o) => {
-      return sum + Number(o.driver_pay_approved || 0);
-    }, 0);
-    
-    // Profit
-    const totalProfit = totalRevenue - totalCosts;
-    const deliveredProfit = deliveredRevenue - deliveredCosts;
-    const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0.0';
-    
-    // Averages
-    const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
-    const avgDeliveredValue = deliveredOrders.length > 0 ? Math.round(deliveredRevenue / deliveredOrders.length) : 0;
-    const avgProfit = totalOrders > 0 ? Math.round(totalProfit / totalOrders) : 0;
-    
-    // Status breakdown
-    const pending = orders.filter(o => (o.status || '').toLowerCase() === 'pending').length;
-    const assigned = orders.filter(o => (o.status || '').toLowerCase() === 'assigned').length;
-    const inTransit = orders.filter(o => (o.status || '').toLowerCase() === 'in_transit').length;
-    const delivered = deliveredOrders.length;
-    
-    // Delivery fees
-    const totalDeliveryFees = orders.reduce((sum, o) => {
-      return sum + Number(o.delivery_fee || 0);
-    }, 0);
-    const avgDeliveryFee = totalOrders > 0 ? Math.round(totalDeliveryFees / totalOrders) : 0;
-    
-    // Product revenue
-    const productRevenue = new Map();
-    orders.forEach(o => {
-      const items = o.items || [];
-      items.forEach(it => {
-        const name = it.name || 'Unknown Item';
-        const qty = Number(it.qty || 1);
-        const price = Number(it.price || 0);
-        const revenue = price * qty;
-        
-        if (!productRevenue.has(name)) {
-          productRevenue.set(name, { qty: 0, revenue: 0, orders: 0 });
-        }
-        const p = productRevenue.get(name);
-        p.qty += qty;
-        p.revenue += revenue;
-        p.orders += 1;
-      });
-    });
-    
-    const topProducts = Array.from(productRevenue.entries())
-      .sort((a, b) => b[1].revenue - a[1].revenue)
-      .slice(0, 5);
-    
-    // Area revenue
-    const areaRevenue = new Map();
-    orders.forEach(o => {
-      const area = o.meta?.collection_name || o.collection_name || '—';
-      if (!areaRevenue.has(area)) {
-        areaRevenue.set(area, { orders: 0, revenue: 0 });
-      }
-      const a = areaRevenue.get(area);
-      a.orders += 1;
-      a.revenue += Number(o.total || 0);
-    });
-    
-    const topAreas = Array.from(areaRevenue.entries())
-      .sort((a, b) => b[1].revenue - a[1].revenue)
-      .slice(0, 5);
-
-    // Render HTML
-    container.innerHTML = `
-      <div class="space-y-4">
-        <!-- Header -->
-        <div class="flex items-center justify-between">
-          <h2 class="text-lg font-bold text-slate-900">Key Performance Indicators</h2>
-          <div class="text-xs text-slate-500">Total: ${totalOrders} orders</div>
-        </div>
-
-        <!-- Main Revenue KPIs -->
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-300 rounded-2xl p-4 shadow-sm">
-            <div class="text-xs text-emerald-700 font-medium mb-1">Total Revenue</div>
-            <div class="text-3xl font-bold text-emerald-900">R${Math.round(totalRevenue).toLocaleString()}</div>
-            <div class="text-[10px] text-emerald-600 mt-1">All orders</div>
-          </div>
-          
-          <div class="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 rounded-2xl p-4 shadow-sm">
-            <div class="text-xs text-blue-700 font-medium mb-1">Delivered Revenue</div>
-            <div class="text-3xl font-bold text-blue-900">R${Math.round(deliveredRevenue).toLocaleString()}</div>
-            <div class="text-[10px] text-blue-600 mt-1">${delivered} delivered</div>
-          </div>
-          
-          <div class="bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-amber-300 rounded-2xl p-4 shadow-sm">
-            <div class="text-xs text-amber-700 font-medium mb-1">Total Costs</div>
-            <div class="text-3xl font-bold text-amber-900">R${Math.round(totalCosts).toLocaleString()}</div>
-            <div class="text-[10px] text-amber-600 mt-1">Driver payouts</div>
-          </div>
-          
-          <div class="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 rounded-2xl p-4 shadow-sm">
-            <div class="text-xs text-purple-700 font-medium mb-1">Total Profit</div>
-            <div class="text-3xl font-bold ${totalProfit >= 0 ? 'text-purple-900' : 'text-red-700'}">
-              R${Math.round(totalProfit).toLocaleString()}
-            </div>
-            <div class="text-[10px] text-purple-600 mt-1">Margin: ${profitMargin}%</div>
-          </div>
-        </div>
-
-        <!-- Order Status & Averages -->
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
-            <h3 class="text-sm font-bold text-slate-900 mb-3">Order Status Breakdown</h3>
-            <div class="space-y-2">
-              <div class="flex justify-between items-center p-2 bg-amber-50 rounded-lg">
-                <span class="text-xs text-slate-700 font-medium">Pending</span>
-                <span class="text-base font-bold text-amber-600">${pending}</span>
-              </div>
-              <div class="flex justify-between items-center p-2 bg-blue-50 rounded-lg">
-                <span class="text-xs text-slate-700 font-medium">Assigned</span>
-                <span class="text-base font-bold text-blue-600">${assigned}</span>
-              </div>
-              <div class="flex justify-between items-center p-2 bg-purple-50 rounded-lg">
-                <span class="text-xs text-slate-700 font-medium">In Transit</span>
-                <span class="text-base font-bold text-purple-600">${inTransit}</span>
-              </div>
-              <div class="flex justify-between items-center p-2 bg-emerald-50 rounded-lg">
-                <span class="text-xs text-slate-700 font-medium">Delivered</span>
-                <span class="text-base font-bold text-emerald-600">${delivered}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
-            <h3 class="text-sm font-bold text-slate-900 mb-3">Average Metrics</h3>
-            <div class="space-y-2">
-              <div class="flex justify-between items-center p-2 bg-slate-50 rounded-lg">
-                <span class="text-xs text-slate-700">Avg Order Value</span>
-                <span class="text-base font-bold text-slate-900">R${avgOrderValue}</span>
-              </div>
-              <div class="flex justify-between items-center p-2 bg-emerald-50 rounded-lg">
-                <span class="text-xs text-slate-700">Avg Delivered Value</span>
-                <span class="text-base font-bold text-emerald-700">R${avgDeliveredValue}</span>
-              </div>
-              <div class="flex justify-between items-center p-2 bg-blue-50 rounded-lg">
-                <span class="text-xs text-slate-700">Avg Delivery Fee</span>
-                <span class="text-base font-bold text-blue-700">R${avgDeliveryFee}</span>
-              </div>
-              <div class="flex justify-between items-center p-2 bg-purple-50 rounded-lg">
-                <span class="text-xs text-slate-700">Avg Profit per Order</span>
-                <span class="text-base font-bold ${avgProfit >= 0 ? 'text-purple-700' : 'text-red-600'}">R${avgProfit}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Profit Breakdown -->
-        <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
-          <h3 class="text-sm font-bold text-slate-900 mb-3">Profit Analysis</h3>
-          <div class="grid grid-cols-2 gap-3">
-            <div class="bg-gradient-to-br from-emerald-50 to-white rounded-xl p-3 border border-emerald-200">
-              <div class="text-xs text-slate-600 mb-1">Total Profit</div>
-              <div class="text-2xl font-bold ${totalProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}">
-                R${Math.round(totalProfit).toLocaleString()}
-              </div>
-              <div class="text-[10px] text-slate-500 mt-1">Margin: ${profitMargin}%</div>
-            </div>
-            <div class="bg-gradient-to-br from-blue-50 to-white rounded-xl p-3 border border-blue-200">
-              <div class="text-xs text-slate-600 mb-1">Delivered Profit</div>
-              <div class="text-2xl font-bold ${deliveredProfit >= 0 ? 'text-blue-700' : 'text-red-600'}">
-                R${Math.round(deliveredProfit).toLocaleString()}
-              </div>
-              <div class="text-[10px] text-slate-500 mt-1">${delivered} orders</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Top Products & Areas -->
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
-            <h3 class="text-sm font-bold text-slate-900 mb-3">Top Products by Revenue</h3>
-            ${topProducts.length > 0 ? `
-              <div class="space-y-2">
-                ${topProducts.map(([name, stats]) => `
-                  <div class="flex justify-between items-center p-2 bg-slate-50 rounded-lg hover:bg-slate-100">
-                    <div class="flex-1 min-w-0">
-                      <div class="text-xs font-medium text-slate-900 truncate">${salesSafe(name)}</div>
-                      <div class="text-[10px] text-slate-500">${stats.qty} sold • ${stats.orders} orders</div>
-                    </div>
-                    <div class="text-sm font-bold text-emerald-600 ml-2">R${Math.round(stats.revenue).toLocaleString()}</div>
-                  </div>
-                `).join('')}
-              </div>
-            ` : '<div class="text-xs text-slate-400 text-center py-3">No product data</div>'}
-          </div>
-
-          <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
-            <h3 class="text-sm font-bold text-slate-900 mb-3">Top Areas by Revenue</h3>
-            ${topAreas.length > 0 ? `
-              <div class="space-y-2">
-                ${topAreas.map(([name, stats]) => `
-                  <div class="flex justify-between items-center p-2 bg-slate-50 rounded-lg hover:bg-slate-100">
-                    <div class="flex-1 min-w-0">
-                      <div class="text-xs font-medium text-slate-900 truncate">${salesSafe(name)}</div>
-                      <div class="text-[10px] text-slate-500">${stats.orders} orders</div>
-                    </div>
-                    <div class="text-sm font-bold text-blue-600 ml-2">R${Math.round(stats.revenue).toLocaleString()}</div>
-                  </div>
-                `).join('')}
-              </div>
-            ` : '<div class="text-xs text-slate-400 text-center py-3">No area data</div>'}
-          </div>
-        </div>
-      </div>
-    `;
-
-    showContainer(container);
-    console.log('KPIs rendered successfully');
-  }
-
-  function showContainer(container) {
-    // Show KPIs container
-    container.classList.remove('hidden');
-    
-    // Hide other containers
-    const ordersWrapper = document.getElementById('ordersList')?.parentElement;
-    const driversWrapper = document.getElementById('driversList')?.parentElement;
-    const statsContainer = document.getElementById('statsContainer');
-    const metricsContainer = document.getElementById('metricsContainer');
-    
-    if (ordersWrapper) ordersWrapper.classList.add('hidden');
-    if (driversWrapper) driversWrapper.classList.add('hidden');
-    if (statsContainer) statsContainer.classList.add('hidden');
-    if (metricsContainer) metricsContainer.classList.add('hidden');
-  }
-
-  console.log('KPIs Tab script loaded');
-})();
 </script>
 
 
