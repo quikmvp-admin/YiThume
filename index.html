@@ -2307,49 +2307,53 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   // ========================================================================
   // ADMIN TABS  (added "History" & NEW "Metrics")
   // ========================================================================
-  function ensureAdminTabs(){
-    let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
+// ========================================================================
+// ADMIN TABS (ensure labels/keys exist; Stats now hosts analytics)
+// ========================================================================
+function ensureAdminTabs(){
+  let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
 
-    function makeTabBtn(label, tabKey){
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'yt-o-tab px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 text-xs';
-      btn.dataset.oTab = tabKey;
-      btn.setAttribute('role','tab');
-      btn.setAttribute('aria-selected','false');
-      btn.textContent = label;
-      btn.addEventListener('click', ()=> setActiveAdminTab(tabKey));
-      return btn;
-    }
-
-    const wanted = [
-      ['Pending','pending'],
-      ['Assigned','assigned'],
-      ['In Transit','in_transit'],
-      ['Delivered','delivered'],
-      ['Drivers','drivers'],
-      ['Stats','stats'],
-      ['History','history'], // existing
-      ['Metrics','metrics']  // NEW: after History
-    ];
-
-    const host = ordersTabsContainer || ordersList?.parentElement || document.getElementById('ordersPanel') || document.body;
-    const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
-
-    wanted.forEach(([label,key])=>{
-      if(!haveKeys.has(key)){
-        host.appendChild(makeTabBtn(label, key));
-      }
-    });
-
-    tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
-    tabButtons.forEach(b=>{
-      if(!b.dataset.wired){
-        b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
-        b.dataset.wired = '1';
-      }
-    });
+  function makeTabBtn(label, tabKey){
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'yt-o-tab px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 text-xs';
+    btn.dataset.oTab = tabKey;
+    btn.setAttribute('role','tab');
+    btn.setAttribute('aria-selected','false');
+    btn.textContent = label;
+    btn.addEventListener('click', ()=> setActiveAdminTab(tabKey));
+    return btn;
   }
+
+  // Keep existing set, but make sure Stats and History both exist.
+  const wanted = [
+    ['Pending','pending'],
+    ['Assigned','assigned'],
+    ['In Transit','in_transit'],
+    ['Delivered','delivered'],
+    ['Drivers','drivers'],
+    ['Stats','stats'],     // <- analytics live here
+    ['History','history'], // <- new: receipt-like, grouped by steps
+    ['Metrics','metrics']
+  ];
+
+  const host = ordersTabsContainer || ordersList?.parentElement || document.getElementById('ordersPanel') || document.body;
+  const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
+
+  wanted.forEach(([label,key])=>{
+    if(!haveKeys.has(key)){
+      host.appendChild(makeTabBtn(label, key));
+    }
+  });
+
+  tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
+  tabButtons.forEach(b=>{
+    if(!b.dataset.wired){
+      b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
+      b.dataset.wired = '1';
+    }
+  });
+}
 
   function setActiveAdminTab(tabKey){
     ordersTab = tabKey;
@@ -2547,218 +2551,97 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   // (ordersAssign wired both here if present and inside scaffold)
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
- // ========================================================================
-  // ORDER LIST RENDERING (History included)
-  // ========================================================================
-  async function renderOrders(){
-    ordersList = document.getElementById('ordersList');
-    if(!ordersList) return;
+// ========================================================================
+// ORDER LIST RENDERING (History now = grouped receipts; analytics live in Stats)
+// ========================================================================
+async function renderOrders(){
+  ordersList = document.getElementById('ordersList');
+  if(!ordersList) return;
 
-    const sourceArr = DEMO_MODE
-      ? Object.values(DEMO_ORDERS_DB).map(o=>normalizeOrder(o))
-      : Object.values(ALL_ORDERS_MAP).map(o=> o._normalized ? o : normalizeOrder(o));
+  const sourceArr = DEMO_MODE
+    ? Object.values(DEMO_ORDERS_DB).map(o=>normalizeOrder(o))
+    : Object.values(ALL_ORDERS_MAP).map(o=> o._normalized ? o : normalizeOrder(o));
 
-    // "by_driver:*" tab
-    if((ordersTab||'').startsWith('by_driver:')){
-      const did = ordersTab.split(':',2)[1];
-      const data = sourceArr.filter(o => (o.driver_id === did));
-      currentOrdersByTab[ordersTab] = data;
-
-      ordersList.innerHTML = data.length
-        ? ''
-        : `<div class="text-sm text-slate-500 p-4">No orders for that driver.</div>`;
-
-      data.forEach(o => ordersList.appendChild(buildOrderRow(o)));
-      wireOrderRowButtons(ordersList);
-      return;
-    }
-
-    // "history" tab: all orders, newest first + analytics
-    if(ordersTab === 'history'){
-      const data = [...sourceArr].sort((a,b)=>{
-        const ta = a.created_at ? a.created_at.getTime() : 0;
-        const tb = b.created_at ? b.created_at.getTime() : 0;
-        return tb - ta;
-      });
-      currentOrdersByTab[ordersTab] = data;
-
-      // Calculate analytics
-      const totalRevenue = data.reduce((sum, o) => sum + Number(o.total || 0), 0);
-      
-      // Top products
-      const prodMap = new Map();
-      data.forEach(o => {
-        (o.items || []).forEach(it => {
-          if(!it || !it.name) return;
-          const current = prodMap.get(it.name) || { qty: 0, revenue: 0 };
-          prodMap.set(it.name, {
-            qty: current.qty + Number(it.qty || 1),
-            revenue: current.revenue + (Number(it.price || 0) * Number(it.qty || 1))
-          });
-        });
-      });
-      const topProducts = Array.from(prodMap.entries())
-        .map(([name, stats]) => ({ name, ...stats }))
-        .sort((a, b) => b.qty - a.qty)
-        .slice(0, 5);
-
-      // Driver stats from orders
-      const driverMaps = DEMO_MODE ? DEMO_DRIVERS_DB : API_DRIVERS_MAP;
-      const driverStats = new Map();
-      
-      data.forEach(o => {
-        const did = o.driver_id;
-        if(!did) return;
-        
-        if(!driverStats.has(did)) {
-          const driver = driverMaps[did] || { name: did, phone: null };
-          driverStats.set(did, {
-            driver_id: did,
-            name: driver.name || did,
-            phone: driver.phone,
-            orders: 0,
-            revenue: 0,
-            pending_pay: 0,
-            approved_pay: 0
-          });
-        }
-        
-        const stats = driverStats.get(did);
-        stats.orders++;
-        stats.revenue += Number(o.total || 0);
-        
-        if(o.driver_pay_status === 'pending') {
-          stats.pending_pay += Number(o.driver_pay_pending || 0);
-        } else if(o.driver_pay_status === 'approved') {
-          stats.approved_pay += Number(o.driver_pay_approved || 0);
-        }
-      });
-
-      const topDrivers = Array.from(driverStats.values())
-        .sort((a, b) => b.orders - a.orders)
-        .slice(0, 6);
-
-      // Render analytics header
-      ordersList.innerHTML = `
-        <div class="mb-4 space-y-4">
-          <!-- Revenue Summary -->
-          <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-2xl p-4">
-            <div class="text-sm text-emerald-700 font-medium mb-1">Total Revenue</div>
-            <div class="text-3xl font-bold text-emerald-900">${fmtMoney(totalRevenue)}</div>
-            <div class="text-xs text-emerald-600 mt-1">${data.length} orders</div>
-          </div>
-
-          <!-- Top Products & Drivers Grid -->
-          <div class="grid gap-4 sm:grid-cols-2">
-            <!-- Top Products -->
-            <div class="bg-white border rounded-2xl p-4 shadow-sm">
-              <div class="text-sm font-semibold mb-3 flex items-center gap-2">
-                <span>📦</span>
-                <span>Top Products</span>
-              </div>
-              <div class="space-y-2">
-                ${topProducts.length ? topProducts.map(p => `
-                  <div class="flex items-center justify-between text-sm">
-                    <div class="flex-1 truncate pr-2">
-                      <div class="font-medium text-slate-900">${salesSafe(p.name)}</div>
-                      <div class="text-xs text-slate-500">${fmtMoney(p.revenue)} revenue</div>
-                    </div>
-                    <div class="text-right">
-                      <div class="font-semibold text-emerald-700">${p.qty}</div>
-                      <div class="text-[10px] text-slate-500">sold</div>
-                    </div>
-                  </div>
-                `).join('') : '<div class="text-sm text-slate-500">No products yet</div>'}
-              </div>
-            </div>
-
-            <!-- Top Drivers -->
-            <div class="bg-white border rounded-2xl p-4 shadow-sm">
-              <div class="text-sm font-semibold mb-3 flex items-center gap-2">
-                <span>🚗</span>
-                <span>Driver Performance</span>
-              </div>
-              <div class="space-y-2">
-                ${topDrivers.length ? topDrivers.map(d => `
-                  <div class="flex items-center justify-between text-sm">
-                    <div class="flex-1 truncate pr-2">
-                      <div class="font-medium text-slate-900">${salesSafe(d.name)}</div>
-                      <div class="text-xs text-slate-500">${fmtMoney(d.revenue)} • Pending: ${fmtMoney(d.pending_pay)}</div>
-                    </div>
-                    <div class="text-right">
-                      <div class="font-semibold text-emerald-700">${d.orders}</div>
-                      <div class="text-[10px] text-slate-500">orders</div>
-                    </div>
-                  </div>
-                `).join('') : '<div class="text-sm text-slate-500">No drivers yet</div>'}
-              </div>
-            </div>
-          </div>
-
-          <!-- Driver Cards -->
-          ${topDrivers.length ? `
-            <div class="bg-white border rounded-2xl p-4 shadow-sm">
-              <div class="text-sm font-semibold mb-3">Driver Details</div>
-              <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                ${topDrivers.map(d => `
-                  <div class="border border-slate-200 rounded-xl p-3 bg-slate-50">
-                    <div class="flex items-start justify-between mb-2">
-                      <div class="flex-1">
-                        <div class="font-semibold text-slate-900 text-sm">${salesSafe(d.name)}</div>
-                        ${d.phone ? `<div class="text-xs text-slate-500">📞 ${salesSafe(d.phone)}</div>` : ''}
-                      </div>
-                      <div class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
-                        #${salesSafe(d.driver_id).split('-').pop()}
-                      </div>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2 mt-2 text-xs">
-                      <div class="bg-white rounded-lg p-2">
-                        <div class="text-slate-500">Orders</div>
-                        <div class="font-bold text-emerald-700">${d.orders}</div>
-                      </div>
-                      <div class="bg-white rounded-lg p-2">
-                        <div class="text-slate-500">Revenue</div>
-                        <div class="font-bold text-slate-900">${fmtMoney(d.revenue)}</div>
-                      </div>
-                    </div>
-                    <div class="mt-2 pt-2 border-t border-slate-200 text-xs space-y-1">
-                      <div class="flex justify-between">
-                        <span class="text-slate-500">Pending pay:</span>
-                        <span class="font-semibold text-amber-600">${fmtMoney(d.pending_pay)}</span>
-                      </div>
-                      <div class="flex justify-between">
-                        <span class="text-slate-500">Approved pay:</span>
-                        <span class="font-semibold text-emerald-600">${fmtMoney(d.approved_pay)}</span>
-                      </div>
-                    </div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
-
-          <div class="border-t border-slate-200 pt-4">
-            <div class="text-sm font-semibold mb-3">All Orders</div>
-          </div>
-        </div>
-      `;
-
-      data.forEach(o => ordersList.appendChild(buildOrderRow(o, true /*rich*/)));
-      wireOrderRowButtons(ordersList);
-      return;
-    }
-
-    // status tabs
-    const data = sourceArr.filter(o=>o.status===ordersTab);
+  // "by_driver:*" tab (unchanged)
+  if((ordersTab||'').startsWith('by_driver:')){
+    const did = ordersTab.split(':',2)[1];
+    const data = sourceArr.filter(o => (o.driver_id === did));
     currentOrdersByTab[ordersTab] = data;
 
     ordersList.innerHTML = data.length
       ? ''
-      : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
+      : `<div class="text-sm text-slate-500 p-4">No orders for that driver.</div>`;
 
     data.forEach(o => ordersList.appendChild(buildOrderRow(o)));
     wireOrderRowButtons(ordersList);
+    return;
   }
+
+  // === HISTORY TAB: show ALL orders as receipt-like rows, grouped by status ===
+  if(ordersTab === 'history'){
+    // newest first
+    const all = [...sourceArr].sort((a,b)=>{
+      const ta = a.created_at ? a.created_at.getTime() : 0;
+      const tb = b.created_at ? b.created_at.getTime() : 0;
+      return tb - ta;
+    });
+    currentOrdersByTab[ordersTab] = all;
+
+    // Group into steps
+    const orderOf = [
+      ['pending',     'Pending'],
+      ['assigned',    'Assigned'],
+      ['in_transit',  'In Transit'],
+      ['delivered',   'Delivered']
+    ];
+    const groups = new Map(orderOf.map(([k])=>[k, []]));
+    const others = [];
+
+    all.forEach(o=>{
+      const s = (o.status||'').toLowerCase();
+      if(groups.has(s)) groups.get(s).push(o); else others.push(o);
+    });
+
+    const section = (label, arr)=>{
+      if(!arr || arr.length===0) return '';
+      const rowsHTML = arr.map(o => buildOrderRow(o, true /*rich*/).outerHTML).join('');
+      return `
+        <div class="mb-6">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm font-semibold text-slate-900">${label}</div>
+            <div class="text-xs text-slate-500">${arr.length} ${arr.length===1?'order':'orders'}</div>
+          </div>
+          <div class="divide-y divide-slate-200">
+            ${rowsHTML}
+          </div>
+        </div>
+      `;
+    };
+
+    let html = '';
+    for(const [key,label] of orderOf){
+      html += section(label, groups.get(key));
+    }
+    if(others.length){
+      html += section('Other', others);
+    }
+
+    ordersList.innerHTML = html || `<div class="text-sm text-slate-500 p-4">No orders yet.</div>`;
+    wireOrderRowButtons(ordersList);
+    return;
+  }
+
+  // === STATUS TABS (pending / assigned / in_transit / delivered) - unchanged ===
+  const data = sourceArr.filter(o=>o.status===ordersTab);
+  currentOrdersByTab[ordersTab] = data;
+
+  ordersList.innerHTML = data.length
+    ? ''
+    : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
+
+  data.forEach(o => ordersList.appendChild(buildOrderRow(o)));
+  wireOrderRowButtons(ordersList);
+}
 
   // ========================================================================
   // DRIVER METRICS & RENDERING
