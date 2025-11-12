@@ -968,6 +968,19 @@ window.addEventListener('DOMContentLoaded', () => {
     ));
   }
 
+  function fmtDate(d){
+    if(!d) return '—';
+    try{
+      const dd = (d instanceof Date) ? d : new Date(d);
+      const y  = dd.getFullYear();
+      const m  = pad2(dd.getMonth()+1);
+      const da = pad2(dd.getDate());
+      const hh = pad2(dd.getHours());
+      const mm = pad2(dd.getMinutes());
+      return `${y}-${m}-${da} ${hh}:${mm}`;
+    }catch(_){ return '—'; }
+  }
+
   // Normalize orders from various Mongo shapes into a predictable surface
   function normalizeOrder(o){
     const id =
@@ -1041,14 +1054,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Try extract driver shape from order if drivers API is empty
   function extractDriverShapeFromOrder(o){
-    // name sources
     const name =
       o?.driver_name ||
       o?.driver?.name ||
       o?.meta?.assigned_driver?.name ||
       null;
 
-    // phone sources
     const phone = digits(
       o?.driver_phone ||
       o?.driver?.phone ||
@@ -1056,7 +1067,6 @@ window.addEventListener('DOMContentLoaded', () => {
       ''
     ) || null;
 
-    // vehicle / area hints
     const vehicle =
       o?.driver?.vehicle || o?.meta?.assigned_driver?.vehicle || o?.vehicle || '—';
 
@@ -1270,22 +1280,20 @@ window.addEventListener('DOMContentLoaded', () => {
     `;
     document.body.appendChild(panel);
 
-    // Re-bind globals now that elements exist
+    // Re-bind globals
     ordersPanel         = document.getElementById('ordersPanel');
     ordersList          = document.getElementById('ordersList');
     ordersClose         = document.getElementById('closeOrdersPanel');
     ordersAssign        = document.getElementById('ordersAssign');
     ordersRefresh       = document.getElementById('ordersRefresh');
     driversList         = document.getElementById('driversList');
-    driversRefresh      = document.getElementById('driversRefresh'); // may not exist in scaffold
+    driversRefresh      = document.getElementById('driversRefresh'); // may not exist
     ordersTabsContainer = document.getElementById('ordersTabs');
     statsContainer      = document.getElementById('statsContainer');
     metricsContainer    = document.getElementById('metricsContainer');
 
-    // Wire close button
-    ordersClose?.addEventListener('click', closeOrders);
-
     // Wire header buttons
+    ordersClose?.addEventListener('click', closeOrders);
     ordersAssign?.addEventListener('click', autoAssignForAll);
     ordersRefresh?.addEventListener('click', hardRefresh);
 
@@ -1373,13 +1381,14 @@ window.addEventListener('DOMContentLoaded', () => {
         status,
         total,
         delivery_fee,
-        items: [{name:"Panado 500mg (24s)",qty:1},{name:"Cough Syrup 100ml",qty:1}],
+        items: [{name:"Panado 500mg (24s)",qty:1,price:35},{name:"Cough Syrup 100ml",qty:1,price:55}],
         meta: { collection_name: 'Port Alfred Depot', distance_km: 3.2 },
         fraud_score: 0.04,
         driver_id,
         driver_pay_status: status === 'delivered' ? 'approved' : 'pending',
         driver_pay_pending: status === 'delivered' ? 0 : clamp(delivery_fee,25,45),
-        driver_pay_approved: status === 'delivered' ? clamp(delivery_fee,25,45) : 0
+        driver_pay_approved: status === 'delivered' ? clamp(delivery_fee,25,45) : 0,
+        created_at_iso: new Date(Date.now() - Math.random()*6*24*3600*1000).toISOString()
       });
       DEMO_ORDERS_DB = {
         "demo-abc123": o("demo-abc123",180,35,"pending",    "DRV-100001"),
@@ -1431,8 +1440,8 @@ window.addEventListener('DOMContentLoaded', () => {
       row.className='flex items-center justify-between gap-3 border rounded-lg p-2';
       row.innerHTML = `
         <label class="flex items-center gap-2">
-          <input type="checkbox" data-idx="${idx}" class="itemCheck h-4 w-4" aria-label="Select ${item.name}"/>
-          <span>${item.name}</span>
+          <input type="checkbox" data-idx="${idx}" class="itemCheck h-4 w-4" aria-label="Select ${salesSafe(item.name)}"/>
+          <span>${salesSafe(item.name)}</span>
         </label>
         <div class="flex items-center gap-2">
           <span class="text-slate-500">R${item.price}</span>
@@ -1440,7 +1449,7 @@ window.addEventListener('DOMContentLoaded', () => {
             type="number"
             min="1"
             value="1"
-            aria-label="Quantity for ${item.name}"
+            aria-label="Quantity for ${salesSafe(item.name)}"
             data-idx="${idx}"
             class="itemQty w-14 border rounded-lg p-1"
           />
@@ -1820,10 +1829,10 @@ window.addEventListener('DOMContentLoaded', () => {
       row.className = "flex items-center justify-between border rounded-lg p-2";
       row.innerHTML = `
         <div class="text-sm">
-          <div class="font-medium">${it.name}</div>
+          <div class="font-medium">${salesSafe(it.name)}</div>
           <div class="text-xs text-slate-500">R${it.price}</div>
         </div>
-        <button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline" aria-label="Remove ${it.name}">remove</button>
+        <button data-idx="${idx}" class="removeStoreItem text-[11px] text-red-600 underline" aria-label="Remove ${salesSafe(it.name)}">remove</button>
       `;
       storeItemsList.appendChild(row);
     });
@@ -2147,7 +2156,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
   }
   function simpleBars(list, maxVal){
-    // list: [{label, value, sub?}]
     if(list.length===0){
       return '<div class="text-slate-500 text-sm">No data yet</div>';
     }
@@ -2174,7 +2182,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     metricsContainer = document.getElementById('metricsContainer');
     if(!metricsContainer) return;
 
-    // Collect orders from history (i.e., all normalized orders sorted newest→oldest)
     const sourceArr = DEMO_MODE
       ? Object.values(DEMO_ORDERS_DB).map(o=>normalizeOrder(o))
       : Object.values(ALL_ORDERS_MAP).map(o=> o._normalized ? o : normalizeOrder(o));
@@ -2190,7 +2197,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const itemsSold    = orders.reduce((s,o)=> s + (o.items||[]).reduce((k,i)=> k + Number(i.qty||0),0), 0);
     const avgOrder     = totalOrders ? Math.round(totalRevenue/totalOrders) : 0;
 
-    // Per-day sales (last 14 days)
     const byDay = groupBy(orders, o=> dayKey(o.created_at));
     const days = Array.from(byDay.entries())
       .map(([key,arr])=> ({
@@ -2199,9 +2205,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         revenue: arr.reduce((s,o)=>s+Number(o.total||0),0)
       }))
       .sort((a,b)=> a.label.localeCompare(b.label))
-      .slice(-14); // last 14
+      .slice(-14);
 
-    // Top products by qty
     const prod = new Map();
     orders.forEach(o=>{
       (o.items||[]).forEach(it=>{
@@ -2214,7 +2219,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       .sort((a,b)=> b.value-a.value)
       .slice(0,8);
 
-    // Top areas by order count and area revenue
     const areaC = new Map();
     const areaR = new Map();
     orders.forEach(o=>{
@@ -2227,7 +2231,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       .sort((a,b)=> b.value-a.value)
       .slice(0,8);
 
-    // Build UI if missing
     if(!document.getElementById('metricsWrap')){
       metricsContainer.innerHTML = `
         <div id="metricsWrap" class="space-y-4">
@@ -2274,7 +2277,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         </div>
       `;
     } else {
-      // Update headline KPIs
       const kpiCards = metricsContainer.querySelectorAll('.grid.sm\\:grid-cols-4 .text-2xl');
       if(kpiCards[0]) kpiCards[0].textContent = fmtMoney(totalRevenue);
       if(kpiCards[1]) kpiCards[1].textContent = String(totalOrders);
@@ -2282,7 +2284,6 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       if(kpiCards[3]) kpiCards[3].textContent = fmtMoney(avgOrder);
     }
 
-    // Render bar sections
     const elDailyOrders  = document.getElementById('mxDailyOrders');
     const elDailyRevenue = document.getElementById('mxDailyRevenue');
     const elTopProducts  = document.getElementById('mxTopProducts');
@@ -2305,55 +2306,52 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   // ========================================================================
-  // ADMIN TABS  (added "History" & NEW "Metrics")
+  // ADMIN TABS
   // ========================================================================
-// ========================================================================
-// ADMIN TABS (ensure labels/keys exist; Stats now hosts analytics)
-// ========================================================================
-function ensureAdminTabs(){
-  let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
+  function ensureAdminTabs(){
+    let tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
 
-  function makeTabBtn(label, tabKey){
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'yt-o-tab px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 text-xs';
-    btn.dataset.oTab = tabKey;
-    btn.setAttribute('role','tab');
-    btn.setAttribute('aria-selected','false');
-    btn.textContent = label;
-    btn.addEventListener('click', ()=> setActiveAdminTab(tabKey));
-    return btn;
+    function makeTabBtn(label, tabKey){
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'yt-o-tab px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 text-xs';
+      btn.dataset.oTab = tabKey;
+      btn.setAttribute('role','tab');
+      btn.setAttribute('aria-selected','false');
+      btn.textContent = label;
+      btn.addEventListener('click', ()=> setActiveAdminTab(tabKey));
+      return btn;
+    }
+
+    // History is now receipts-only; Stats holds analytics (same as old History)
+    const wanted = [
+      ['Pending','pending'],
+      ['Assigned','assigned'],
+      ['In Transit','in_transit'],
+      ['Delivered','delivered'],
+      ['Drivers','drivers'],
+      ['Stats','stats'],      // moved analytics here
+      ['History','history'],  // new receipts-only view
+      ['Metrics','metrics']
+    ];
+
+    const host = ordersTabsContainer || ordersList?.parentElement || document.getElementById('ordersPanel') || document.body;
+    const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
+
+    wanted.forEach(([label,key])=>{
+      if(!haveKeys.has(key)){
+        host.appendChild(makeTabBtn(label, key));
+      }
+    });
+
+    tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
+    tabButtons.forEach(b=>{
+      if(!b.dataset.wired){
+        b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
+        b.dataset.wired = '1';
+      }
+    });
   }
-
-  // Keep existing set, but make sure Stats and History both exist.
-  const wanted = [
-    ['Pending','pending'],
-    ['Assigned','assigned'],
-    ['In Transit','in_transit'],
-    ['Delivered','delivered'],
-    ['Drivers','drivers'],
-    ['Stats','stats'],     // <- analytics live here
-    ['History','history'], // <- new: receipt-like, grouped by steps
-    ['Metrics','metrics']
-  ];
-
-  const host = ordersTabsContainer || ordersList?.parentElement || document.getElementById('ordersPanel') || document.body;
-  const haveKeys = new Set(tabButtons.map(b=>b.dataset.oTab));
-
-  wanted.forEach(([label,key])=>{
-    if(!haveKeys.has(key)){
-      host.appendChild(makeTabBtn(label, key));
-    }
-  });
-
-  tabButtons = Array.from(document.querySelectorAll('.yt-o-tab'));
-  tabButtons.forEach(b=>{
-    if(!b.dataset.wired){
-      b.addEventListener('click', ()=> setActiveAdminTab(b.dataset.oTab));
-      b.dataset.wired = '1';
-    }
-  });
-}
 
   function setActiveAdminTab(tabKey){
     ordersTab = tabKey;
@@ -2395,7 +2393,6 @@ function ensureAdminTabs(){
     refreshAllData();
     setActiveAdminTab(ordersTab);
   }
-  // Re-bound inside scaffold too
   ordersRefresh?.addEventListener('click', hardRefresh);
   driversRefresh?.addEventListener('click', hardRefresh);
 
@@ -2548,100 +2545,252 @@ function ensureAdminTabs(){
     alert(results.join("\n"));
     refreshAllData();
   }
-  // (ordersAssign wired both here if present and inside scaffold)
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
-// ========================================================================
-// ORDER LIST RENDERING (History now = grouped receipts; analytics live in Stats)
-// ========================================================================
-async function renderOrders(){
-  ordersList = document.getElementById('ordersList');
-  if(!ordersList) return;
+  // ========================================================================
+  // ORDER ROW + RECEIPT + STEPPER
+  // ========================================================================
+  function statusColor(status){
+    switch(status){
+      case 'pending':    return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'assigned':   return 'bg-sky-100 text-sky-800 border-sky-200';
+      case 'in_transit': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+      case 'delivered':  return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      default:           return 'bg-slate-100 text-slate-700 border-slate-200';
+    }
+  }
+  function stepIndex(status){
+    return ['pending','assigned','in_transit','delivered'].indexOf(status);
+  }
+  function buildStepper(status){
+    const idx = Math.max(0, stepIndex(status));
+    const steps = ['Pending','Assigned','Transit','Delivered'];
+    return `
+      <div class="flex items-center gap-2 text-[10px]">
+        ${steps.map((label,i)=>`
+          <div class="flex items-center gap-1">
+            <div class="w-2 h-2 rounded-full ${i<=idx?'bg-emerald-600':'bg-slate-300'}"></div>
+            <span class="${i<=idx?'text-slate-900':'text-slate-400'}">${label}</span>
+            ${i<steps.length-1?`<div class="w-6 h-[2px] ${i<idx?'bg-emerald-400':'bg-slate-200'}"></div>`:''}
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
 
-  const sourceArr = DEMO_MODE
-    ? Object.values(DEMO_ORDERS_DB).map(o=>normalizeOrder(o))
-    : Object.values(ALL_ORDERS_MAP).map(o=> o._normalized ? o : normalizeOrder(o));
+  function buildItemsTable(items){
+    if(!items || !items.length){
+      return `<div class="text-xs text-slate-500">No items</div>`;
+    }
+    return `
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-slate-500">
+            <th class="text-left py-1">Item</th>
+            <th class="text-right py-1">Qty</th>
+            <th class="text-right py-1">Price</th>
+            <th class="text-right py-1">Line</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(it=>{
+            const price = Number(it.price||0);
+            const qty   = Number(it.qty||0);
+            const line  = Math.round(price*qty);
+            return `
+              <tr class="border-t">
+                <td class="py-1">${salesSafe(it.name||'Item')}</td>
+                <td class="py-1 text-right">${qty}</td>
+                <td class="py-1 text-right">R${price}</td>
+                <td class="py-1 text-right">R${line}</td>
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+  }
 
-  // "by_driver:*" tab (unchanged)
-  if((ordersTab||'').startsWith('by_driver:')){
-    const did = ordersTab.split(':',2)[1];
-    const data = sourceArr.filter(o => (o.driver_id === did));
+  function buildOrderRow(o, rich=false){
+    const idDisplay = o.order_public_id || o.order_id || o._internal_id || '—';
+    const statusCls = statusColor(o.status);
+    const created   = fmtDate(o.created_at);
+    const coll      = o.meta?.collection_name || '—';
+    const distKm    = Number(o.meta?.distance_km||0).toFixed(1);
+
+    const customer  = o.customer || {};
+    const name      = customer.name || '—';
+    const phone     = customer.phone ? `+${customer.phone}` : '—';
+    const address   = (customer.address && (customer.address.line1 || customer.address)) || '—';
+
+    const driverId  = o.driver_id || '—';
+    const payoutStr = o.driver_pay_status==='approved'
+      ? `Approved ${fmtMoney(o.driver_pay_approved||0)}`
+      : o.driver_pay_status==='pending'
+      ? `Pending ${fmtMoney(o.driver_pay_pending||0)}`
+      : '—';
+
+    const itemsTable = buildItemsTable(o.items||[]);
+    const stepper    = buildStepper(o.status);
+
+    // Actions vary with status
+    const canAssign   = (o.status === 'pending');
+    const canDeliver  = (o.status === 'in_transit' || o.status === 'assigned');
+
+    const actions = `
+      <div class="flex flex-wrap gap-2">
+        ${canAssign ? `<button class="btn-assign px-2 py-1 text-xs rounded-lg border border-slate-300 hover:bg-slate-100" data-id="${salesSafe(o._internal_id)}">Assign</button>` : ''}
+        ${canDeliver ? `<button class="btn-deliver px-2 py-1 text-xs rounded-lg bg-emerald-600 text-white hover:bg-emerald-700" data-id="${salesSafe(o._internal_id)}">Mark Delivered</button>` : ''}
+      </div>
+    `;
+
+    if(!rich){
+      // Compact row (for status tabs)
+      const row = document.createElement('div');
+      row.className = "py-3";
+      row.innerHTML = `
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono text-slate-500">${salesSafe(idDisplay)}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded-full border ${statusCls}">${o.status.replace('_',' ')}</span>
+            </div>
+            <div class="text-xs text-slate-500 mt-0.5">
+              ${created} • ${salesSafe(coll)} • ${distKm}km • Total ${fmtMoney(o.total)}
+            </div>
+            <div class="mt-2">${stepper}</div>
+          </div>
+          <div class="text-right text-xs">
+            <div>Driver: <b>${salesSafe(driverId)}</b></div>
+            <div class="text-slate-500">Payout: ${payoutStr}</div>
+            <div class="mt-2">${actions}</div>
+          </div>
+        </div>
+      `;
+      return row;
+    }
+
+    // Rich receipt-style card (for History)
+    const card = document.createElement('div');
+    card.className = "py-3";
+    card.innerHTML = `
+      <div class="border rounded-2xl p-3 bg-white shadow-sm">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono">${salesSafe(idDisplay)}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded-full border ${statusCls}">${o.status.replace('_',' ')}</span>
+            </div>
+            <div class="text-xs text-slate-500 mt-0.5">
+              ${created} • ${salesSafe(coll)} • ${distKm}km
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-sm font-semibold">${fmtMoney(o.total)}</div>
+            <div class="text-[11px] text-slate-500">Delivery fee: ${fmtMoney(o.delivery_fee||0)}</div>
+          </div>
+        </div>
+
+        <div class="mt-3">${stepper}</div>
+
+        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+          <div class="rounded-xl border p-2">
+            <div class="text-xs text-slate-500 mb-1">Customer</div>
+            <div class="text-sm font-medium">${salesSafe(name)}</div>
+            <div class="text-xs">Phone: ${salesSafe(phone)}</div>
+            <div class="text-xs">Address: ${salesSafe(address)}</div>
+          </div>
+          <div class="rounded-xl border p-2">
+            <div class="text-xs text-slate-500 mb-1">Driver / Payout</div>
+            <div class="text-sm">Driver: <b>${salesSafe(driverId)}</b></div>
+            <div class="text-xs text-slate-500">Payout: ${payoutStr}</div>
+          </div>
+        </div>
+
+        <div class="mt-3 rounded-xl border p-2">
+          <div class="text-xs text-slate-500 mb-1">Items</div>
+          ${itemsTable}
+        </div>
+
+        <div class="mt-3 flex items-center justify-between">
+          <div class="text-[11px] text-slate-500">Fraud score: ${(o.fraud_score||0).toFixed(2)}</div>
+          ${actions}
+        </div>
+      </div>
+    `;
+    return card;
+  }
+
+  function wireOrderRowButtons(scope){
+    const host = scope || document;
+    host.querySelectorAll('.btn-assign').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const id = btn.getAttribute('data-id');
+        assignOneOrder(id);
+      });
+    });
+    host.querySelectorAll('.btn-deliver').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const id = btn.getAttribute('data-id');
+        markDelivered(id);
+      });
+    });
+  }
+
+  // ========================================================================
+  // ORDER LIST RENDERING
+  // ========================================================================
+  async function renderOrders(){
+    ordersList = document.getElementById('ordersList');
+    if(!ordersList) return;
+
+    const sourceArr = DEMO_MODE
+      ? Object.values(DEMO_ORDERS_DB).map(o=>normalizeOrder(o))
+      : Object.values(ALL_ORDERS_MAP).map(o=> o._normalized ? o : normalizeOrder(o));
+
+    // "by_driver:*" tab
+    if((ordersTab||'').startsWith('by_driver:')){
+      const did = ordersTab.split(':',2)[1];
+      const data = sourceArr.filter(o => (o.driver_id === did));
+      currentOrdersByTab[ordersTab] = data;
+
+      ordersList.innerHTML = data.length
+        ? ''
+        : `<div class="text-sm text-slate-500 p-4">No orders for that driver.</div>`;
+
+      data.forEach(o => ordersList.appendChild(buildOrderRow(o)));
+      wireOrderRowButtons(ordersList);
+      return;
+    }
+
+    // "history" tab: receipts-only, newest first
+    if(ordersTab === 'history'){
+      const data = [...sourceArr].sort((a,b)=>{
+        const ta = a.created_at ? a.created_at.getTime() : 0;
+        const tb = b.created_at ? b.created_at.getTime() : 0;
+        return tb - ta;
+      });
+      currentOrdersByTab[ordersTab] = data;
+
+      ordersList.innerHTML = data.length
+        ? ''
+        : `<div class="text-sm text-slate-500 p-4">No orders yet.</div>`;
+
+      data.forEach(o => ordersList.appendChild(buildOrderRow(o, true /*rich*/)));
+      wireOrderRowButtons(ordersList);
+      return;
+    }
+
+    // status tabs
+    const data = sourceArr.filter(o=>o.status===ordersTab);
     currentOrdersByTab[ordersTab] = data;
 
     ordersList.innerHTML = data.length
       ? ''
-      : `<div class="text-sm text-slate-500 p-4">No orders for that driver.</div>`;
+      : `<div class="text-sm text-slate-500 p-4">No ${ordersTab.replace('_',' ')} orders.</div>`;
 
     data.forEach(o => ordersList.appendChild(buildOrderRow(o)));
     wireOrderRowButtons(ordersList);
-    return;
   }
-
-  // === HISTORY TAB: show ALL orders as receipt-like rows, grouped by status ===
-  if(ordersTab === 'history'){
-    // newest first
-    const all = [...sourceArr].sort((a,b)=>{
-      const ta = a.created_at ? a.created_at.getTime() : 0;
-      const tb = b.created_at ? b.created_at.getTime() : 0;
-      return tb - ta;
-    });
-    currentOrdersByTab[ordersTab] = all;
-
-    // Group into steps
-    const orderOf = [
-      ['pending',     'Pending'],
-      ['assigned',    'Assigned'],
-      ['in_transit',  'In Transit'],
-      ['delivered',   'Delivered']
-    ];
-    const groups = new Map(orderOf.map(([k])=>[k, []]));
-    const others = [];
-
-    all.forEach(o=>{
-      const s = (o.status||'').toLowerCase();
-      if(groups.has(s)) groups.get(s).push(o); else others.push(o);
-    });
-
-    const section = (label, arr)=>{
-      if(!arr || arr.length===0) return '';
-      const rowsHTML = arr.map(o => buildOrderRow(o, true /*rich*/).outerHTML).join('');
-      return `
-        <div class="mb-6">
-          <div class="flex items-center justify-between mb-2">
-            <div class="text-sm font-semibold text-slate-900">${label}</div>
-            <div class="text-xs text-slate-500">${arr.length} ${arr.length===1?'order':'orders'}</div>
-          </div>
-          <div class="divide-y divide-slate-200">
-            ${rowsHTML}
-          </div>
-        </div>
-      `;
-    };
-
-    let html = '';
-    for(const [key,label] of orderOf){
-      html += section(label, groups.get(key));
-    }
-    if(others.length){
-      html += section('Other', others);
-    }
-
-    ordersList.innerHTML = html || `<div class="text-sm text-slate-500 p-4">No orders yet.</div>`;
-    wireOrderRowButtons(ordersList);
-    return;
-  }
-
-  // === STATUS TABS (pending / assigned / in_transit / delivered) - unchanged ===
-  const data = sourceArr.filter(o=>o.status===ordersTab);
-  currentOrdersByTab[ordersTab] = data;
-
-  ordersList.innerHTML = data.length
-    ? ''
-    : `<div class="text-sm text-slate-500 p-4">No ${ordersTab} orders.</div>`;
-
-  data.forEach(o => ordersList.appendChild(buildOrderRow(o)));
-  wireOrderRowButtons(ordersList);
-}
 
   // ========================================================================
   // DRIVER METRICS & RENDERING
@@ -2696,7 +2845,6 @@ async function renderOrders(){
     if(DEMO_MODE){
       pairs = Object.entries(DEMO_DRIVERS_DB);
     } else {
-      // If API was empty but we derived from orders, API_DRIVERS_MAP is already populated
       pairs = Object.entries(API_DRIVERS_MAP);
     }
 
@@ -3206,7 +3354,7 @@ Vehicle: ${vehicle}`;
           status: "pending",
           total: orderPayload.total,
           delivery_fee: orderPayload.delivery_fee,
-          items: orderPayload.items.map(x=>({name:x.name, qty:x.qty})),
+          items: orderPayload.items.map(x=>({name:x.name, qty:x.qty, price:x.price})),
           meta: {
             collection_name: orderPayload.meta.collection_name,
             distance_km: orderPayload.route.distance_km,
@@ -3216,7 +3364,8 @@ Vehicle: ${vehicle}`;
           driver_id: did,
           driver_pay_status: 'pending',
           driver_pay_pending: driverPay,
-          driver_pay_approved: 0
+          driver_pay_approved: 0,
+          created_at_iso: new Date().toISOString()
         };
         saveOrdersToLS();
         hydrateState();
@@ -3271,7 +3420,6 @@ Vehicle: ${vehicle}`;
             wa_message:     data.wa_message || null
           };
 
-          // refresh orders & drivers so stats & cards pick it up
           await refreshAllData();
         }catch(err){
           console.error("Network/Fetch error", err);
@@ -3378,12 +3526,11 @@ Vehicle: ${vehicle}`;
   });
 
   // ========================================================================
-  // REFRESH ALL DATA (uses live API helpers)
+  // REFRESH ALL DATA
   // ========================================================================
   async function refreshAllData(){
     if(DEMO_MODE){
       hydrateState();
-      // Build ALL_ORDERS_MAP from demo for consistency
       const map = {};
       Object.values(DEMO_ORDERS_DB).forEach(o=>{
         const n = normalizeOrder(o);
@@ -3401,7 +3548,6 @@ Vehicle: ${vehicle}`;
     const orders = await fetchAllOrders();
     await fetchDrivers();
 
-    // If drivers API empty, derive from orders (Mongo-only systems)
     if(Object.keys(API_DRIVERS_MAP).length === 0){
       API_DRIVERS_MAP = deriveDriversFromOrders(orders);
     }
@@ -3428,7 +3574,6 @@ Vehicle: ${vehicle}`;
   // ========================================================================
   renderStoreItems();
   if (DEMO_MODE) {
-    // demo preload
     const map = {};
     Object.values(DEMO_ORDERS_DB).forEach(o=>{
       const n = normalizeOrder(o);
@@ -3452,7 +3597,6 @@ Vehicle: ${vehicle}`;
     });
   }
 });
-  
 </script>
 
 
