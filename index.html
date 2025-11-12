@@ -3497,7 +3497,7 @@ Vehicle: ${vehicle}`;
   }
 });
 
-  // ========================================================================
+// ========================================================================
 // METRICS TAB - Standalone Script
 // Paste this after the main code loads
 // ========================================================================
@@ -3514,7 +3514,26 @@ Vehicle: ${vehicle}`;
 
   function init() {
     console.log('Metrics Tab initializing...');
+    console.log('Current DEMO_MODE:', typeof DEMO_MODE !== 'undefined' ? DEMO_MODE : 'undefined');
+    
+    // Wait for main code to be ready
+    const checkReady = setInterval(() => {
+      if (typeof DEMO_MODE !== 'undefined' || typeof ALL_ORDERS_MAP !== 'undefined') {
+        clearInterval(checkReady);
+        console.log('Main code ready, setting up metrics tab');
+        setupMetricsTab();
+      }
+    }, 100);
+    
+    // Timeout after 5 seconds
+    setTimeout(() => {
+      clearInterval(checkReady);
+      console.log('Timeout reached, forcing setup');
+      setupMetricsTab();
+    }, 5000);
+  }
 
+  function setupMetricsTab() {
     // Hook into the existing tab system
     addMetricsTabIfNeeded();
     
@@ -3522,20 +3541,25 @@ Vehicle: ${vehicle}`;
     document.addEventListener('click', (e) => {
       const tab = e.target.closest('[data-o-tab="metrics"]');
       if (tab) {
+        console.log('Metrics tab clicked');
         renderMetricsTab();
       }
     });
 
     // Listen for data updates
     window.addEventListener('yt-orders-updated', () => {
+      console.log('yt-orders-updated event received');
       const panel = document.getElementById('ordersPanel');
       if (panel && !panel.classList.contains('hidden')) {
         const activeTab = document.querySelector('[data-o-tab].bg-emerald-600');
         if (activeTab && activeTab.dataset.oTab === 'metrics') {
+          console.log('Auto-refreshing metrics');
           renderMetricsTab();
         }
       }
     });
+
+    console.log('Metrics tab setup complete');
   }
 
   function addMetricsTabIfNeeded() {
@@ -3559,17 +3583,28 @@ Vehicle: ${vehicle}`;
   }
 
   function getOrdersData() {
+    // Debug logging
+    console.log('Getting orders data...');
+    console.log('DEMO_MODE:', window.DEMO_MODE);
+    console.log('DEMO_ORDERS_DB:', window.DEMO_ORDERS_DB);
+    console.log('ALL_ORDERS_MAP:', window.ALL_ORDERS_MAP);
+    
     // Try to get orders from global state
-    if (window.DEMO_MODE && window.DEMO_ORDERS_DB) {
-      return Object.values(window.DEMO_ORDERS_DB).map(normalizeOrder);
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE && typeof DEMO_ORDERS_DB !== 'undefined') {
+      const orders = Object.values(DEMO_ORDERS_DB).map(normalizeOrder);
+      console.log('Returning DEMO orders:', orders.length);
+      return orders;
     }
     
-    if (window.ALL_ORDERS_MAP) {
-      return Object.values(window.ALL_ORDERS_MAP).map(o => 
+    if (typeof ALL_ORDERS_MAP !== 'undefined' && ALL_ORDERS_MAP) {
+      const orders = Object.values(ALL_ORDERS_MAP).map(o => 
         o._normalized ? o : normalizeOrder(o)
       );
+      console.log('Returning ALL_ORDERS_MAP orders:', orders.length);
+      return orders;
     }
 
+    console.log('No orders found, returning empty array');
     return [];
   }
 
@@ -3623,21 +3658,41 @@ Vehicle: ${vehicle}`;
   }
 
   function renderMetricsTab() {
+    console.log('renderMetricsTab called');
+    
     let container = document.getElementById('metricsContainer');
     
     if (!container) {
+      console.log('Creating metricsContainer');
       container = document.createElement('div');
       container.id = 'metricsContainer';
       container.className = 'mt-4 hidden';
       
       const panel = document.getElementById('ordersPanel');
       if (panel) {
-        panel.querySelector('.overflow-auto')?.parentElement?.appendChild(container);
+        const targetParent = panel.querySelector('.grid.grid-cols-1.gap-3.overflow-auto') || 
+                            panel.querySelector('.overflow-auto')?.parentElement;
+        if (targetParent) {
+          targetParent.appendChild(container);
+          console.log('Container appended to parent');
+        }
       }
     }
 
     // Get all orders
     const orders = getOrdersData();
+    console.log('Orders retrieved for metrics:', orders.length);
+    
+    if (orders.length === 0) {
+      container.innerHTML = `
+        <div class="bg-white border rounded-2xl p-8 text-center">
+          <div class="text-slate-400 text-sm">No order data available yet</div>
+          <div class="text-slate-300 text-xs mt-2">Create some orders to see metrics</div>
+        </div>
+      `;
+      container.classList.remove('hidden');
+      return;
+    }
     
     // Calculate KPIs
     const totalOrders = orders.length;
@@ -3917,15 +3972,27 @@ Vehicle: ${vehicle}`;
     `;
 
     // Show metrics container, hide others
+    console.log('Showing metrics, hiding others');
     container.classList.remove('hidden');
     
     const ordersWrapper = document.getElementById('ordersList')?.parentElement;
     const driversWrapper = document.getElementById('driversList')?.parentElement;
     const statsContainer = document.getElementById('statsContainer');
     
-    if (ordersWrapper) ordersWrapper.classList.add('hidden');
-    if (driversWrapper) driversWrapper.classList.add('hidden');
-    if (statsContainer) statsContainer.classList.add('hidden');
+    if (ordersWrapper) {
+      ordersWrapper.classList.add('hidden');
+      console.log('Orders hidden');
+    }
+    if (driversWrapper) {
+      driversWrapper.classList.add('hidden');
+      console.log('Drivers hidden');
+    }
+    if (statsContainer) {
+      statsContainer.classList.add('hidden');
+      console.log('Stats hidden');
+    }
+    
+    console.log('Metrics render complete');
   }
 
   console.log('Metrics Tab script loaded successfully');
