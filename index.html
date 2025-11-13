@@ -2445,8 +2445,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"}
+        method: "POST"
       });
       const data = await res.json().catch(()=>({}));
 
@@ -2524,8 +2523,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
       try {
         const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
-          method: "POST",
-          headers: {"Content-Type":"application/json"}
+          method: "POST"
         });
         const data = await res.json().catch(()=>({}));
 
@@ -2610,6 +2608,24 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     `;
   }
 
+  // Helpers to show driver name + ID + phone in rows
+  function getDriverDisplayLabel(o){
+    const did = o.driver_id;
+    if(!did) return '—';
+    const dr = API_DRIVERS_MAP[did] || DEMO_DRIVERS_DB[did] || DRIVERS_BY_ID[did];
+    if(dr && dr.name){
+      return `${dr.name} (${did})`;
+    }
+    return did;
+  }
+
+  function getDriverPhoneForOrder(o){
+    const did = o.driver_id;
+    if(!did) return null;
+    const dr = API_DRIVERS_MAP[did] || DEMO_DRIVERS_DB[did] || DRIVERS_BY_ID[did];
+    return dr && dr.phone ? dr.phone : null;
+  }
+
   function buildOrderRow(o, rich=false){
     const idDisplay = o.order_public_id || o.order_id || o._internal_id || '—';
     const statusCls = statusColor(o.status);
@@ -2622,7 +2638,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const phone     = customer.phone ? `+${customer.phone}` : '—';
     const address   = (customer.address && (customer.address.line1 || customer.address)) || '—';
 
-    const driverId  = o.driver_id || '—';
+    const driverId     = o.driver_id || '—';
+    const driverLabel  = getDriverDisplayLabel(o);
+    const driverPhone  = getDriverPhoneForOrder(o);
     const payoutStr = o.driver_pay_status==='approved'
       ? `Approved ${fmtMoney(o.driver_pay_approved||0)}`
       : o.driver_pay_status==='pending'
@@ -2654,13 +2672,16 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
               <span class="text-xs font-mono text-slate-500">${salesSafe(idDisplay)}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded-full border ${statusCls}">${o.status.replace('_',' ')}</span>
             </div>
+            <div class="text-xs text-slate-700 mt-0.5 truncate">
+              Customer: <b>${salesSafe(name)}</b> • ${salesSafe(phone)}
+            </div>
             <div class="text-xs text-slate-500 mt-0.5">
               ${created} • ${salesSafe(coll)} • ${distKm}km • Total ${fmtMoney(o.total)}
             </div>
             <div class="mt-2">${stepper}</div>
           </div>
           <div class="text-right text-xs">
-            <div>Driver: <b>${salesSafe(driverId)}</b></div>
+            <div>Driver: <b>${salesSafe(driverLabel)}</b></div>
             <div class="text-slate-500">Payout: ${payoutStr}</div>
             <div class="mt-2">${actions}</div>
           </div>
@@ -2701,8 +2722,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           </div>
           <div class="rounded-xl border p-2">
             <div class="text-xs text-slate-500 mb-1">Driver / Payout</div>
-            <div class="text-sm">Driver: <b>${salesSafe(driverId)}</b></div>
-            <div class="text-xs text-slate-500">Payout: ${payoutStr}</div>
+            <div class="text-sm">Driver: <b>${salesSafe(driverLabel)}</b></div>
+            <div class="text-xs text-slate-500">
+              Phone: ${driverPhone ? '+' + salesSafe(driverPhone) : '—'}
+            </div>
+            <div class="text-xs text-slate-500 mt-0.5">Payout: ${payoutStr}</div>
           </div>
         </div>
 
@@ -3598,6 +3622,7 @@ Vehicle: ${vehicle}`;
   }
 });
 </script>
+
 
 
 </body>
