@@ -981,6 +981,14 @@ window.addEventListener('DOMContentLoaded', () => {
     }catch(_){ return '—'; }
   }
 
+    // ========================================================================
+  // NORMALIZED ORDERS (shared for History / Stats / Metrics / Drivers)
+  // ========================================================================
+  function getNormalizedOrdersArray(){
+    const src = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
+    return Object.values(src).map(o => o._normalized ? o : normalizeOrder(o));
+  }
+
   // Normalize orders from various Mongo shapes into a predictable surface
   function normalizeOrder(o){
     const id =
@@ -2016,7 +2024,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     adminPayApprovedEl.textContent = fmtMoney(approved);
   }
 
-  async function renderAdminStats(){
+   async function renderAdminStats(){
     const panel = ensureOrdersPanelScaffold();
 
     // Ensure base layout exists (KPI cards forced to show)
@@ -2067,40 +2075,24 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     adminPayPendingEl   = document.getElementById('adminPayPending');
     adminPayApprovedEl  = document.getElementById('adminPayApproved');
 
-    // Pull fresh orders + drivers from API/DEMO
-    const orders = await fetchAllOrders();
-    await fetchDrivers();
+    // 🔹 Use the same orders the History tab uses
+    const orders = getNormalizedOrdersArray();
 
-    // If drivers API is empty, derive from orders
+    // 🔹 If live mode & drivers API is empty, derive a driver map from orders
     if(!DEMO_MODE && Object.keys(API_DRIVERS_MAP).length === 0){
-      const derived = deriveDriversFromOrders(orders);
-      API_DRIVERS_MAP = derived;
-    }
-
-    // Build ALL_ORDERS_MAP from fresh orders (normalized)
-    const map = {};
-    orders.forEach(o=>{
-      const key =
-        o._internal_id || o.internal_id ||
-        o.order_public_id || o.order_id ||
-        Math.random().toString(36).slice(2);
-      map[key] = o._normalized ? o : normalizeOrder(o);
-    });
-    if(!DEMO_MODE){
-      ALL_ORDERS_MAP = map;
+      API_DRIVERS_MAP = deriveDriversFromOrders(orders);
     }
 
     // Totals
     const totalOrders = orders.length;
-    const revenue = orders.reduce((s,o)=> s + Number((o._normalized?o.total:normalizeOrder(o).total)||0), 0);
+    const revenue = orders.reduce((s,o)=> s + Number(o.total || 0), 0);
 
     if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
     if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = fmtMoney(revenue);
 
     // Top products
     const prodMap = new Map();
-    orders.forEach(o=>{
-      const ord = o._normalized ? o : normalizeOrder(o);
+    orders.forEach(ord=>{
       (ord.items||[]).forEach(it=>{
         if(!it || !it.name) return;
         prodMap.set(it.name, (prodMap.get(it.name)||0) + Number(it.qty||1));
@@ -2109,6 +2101,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const topProducts = Array.from(prodMap.entries())
       .sort((a,b)=>b[1]-a[1])
       .slice(0,5);
+
     if(adminTopProductsEl){
       adminTopProductsEl.innerHTML = topProducts.length
         ? topProducts.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
@@ -2117,23 +2110,24 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     // Top areas
     const areaMap = new Map();
-    orders.forEach(o=>{
-      const ord = o._normalized ? o : normalizeOrder(o);
+    orders.forEach(ord=>{
       const k = ord.meta?.collection_name || '—';
       areaMap.set(k, (areaMap.get(k)||0)+1);
     });
     const topAreas = Array.from(areaMap.entries())
       .sort((a,b)=>b[1]-a[1])
       .slice(0,5);
+
     if(adminTopAreasEl){
       adminTopAreasEl.innerHTML = topAreas.length
         ? topAreas.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
         : '<li class="text-slate-500">No data yet</li>';
     }
 
-    // Driver + payouts
+    // Drivers & payouts from the same order data
     recalcAdminPayoutWidgets();
   }
+
 
   // Wrapper so any existing calls still work
   function renderStats(){
@@ -2181,10 +2175,9 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const panel = ensureOrdersPanelScaffold();
     metricsContainer = document.getElementById('metricsContainer');
     if(!metricsContainer) return;
+    
+    const sourceArr = getNormalizedOrdersArray();
 
-    const sourceArr = DEMO_MODE
-      ? Object.values(DEMO_ORDERS_DB).map(o=>normalizeOrder(o))
-      : Object.values(ALL_ORDERS_MAP).map(o=> o._normalized ? o : normalizeOrder(o));
 
     const orders = [...sourceArr].sort((a,b)=>{
       const ta = a.created_at ? a.created_at.getTime() : 0;
@@ -2426,7 +2419,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     return clamp(fee, 25, 45);
   }
 
-   async function assignOneOrder(internalId){
+    async function assignOneOrder(internalId){
     if(!internalId){ alert("Missing order id."); return; }
 
     if(DEMO_MODE){
@@ -2443,11 +2436,22 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
-    // 🔹 LIVE: pick the correct ref for the API (public ref > order_id > internal)
+    // 🔹 Look up the normalized order we know about
     const ord = ALL_ORDERS_MAP[internalId];
-    const apiRef = ord
-      ? (ord.order_public_id || ord.order_id || ord._internal_id || internalId)
-      : internalId;
+    console.log('assignOneOrder debug', {
+      internalId,
+      ord,
+      raw: ord?.raw
+    });
+
+    // 🔹 Try a few possible identifiers, prefer human refs first
+    const apiRef =
+      ord?.order_public_id ||
+      ord?.order_id ||
+      ord?.raw?.order_public_id ||
+      ord?.raw?.order_id ||
+      ord?.raw?._id ||         // typical Mongo style
+      internalId;              // fallback
 
     try{
       const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(apiRef)}/auto-assign`, {
@@ -2461,14 +2465,16 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       } else if (res.status === 409 && data && data.error === "no_driver_available") {
         alert(`No driver available for ${apiRef}`);
       } else {
+        console.error('assignOneOrder error payload', { status: res.status, data });
         alert(`Failed to assign ${apiRef} (${res.status})`);
       }
     }catch(err){
-      console.error("assignOneOrder err",err);
+      console.error("assignOneOrder network err",err);
       alert(`Network error assigning ${apiRef}`);
     }
     refreshAllData();
   }
+
 
   async function markDelivered(internalId){
     if(!internalId){ alert("Missing order id."); return; }
@@ -2898,14 +2904,21 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     };
   }
 
-  function renderDrivers(){
+   function renderDrivers(){
     driversList = document.getElementById('driversList');
     if(!driversList) return;
+
+    // 🔹 Use same orders as History/Stats/Metrics
+    const orders = getNormalizedOrdersArray();
 
     let pairs;
     if(DEMO_MODE){
       pairs = Object.entries(DEMO_DRIVERS_DB);
     } else {
+      // If no drivers returned from API, derive them from orders
+      if(Object.keys(API_DRIVERS_MAP).length === 0){
+        API_DRIVERS_MAP = deriveDriversFromOrders(orders);
+      }
       pairs = Object.entries(API_DRIVERS_MAP);
     }
 
@@ -2914,6 +2927,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       driversList.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
       return;
     }
+
 
     const wrapper = document.createElement('div');
     wrapper.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
