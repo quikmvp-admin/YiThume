@@ -432,14 +432,32 @@ def hash_pin(pin: str) -> str:
 
 
 def _pin_or_header_ok():
-    # Header takes precedence
+    """
+    Admin auth helper.
+
+    Priority:
+      1) X-Admin-Secret header == ADMIN_SECRET
+      2) admin_pin in query string or JSON body (if ALLOW_PIN_PARAM is true)
+
+    Uses request.get_json(silent=True) so we NEVER trigger a Flask 400 just by
+    sending an empty / invalid JSON body from JS.
+    """
+    # 1) Header takes precedence
     if request.headers.get("X-Admin-Secret") == ADMIN_SECRET:
         return True
+
+    # 2) Optional PIN via query/body
     if not ALLOW_PIN_PARAM:
         return False
-    pin = request.args.get("admin_pin") or (request.json or {}).get("admin_pin")
-    return bool(pin) and (pin == ADMIN_SECRET)
 
+    data = {}
+    try:
+        data = request.get_json(silent=True) or {}
+    except Exception:
+        data = {}
+
+    pin = request.args.get("admin_pin") or data.get("admin_pin")
+    return bool(pin) and (pin == ADMIN_SECRET)
 
 def require_admin():
     return _pin_or_header_ok()
