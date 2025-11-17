@@ -2426,7 +2426,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     return clamp(fee, 25, 45);
   }
 
-  async function assignOneOrder(internalId){
+   async function assignOneOrder(internalId){
     if(!internalId){ alert("Missing order id."); return; }
 
     if(DEMO_MODE){
@@ -2443,22 +2443,29 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return;
     }
 
+    // 🔹 LIVE: pick the correct ref for the API (public ref > order_id > internal)
+    const ord = ALL_ORDERS_MAP[internalId];
+    const apiRef = ord
+      ? (ord.order_public_id || ord.order_id || ord._internal_id || internalId)
+      : internalId;
+
     try{
-      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
-        method: "POST"
+      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(apiRef)}/auto-assign`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"}
       });
       const data = await res.json().catch(()=>({}));
 
       if(res.ok && data && data.ok){
-        alert(`Assigned: ${internalId} -> ${data.driver_id || 'driver?'}`);
+        alert(`Assigned: ${apiRef} -> ${data.driver_id || 'driver?'}`);
       } else if (res.status === 409 && data && data.error === "no_driver_available") {
-        alert(`No driver available for ${internalId}`);
+        alert(`No driver available for ${apiRef}`);
       } else {
-        alert(`Failed to assign ${internalId} (${res.status})`);
+        alert(`Failed to assign ${apiRef} (${res.status})`);
       }
     }catch(err){
       console.error("assignOneOrder err",err);
-      alert(`Network error assigning ${internalId}`);
+      alert(`Network error assigning ${apiRef}`);
     }
     refreshAllData();
   }
@@ -2500,49 +2507,68 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
   async function autoAssignForAll(){
     const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
-    const ids = Object.values(source)
-      .map(x=> x._normalized ? x : normalizeOrder(x))
-      .filter(o => o.status === 'pending')
-      .map(o => o._internal_id);
 
-    if (ids.length === 0){ alert("No pending orders to assign."); return; }
+    // Normalized source array
+    const all = Object.values(source).map(x => x._normalized ? x : normalizeOrder(x));
+
+    // Pending orders only
+    const pending = all.filter(o => o.status === 'pending');
+
+    if (pending.length === 0){
+      alert("No pending orders to assign.");
+      return;
+    }
 
     const results = [];
-    for (const internalId of ids){
-      if (DEMO_MODE){
-        mutateOrder(internalId, (o)=>{
-          if(!o.driver_id){ o.driver_id = pickDriverId(); }
-          const pay = calcDriverPayout(o);
-          o.driver_pay_status  = 'pending';
-          o.driver_pay_pending = pay;
-          o.status             = 'assigned';
-          results.push(`✅ (demo) ${internalId} -> ${o.driver_id} (R${pay})`);
+
+    if (DEMO_MODE){
+      // 🔹 DEMO: mutate in-place
+      for (const o of pending){
+        const internalId = o._internal_id;
+        mutateOrder(internalId, (ord)=>{
+          if(!ord.driver_id){ ord.driver_id = pickDriverId(); }
+          const pay = calcDriverPayout(ord);
+          ord.driver_pay_status  = 'pending';
+          ord.driver_pay_pending = pay;
+          ord.status             = 'assigned';
+          results.push(`✅ (demo) ${internalId} -> ${ord.driver_id} (R${pay})`);
         });
-        continue;
       }
+      alert(results.join("\n"));
+      renderOrders(); renderDrivers(); renderStats(); renderMetrics();
+      return;
+    }
+
+    // 🔹 LIVE: use the correct ref for the API
+    for (const o of pending){
+      const internalId = o._internal_id;
+      const apiRef     = o.order_public_id || o.order_id || internalId;
 
       try {
-        const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
-          method: "POST"
+        const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(apiRef)}/auto-assign`, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"}
         });
         const data = await res.json().catch(()=>({}));
 
         if(res.ok && data && data.ok){
           const driverId = data.driver_id || "driver?";
-          results.push(`✅ ${internalId} → ${driverId}`);
+          results.push(`✅ ${apiRef} → ${driverId}`);
         } else if (res.status === 409 && data && data.error === "no_driver_available") {
-          results.push(`⚠️ ${internalId}: no driver`);
+          results.push(`⚠️ ${apiRef}: no driver`);
         } else {
-          results.push(`❌ ${internalId}: failed (${res.status})`);
+          results.push(`❌ ${apiRef}: failed (${res.status})`);
         }
       } catch (err){
         console.error("autoAssignForAll error", err);
-        results.push(`❌ ${internalId}: network error`);
+        results.push(`❌ ${apiRef}: network error`);
       }
     }
+
     alert(results.join("\n"));
     refreshAllData();
   }
+
   ordersAssign?.addEventListener('click', autoAssignForAll);
 
   // ========================================================================
@@ -2626,7 +2652,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     return dr && dr.phone ? dr.phone : null;
   }
 
-  function buildOrderRow(o, rich=false){
+   function buildOrderRow(o, rich=false){
     const idDisplay = o.order_public_id || o.order_id || o._internal_id || '—';
     const statusCls = statusColor(o.status);
     const created   = fmtDate(o.created_at);
@@ -2638,9 +2664,20 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     const phone     = customer.phone ? `+${customer.phone}` : '—';
     const address   = (customer.address && (customer.address.line1 || customer.address)) || '—';
 
-    const driverId     = o.driver_id || '—';
-    const driverLabel  = getDriverDisplayLabel(o);
-    const driverPhone  = getDriverPhoneForOrder(o);
+    // 🔹 Look up driver *name* from your driver maps
+    const driverId = o.driver_id || '—';
+    let driverName = null;
+    if (driverId && driverId !== '—') {
+      const d = API_DRIVERS_MAP[driverId] || DEMO_DRIVERS_DB?.[driverId];
+      if (d && d.name) {
+        driverName = d.name;
+      }
+    }
+    const driverLabel =
+      driverName
+        ? `${salesSafe(driverName)} (${salesSafe(driverId)})`
+        : salesSafe(driverId);
+
     const payoutStr = o.driver_pay_status==='approved'
       ? `Approved ${fmtMoney(o.driver_pay_approved||0)}`
       : o.driver_pay_status==='pending'
@@ -2649,6 +2686,11 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
 
     const itemsTable = buildItemsTable(o.items||[]);
     const stepper    = buildStepper(o.status);
+
+    // 🔹 This is the key: show "Name – Ref" instead of just the ref
+    const idLabel = (name && name !== '—')
+      ? `${salesSafe(name)} – ${salesSafe(idDisplay)}`
+      : salesSafe(idDisplay);
 
     // Actions vary with status
     const canAssign   = (o.status === 'pending');
@@ -2662,18 +2704,15 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     `;
 
     if(!rich){
-      // Compact row (for status tabs)
+      // 🔹 Compact row (Pending / Assigned / In Transit / Delivered tabs)
       const row = document.createElement('div');
       row.className = "py-3";
       row.innerHTML = `
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <div class="flex items-center gap-2">
-              <span class="text-xs font-mono text-slate-500">${salesSafe(idDisplay)}</span>
+              <span class="text-xs font-mono text-slate-500">${idLabel}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded-full border ${statusCls}">${o.status.replace('_',' ')}</span>
-            </div>
-            <div class="text-xs text-slate-700 mt-0.5 truncate">
-              Customer: <b>${salesSafe(name)}</b> • ${salesSafe(phone)}
             </div>
             <div class="text-xs text-slate-500 mt-0.5">
               ${created} • ${salesSafe(coll)} • ${distKm}km • Total ${fmtMoney(o.total)}
@@ -2681,7 +2720,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
             <div class="mt-2">${stepper}</div>
           </div>
           <div class="text-right text-xs">
-            <div>Driver: <b>${salesSafe(driverLabel)}</b></div>
+            <div>Driver: <b>${driverLabel}</b></div>
             <div class="text-slate-500">Payout: ${payoutStr}</div>
             <div class="mt-2">${actions}</div>
           </div>
@@ -2690,7 +2729,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       return row;
     }
 
-    // Rich receipt-style card (for History)
+    // 🔹 Rich receipt-style card (History tab)
     const card = document.createElement('div');
     card.className = "py-3";
     card.innerHTML = `
@@ -2698,7 +2737,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <div class="flex items-center gap-2">
-              <span class="text-xs font-mono">${salesSafe(idDisplay)}</span>
+              <span class="text-xs font-mono">${idLabel}</span>
               <span class="text-[10px] px-1.5 py-0.5 rounded-full border ${statusCls}">${o.status.replace('_',' ')}</span>
             </div>
             <div class="text-xs text-slate-500 mt-0.5">
@@ -2722,11 +2761,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
           </div>
           <div class="rounded-xl border p-2">
             <div class="text-xs text-slate-500 mb-1">Driver / Payout</div>
-            <div class="text-sm">Driver: <b>${salesSafe(driverLabel)}</b></div>
-            <div class="text-xs text-slate-500">
-              Phone: ${driverPhone ? '+' + salesSafe(driverPhone) : '—'}
-            </div>
-            <div class="text-xs text-slate-500 mt-0.5">Payout: ${payoutStr}</div>
+            <div class="text-sm">Driver: <b>${driverLabel}</b></div>
+            <div class="text-xs text-slate-500">Payout: ${payoutStr}</div>
           </div>
         </div>
 
@@ -2743,6 +2779,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     `;
     return card;
   }
+
 
   function wireOrderRowButtons(scope){
     const host = scope || document;
