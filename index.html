@@ -3673,6 +3673,772 @@ Vehicle: ${vehicle}`;
   }
 });
 </script>
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  // ========================================================================
+  // CONFIG & GLOBALS
+  // ========================================================================
+  const BASE_API        = "/api/app";
+  const ADMIN_PIN       = "1234"; // must match ADMIN_SECRET in Flask
+  const WHATSAPP_ADMIN  = "270691456201"; // fallback
+
+  const emerald = { 600:'#059669', 500:'#10b981', 400:'#34d399' };
+
+  let ALL_ORDERS  = [];
+  let ALL_DRIVERS = [];
+  let ORDERS_BY_ID = new Map();
+  let DRIVERS_BY_ID = new Map();
+
+  let currentTab = "pending";      // pending | assigned | in_transit | delivered | history | drivers | stats | metrics
+  let currentDriverFilter = null;  // for "View Orders" from driver tab
+
+  // DOM refs
+  const ordersListEl   = document.getElementById('ordersList');
+  const driversListEl  = document.getElementById('driversList');
+  const statsPanelEl   = document.getElementById('statsPanel');
+  const metricsPanelEl = document.getElementById('metricsPanel');
+  const autoAssignAllBtn = document.getElementById('autoAssignAllBtn');
+
+  // ========================================================================
+  // HELPERS
+  // ========================================================================
+  function fmtMoney(v) {
+    if (v == null || isNaN(v)) return "R0.00";
+    return "R" + Number(v).toFixed(2);
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "—";
+      return d.toLocaleString("en-ZA", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    } catch (e) {
+      return iso;
+    }
+  }
+
+  function textOrDash(v) {
+    if (v === undefined || v === null || v === "") return "—";
+    return String(v);
+  }
+
+  function digits(val) {
+    return (val || "").replace(/\D+/g, "");
+  }
+
+  function waUrl(phone, msg) {
+    const p = digits(phone || "");
+    const num = p || WHATSAPP_ADMIN;
+    const m  = encodeURIComponent(msg || "");
+    return `https://wa.me/${num}${m ? `?text=${m}` : ""}`;
+  }
+
+  function simpleFetch(url, options = {}) {
+    return fetch(url, Object.assign({
+      headers: {
+        "Content-Type": "application/json"
+      }
+    }, options));
+  }
+
+  function orderCustomerName(o) {
+    return (((o || {}).customer || {}).name) || (((o || {}).customer || {}).phone) || "Customer";
+  }
+
+  function orderCollectionName(o) {
+    return (((o || {}).meta || {}).collection_name) || "—";
+  }
+
+  function orderZone(o) {
+    return (((o || {}).meta || {}).zone) || "—";
+  }
+
+  function driverDisplayName(d) {
+    if (!d) return "Unassigned";
+    return d.name || d.driver_id || "Driver";
+  }
+
+  function driverDisplayShort(d) {
+    if (!d) return "Unassigned";
+    if (d.name && d.driver_id) return `${d.name} (${d.driver_id})`;
+    return d.name || d.driver_id || "Driver";
+  }
+
+  function getDriverForOrder(o) {
+    if (!o || !o.assigned_driver_id) return null;
+    return DRIVERS_BY_ID.get(o.assigned_driver_id) || null;
+  }
+
+  // ========================================================================
+  // DATA LOAD
+  // ========================================================================
+  async function loadOrders() {
+    try {
+      const res = await fetch(`${BASE_API}/orders?limit=500`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "orders_failed");
+      ALL_ORDERS = Array.isArray(json.orders) ? json.orders : [];
+      ORDERS_BY_ID.clear();
+      ALL_ORDERS.forEach(o => {
+        if (o._internal_id) ORDERS_BY_ID.set(o._internal_id, o);
+      });
+    } catch (e) {
+      console.error("Failed to load orders", e);
+      ALL_ORDERS = [];
+      ORDERS_BY_ID.clear();
+    }
+  }
+
+  async function loadDrivers() {
+    try {
+      const res = await fetch(`${BASE_API}/drivers`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "drivers_failed");
+      ALL_DRIVERS = Array.isArray(json.drivers) ? json.drivers : [];
+      DRIVERS_BY_ID.clear();
+      ALL_DRIVERS.forEach(d => {
+        const id = d._internal_id || d.driver_id || d.id;
+        if (id) DRIVERS_BY_ID.set(id, d);
+      });
+    } catch (e) {
+      console.error("Failed to load drivers", e);
+      ALL_DRIVERS = [];
+      DRIVERS_BY_ID.clear();
+    }
+  }
+
+  async function refreshAll() {
+    await Promise.all([loadOrders(), loadDrivers()]);
+    renderCurrentTab();
+  }
+
+  // ========================================================================
+  // ORDER RENDERING
+  // ========================================================================
+  function filterOrdersForTab() {
+    let list = [...ALL_ORDERS];
+
+    if (currentDriverFilter) {
+      list = list.filter(o => o.assigned_driver_id === currentDriverFilter);
+    }
+
+    switch (currentTab) {
+      case "pending":
+        return list.filter(o => o.status === "pending" || o.status === "review_required");
+      case "assigned":
+        return list.filter(o => o.status === "assigned");
+      case "in_transit":
+        return list.filter(o => o.status === "in_transit");
+      case "delivered":
+        return list.filter(o => o.status === "delivered");
+      case "history":
+        // all orders, newest first
+        return list.sort((a, b) => {
+          const da = new Date(a.created_at || a.created_at_iso || 0).getTime();
+          const db = new Date(b.created_at || b.created_at_iso || 0).getTime();
+          return db - da;
+        });
+      default:
+        return list;
+    }
+  }
+
+  function buildOrderCard(o) {
+    const customerName  = orderCustomerName(o);
+    const orderRef      = o.order_id || o._internal_id || "—";
+    const collection    = orderCollectionName(o);
+    const zone          = orderZone(o);
+    const total         = fmtMoney(o.total || 0);
+    const statusLabel   = (o.status || "pending").replace(/_/g, " ").toUpperCase();
+    const created       = fmtDate(o.created_at || o.created_at_iso);
+    const delivered     = o.delivered_at ? fmtDate(o.delivered_at) : "—";
+    const driver        = getDriverForOrder(o);
+    const driverName    = driverDisplayName(driver);
+    const driverPhone   = driver ? driver.phone : null;
+
+    const showCustomerInTitle = (currentTab === "pending" || currentTab === "delivered" || currentTab === "assigned" || currentTab === "in_transit" || currentTab === "history");
+
+    const titleLine = showCustomerInTitle
+      ? `${customerName} – ${orderRef}`
+      : orderRef;
+
+    const isPending   = (o.status === "pending" || o.status === "review_required");
+    const isAssigned  = (o.status === "assigned");
+    const isInTransit = (o.status === "in_transit");
+    const isDelivered = (o.status === "delivered");
+
+    const driverPayPending  = Number(o.driver_pay_pending || 0);
+    const driverPayApproved = Number(o.driver_pay_approved || 0);
+
+    // Action buttons
+    let actionsHtml = "";
+
+    if (isPending) {
+      actionsHtml += `
+        <button
+          class="text-xs font-medium px-3 py-1 rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
+          data-action="auto-assign"
+          data-oid="${o._internal_id}"
+        >
+          Auto-assign
+        </button>
+      `;
+    }
+
+    if (isAssigned || isInTransit) {
+      actionsHtml += `
+        <button
+          class="text-xs font-medium px-3 py-1 rounded-full bg-indigo-600 text-white hover:bg-indigo-700"
+          data-action="mark-in-transit"
+          data-oid="${o._internal_id}"
+        >
+          Mark In Transit
+        </button>
+        <button
+          class="text-xs font-medium px-3 py-1 rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
+          data-action="mark-delivered"
+          data-oid="${o._internal_id}"
+        >
+          Mark Delivered
+        </button>
+      `;
+    }
+
+    if (!isDelivered && !isPending && !isAssigned && !isInTransit) {
+      actionsHtml += `
+        <button
+          class="text-xs font-medium px-3 py-1 rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
+          data-action="mark-delivered"
+          data-oid="${o._internal_id}"
+        >
+          Mark Delivered
+        </button>
+      `;
+    }
+
+    if (driverPhone) {
+      actionsHtml += `
+        <a
+          href="${waUrl(driverPhone, `Hi ${driverName}, please update order ${orderRef}.`)}"
+          target="_blank"
+          rel="noopener"
+          class="text-xs font-medium px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+          data-action="whatsapp-driver"
+        >
+          WhatsApp Driver
+        </a>
+      `;
+    }
+
+    const showDriverBlock = (currentTab === "assigned" || currentTab === "in_transit" || currentTab === "history" || currentTab === "delivered");
+
+    return `
+      <div class="rounded-xl border border-slate-200 bg-white p-4 mb-3 shadow-sm">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold text-slate-900">${titleLine}</div>
+            <div class="mt-1 text-xs text-slate-500">
+              <span class="inline-block mr-2">Status: <span class="font-medium">${statusLabel}</span></span>
+              <span class="inline-block mr-2">Created: ${created}</span>
+              ${isDelivered ? `<span class="inline-block mr-2">Delivered: ${delivered}</span>` : ""}
+            </div>
+            <div class="mt-1 text-xs text-slate-500">
+              <span class="inline-block mr-2">Collection: <span class="font-medium">${textOrDash(collection)}</span></span>
+              <span class="inline-block mr-2">Zone: <span class="font-medium">${textOrDash(zone)}</span></span>
+              <span class="inline-block mr-2">Total: <span class="font-semibold">${total}</span></span>
+            </div>
+            ${showDriverBlock ? `
+              <div class="mt-1 text-xs text-slate-500">
+                <span class="inline-block mr-2">Driver: <span class="font-medium">${driverName}</span></span>
+                <span class="inline-block mr-2">Phone: <span class="font-mono">${driverPhone ? driverPhone : "—"}</span></span>
+              </div>
+            ` : ""}
+            <div class="mt-1 text-xs text-slate-500">
+              <span class="inline-block mr-2">Driver Pay Pending: <span class="font-medium">${fmtMoney(driverPayPending)}</span></span>
+              <span class="inline-block mr-2">Driver Pay Approved: <span class="font-medium">${fmtMoney(driverPayApproved)}</span></span>
+            </div>
+          </div>
+          <div class="flex flex-col items-end gap-2">
+            <span class="inline-flex items-center rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 bg-slate-50">
+              ${orderRef}
+            </span>
+            <div class="flex flex-wrap gap-2 mt-2 justify-end">
+              ${actionsHtml}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderOrdersTab() {
+    if (!ordersListEl) return;
+    const list = filterOrdersForTab();
+    if (!list.length) {
+      ordersListEl.innerHTML = `
+        <div class="p-4 text-sm text-slate-500">
+          No orders in this view yet.
+        </div>
+      `;
+      return;
+    }
+    const html = list.map(buildOrderCard).join("");
+    ordersListEl.innerHTML = html;
+  }
+
+  // ========================================================================
+  // DRIVERS TAB
+  // ========================================================================
+  function computeDriverAggregates() {
+    const byDriver = {};
+    ALL_ORDERS.forEach(o => {
+      const did = o.assigned_driver_id;
+      if (!did) return;
+      if (!byDriver[did]) {
+        byDriver[did] = {
+          delivered: 0,
+          assigned: 0,
+          in_transit: 0,
+          other: 0,
+          driver_pay_pending: 0,
+          driver_pay_approved: 0
+        };
+      }
+      const bucket = byDriver[did];
+      switch (o.status) {
+        case "delivered":
+          bucket.delivered += 1; break;
+        case "assigned":
+          bucket.assigned += 1; break;
+        case "in_transit":
+          bucket.in_transit += 1; break;
+        default:
+          bucket.other += 1; break;
+      }
+      bucket.driver_pay_pending  += Number(o.driver_pay_pending || 0);
+      bucket.driver_pay_approved += Number(o.driver_pay_approved || 0);
+    });
+    return byDriver;
+  }
+
+  function renderDriversTab() {
+    if (!driversListEl) return;
+    if (!ALL_DRIVERS.length) {
+      driversListEl.innerHTML = `
+        <div class="p-4 text-sm text-slate-500">
+          No drivers yet. Use the API to create drivers first.
+        </div>
+      `;
+      return;
+    }
+    const agg = computeDriverAggregates();
+
+    const html = ALL_DRIVERS.map(d => {
+      const did = d._internal_id || d.driver_id || d.id;
+      const stats = agg[did] || {
+        delivered: 0,
+        assigned: 0,
+        in_transit: 0,
+        other: 0,
+        driver_pay_pending: 0,
+        driver_pay_approved: 0
+      };
+      const zone   = (((d || {}).meta || {}).zone) || "—";
+      const veh    = d.vehicle || "vehicle";
+      const phone  = d.phone || "—";
+      const name   = d.name || d.driver_id || "Driver";
+      const pendingPay  = fmtMoney(stats.driver_pay_pending);
+      const approvedPay = fmtMoney(stats.driver_pay_approved);
+
+      return `
+        <div class="rounded-xl border border-slate-200 bg-white p-4 mb-3 shadow-sm">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="text-sm font-semibold text-slate-900">${name}</div>
+              <div class="mt-1 text-xs text-slate-500">
+                <span class="inline-block mr-2">Phone: <span class="font-mono">${phone}</span></span>
+                <span class="inline-block mr-2">Vehicle: <span class="font-medium">${veh}</span></span>
+                <span class="inline-block mr-2">Zone: <span class="font-medium">${zone}</span></span>
+              </div>
+              <div class="mt-2 text-xs text-slate-500">
+                <span class="inline-block mr-2">Delivered: <span class="font-semibold">${stats.delivered}</span></span>
+                <span class="inline-block mr-2">Assigned: <span class="font-semibold">${stats.assigned}</span></span>
+                <span class="inline-block mr-2">In Transit: <span class="font-semibold">${stats.in_transit}</span></span>
+              </div>
+              <div class="mt-2 text-xs text-slate-500">
+                <span class="inline-block mr-2">Pending Payout: <span class="font-semibold">${pendingPay}</span></span>
+                <span class="inline-block mr-2">Approved Payout: <span class="font-semibold">${approvedPay}</span></span>
+              </div>
+            </div>
+            <div class="flex flex-col items-end gap-2">
+              <a
+                href="${waUrl(phone, `Hi ${name}, quick update on your YiThume payouts.`)}"
+                target="_blank"
+                rel="noopener"
+                class="text-xs font-medium px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+              >
+                WhatsApp
+              </a>
+              <button
+                class="text-xs font-medium px-3 py-1 rounded-full bg-slate-900 text-white hover:bg-slate-800"
+                data-action="driver-view-orders"
+                data-driver-id="${did}"
+              >
+                View Orders
+              </button>
+              <button
+                class="text-xs font-medium px-3 py-1 rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
+                data-action="driver-approve-all-pay"
+                data-driver-id="${did}"
+              >
+                Approve All Pay
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    driversListEl.innerHTML = html;
+  }
+
+  // ========================================================================
+  // STATS & METRICS
+  // ========================================================================
+  function buildStatsFromOrders() {
+    const delivered = ALL_ORDERS.filter(o => o.status === "delivered");
+    const totalOrders = ALL_ORDERS.length;
+    const revenue = delivered.reduce((sum, o) => sum + Number(o.total || 0), 0);
+
+    const products = {};
+    delivered.forEach(o => {
+      (o.items || []).forEach(it => {
+        const name = it.name || "Unknown";
+        const qty  = Number(it.qty || 1);
+        products[name] = (products[name] || 0) + qty;
+      });
+    });
+
+    const topProducts = Object.entries(products)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count }));
+
+    const areas = {};
+    delivered.forEach(o => {
+      const key = orderCollectionName(o);
+      areas[key] = (areas[key] || 0) + 1;
+    });
+
+    const topAreas = Object.entries(areas)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count }));
+
+    const driversCount = ALL_DRIVERS.length;
+    const avgOrderValue = totalOrders > 0 ? (revenue / delivered.length || 0) : 0;
+    const deliveredRate = totalOrders > 0 ? (delivered.length / totalOrders) : 0;
+
+    return {
+      totalOrders,
+      revenue,
+      topProducts,
+      topAreas,
+      driversCount,
+      avgOrderValue,
+      deliveredRate,
+      deliveredCount: delivered.length
+    };
+  }
+
+  function renderStatsTab() {
+    if (!statsPanelEl) return;
+    const s = buildStatsFromOrders();
+
+    const topProductsHtml = s.topProducts.length
+      ? s.topProducts.map(p => `
+        <div class="flex items-center justify-between text-xs py-1">
+          <span class="text-slate-600">${p.name}</span>
+          <span class="font-semibold text-slate-900">${p.count}</span>
+        </div>
+      `).join("")
+      : `<div class="text-xs text-slate-400">No delivered orders yet.</div>`;
+
+    const topAreasHtml = s.topAreas.length
+      ? s.topAreas.map(a => `
+        <div class="flex items-center justify-between text-xs py-1">
+          <span class="text-slate-600">${a.name}</span>
+          <span class="font-semibold text-slate-900">${a.count}</span>
+        </div>
+      `).join("")
+      : `<div class="text-xs text-slate-400">No delivered orders yet.</div>`;
+
+    statsPanelEl.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div class="rounded-xl bg-emerald-600 text-white p-4 shadow-sm">
+          <div class="text-xs uppercase tracking-wide opacity-80">Total Revenue</div>
+          <div class="mt-1 text-2xl font-bold">${fmtMoney(s.revenue)}</div>
+        </div>
+        <div class="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
+          <div class="text-xs uppercase tracking-wide text-slate-500">Total Orders</div>
+          <div class="mt-1 text-2xl font-bold text-slate-900">${s.totalOrders}</div>
+          <div class="mt-1 text-xs text-slate-500">
+            Delivered: <span class="font-semibold">${s.deliveredCount}</span>
+          </div>
+        </div>
+        <div class="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
+          <div class="text-xs uppercase tracking-wide text-slate-500">Drivers</div>
+          <div class="mt-1 text-2xl font-bold text-slate-900">${s.driversCount}</div>
+          <div class="mt-1 text-xs text-slate-500">
+            Avg Order Value: <span class="font-semibold">${fmtMoney(s.avgOrderValue || 0)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
+          <div class="text-xs uppercase tracking-wide text-slate-500 mb-2">Top Products</div>
+          ${topProductsHtml}
+        </div>
+        <div class="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
+          <div class="text-xs uppercase tracking-wide text-slate-500 mb-2">Top Areas / Depots</div>
+          ${topAreasHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderMetricsTab() {
+    if (!metricsPanelEl) return;
+    const s = buildStatsFromOrders();
+
+    const deliveredPercent = (s.deliveredRate * 100) || 0;
+
+    metricsPanelEl.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
+          <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">Delivered Rate</div>
+          <div class="text-2xl font-bold text-slate-900">${deliveredPercent.toFixed(1)}%</div>
+          <div class="mt-1 text-xs text-slate-500">
+            ${s.deliveredCount} of ${s.totalOrders} orders delivered
+          </div>
+        </div>
+        <div class="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
+          <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">Average Order Value</div>
+          <div class="text-2xl font-bold text-slate-900">${fmtMoney(s.avgOrderValue || 0)}</div>
+          <div class="mt-1 text-xs text-slate-500">
+            Based on delivered orders.
+          </div>
+        </div>
+        <div class="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
+          <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">Revenue per Driver</div>
+          <div class="text-2xl font-bold text-slate-900">
+            ${s.driversCount ? fmtMoney(s.revenue / s.driversCount) : "R0.00"}
+          </div>
+          <div class="mt-1 text-xs text-slate-500">
+            Approx. total revenue ÷ active drivers count.
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ========================================================================
+  // TAB SWITCHING
+  // ========================================================================
+  function setActiveTab(tab) {
+    currentTab = tab;
+    if (tab !== "drivers") {
+      currentDriverFilter = null; // reset driver filter when leaving drivers view
+    }
+
+    document.querySelectorAll("[data-orders-tab]").forEach(btn => {
+      const val = btn.getAttribute("data-orders-tab");
+      if (val === tab) {
+        btn.classList.add("bg-slate-900", "text-white");
+        btn.classList.remove("bg-slate-100", "text-slate-700");
+      } else {
+        btn.classList.remove("bg-slate-900", "text-white");
+        btn.classList.add("bg-slate-100", "text-slate-700");
+      }
+    });
+
+    // toggle sections if you use separate containers
+    if (ordersListEl)   ordersListEl.style.display   = (["pending","assigned","in_transit","delivered","history"].includes(tab) ? "" : "none");
+    if (driversListEl)  driversListEl.style.display  = (tab === "drivers" ? "" : "none");
+    if (statsPanelEl)   statsPanelEl.style.display   = (tab === "stats" ? "" : "none");
+    if (metricsPanelEl) metricsPanelEl.style.display = (tab === "metrics" ? "" : "none");
+
+    renderCurrentTab();
+  }
+
+  function renderCurrentTab() {
+    if (["pending","assigned","in_transit","delivered","history"].includes(currentTab)) {
+      renderOrdersTab();
+    } else if (currentTab === "drivers") {
+      renderDriversTab();
+    } else if (currentTab === "stats") {
+      renderStatsTab();
+    } else if (currentTab === "metrics") {
+      renderMetricsTab();
+    }
+  }
+
+  // ========================================================================
+  // ACTION HANDLERS (API CALLS)
+  // ========================================================================
+  async function apiAutoAssign(oid) {
+    try {
+      const res = await simpleFetch(`${BASE_API}/orders/${encodeURIComponent(oid)}/auto-assign`, {
+        method: "POST",
+        body: JSON.stringify({ admin_pin: ADMIN_PIN })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        console.error("auto-assign failed", json);
+        alert("Auto-assign failed: " + (json.error || res.status));
+        return;
+      }
+      await refreshAll();
+    } catch (e) {
+      console.error("auto-assign error", e);
+      alert("Auto-assign error");
+    }
+  }
+
+  async function apiAutoAssignAll() {
+    try {
+      const res = await simpleFetch(`${BASE_API}/orders/auto-assign-all`, {
+        method: "POST",
+        body: JSON.stringify({ admin_pin: ADMIN_PIN })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        console.error("auto-assign-all failed", json);
+        alert("Auto-assign-all failed: " + (json.error || res.status));
+        return;
+      }
+      await refreshAll();
+    } catch (e) {
+      console.error("auto-assign-all error", e);
+      alert("Auto-assign-all error");
+    }
+  }
+
+  async function apiUpdateStatus(oid, status) {
+    try {
+      const res = await simpleFetch(`${BASE_API}/orders/${encodeURIComponent(oid)}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        console.error("status update failed", json);
+        alert("Status update failed: " + (json.error || res.status));
+        return;
+      }
+      await refreshAll();
+    } catch (e) {
+      console.error("status update error", e);
+      alert("Status update error");
+    }
+  }
+
+  async function apiApproveAllPay(driverInternalId) {
+    try {
+      const res = await simpleFetch(`${BASE_API}/drivers/${encodeURIComponent(driverInternalId)}/approve-all-pay`, {
+        method: "POST",
+        body: JSON.stringify({ admin_pin: ADMIN_PIN })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        console.error("approve-all-pay failed", json);
+        alert("Approve all pay failed: " + (json.error || res.status));
+        return;
+      }
+      await refreshAll();
+    } catch (e) {
+      console.error("approve-all-pay error", e);
+      alert("Approve all pay error");
+    }
+  }
+
+  // ========================================================================
+  // EVENT WIRING
+  // ========================================================================
+  // Tab buttons
+  document.querySelectorAll("[data-orders-tab]").forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.getAttribute("data-orders-tab") || "pending";
+      setActiveTab(tab);
+    });
+  });
+
+  // Orders actions (event delegation)
+  if (ordersListEl) {
+    ordersListEl.addEventListener('click', (ev) => {
+      const btn = ev.target.closest("button[data-action]");
+      if (!btn) return;
+      const action = btn.getAttribute("data-action");
+      const oid    = btn.getAttribute("data-oid");
+      if (!action || !oid) return;
+
+      if (action === "auto-assign") {
+        apiAutoAssign(oid);
+      }
+      if (action === "mark-delivered") {
+        apiUpdateStatus(oid, "delivered");
+      }
+      if (action === "mark-in-transit") {
+        apiUpdateStatus(oid, "in_transit");
+      }
+    });
+  }
+
+  // Drivers actions (event delegation)
+  if (driversListEl) {
+    driversListEl.addEventListener('click', (ev) => {
+      const btn = ev.target.closest("button[data-action]");
+      if (!btn) return;
+      const action = btn.getAttribute("data-action");
+      const did    = btn.getAttribute("data-driver-id");
+      if (!action || !did) return;
+
+      if (action === "driver-view-orders") {
+        currentDriverFilter = did;
+        setActiveTab("history"); // show all orders for that driver, like "View Orders"
+      }
+
+      if (action === "driver-approve-all-pay") {
+        if (!confirm("Approve all pending payouts for this driver?")) return;
+        apiApproveAllPay(did);
+      }
+    });
+  }
+
+  // Auto-assign-all button
+  if (autoAssignAllBtn) {
+    autoAssignAllBtn.addEventListener('click', () => {
+      if (!confirm("Auto-assign all pending orders to available drivers?")) return;
+      apiAutoAssignAll();
+    });
+  }
+
+  // ========================================================================
+  // INIT
+  // ========================================================================
+  setActiveTab(currentTab);
+  refreshAll();
+});
+</script>
+
 
 
 
