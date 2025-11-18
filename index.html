@@ -851,9 +851,10 @@
     <!-- Sticky footer actions -->
     <div class="p-4 border-t yt-sticky yt-sticky-bottom">
       <div class="flex flex-col sm:flex-row gap-2 text-sm">
-        <button id="ordersRefresh" class="flex-1 py-2 rounded-xl border border-slate-300 hover:bg-slate-100">
-          Refresh
-        </button>
+        <button id="ytAdminKpiBtn"
+    class="bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold shadow-sm hover:bg-slate-800">
+    View KPIs
+  </button>
         <button id="ordersAssign" class="flex-1 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-medium">
           Auto assign all
         </button>
@@ -920,7 +921,41 @@
     </div>
   </div>
 </div>
-  <!-- Drop this near the end of <body>, AFTER Tailwind is loaded -->
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // If your KPI script exposes these, call them safely
+    if (typeof createMetricsModal === 'function') {
+      createMetricsModal();
+    }
+
+    function hookKpiButton() {
+      const btn = document.getElementById('ytAdminKpiBtn');
+      if (!btn) return;
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (typeof openMetricsModal === 'function') {
+          openMetricsModal();
+        } else {
+          console.warn('openMetricsModal() not found – check KPI script is loaded.');
+        }
+      });
+    }
+
+    // Run once now (for when the admin HTML is already in DOM)
+    hookKpiButton();
+
+    // If your admin panel is created dynamically later, this will catch it too
+    const observer = new MutationObserver(() => {
+      if (document.getElementById('ytAdminKpiBtn')) {
+        hookKpiButton();
+        observer.disconnect();
+      }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
+</script>
 <script>
 (function(){
   const BASE_API = "/api/app";
