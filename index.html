@@ -1207,9 +1207,20 @@
   }
 
   // ----------------- INIT -----------------
-  document.addEventListener("DOMContentLoaded", ()=>{
-    createMetricsButton();
+ document.addEventListener("DOMContentLoaded", ()=>{
+  createMetricsModal(); // Only modal here
+
+  // When admin opens the panel, wire the button
+  document.body.addEventListener("click", (e)=>{
+    if(e.target.closest("#adminPanelButton") || e.target.closest("[data-open-admin]")){
+      setTimeout(()=>{
+        const btn = document.getElementById("ytAdminKpiBtn");
+        if(btn) btn.onclick = openMetricsModal;
+      }, 80);
+    }
   });
+});
+
 })();
 </script>
 
@@ -4258,10 +4269,7 @@ window.addEventListener('DOMContentLoaded', () => {
       'assigned': ['assignedList', 'inTransitList'],
       'in_transit': ['inTransitList', 'assignedList'],
       'delivered': ['deliveredList'],
-      'history': ['historyList'],
-      'drivers': ['driversList'],
-      'stats': ['statsSummary'],
-      'metrics': ['metricsSummary']
+      'history': ['historyList']
     };
 
     const allIds = [
