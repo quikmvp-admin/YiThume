@@ -921,41 +921,7 @@
     </div>
   </div>
 </div>
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    // If your KPI script exposes these, call them safely
-    if (typeof createMetricsModal === 'function') {
-      createMetricsModal();
-    }
-
-    function hookKpiButton() {
-      const btn = document.getElementById('ytAdminKpiBtn');
-      if (!btn) return;
-
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (typeof openMetricsModal === 'function') {
-          openMetricsModal();
-        } else {
-          console.warn('openMetricsModal() not found – check KPI script is loaded.');
-        }
-      });
-    }
-
-    // Run once now (for when the admin HTML is already in DOM)
-    hookKpiButton();
-
-    // If your admin panel is created dynamically later, this will catch it too
-    const observer = new MutationObserver(() => {
-      if (document.getElementById('ytAdminKpiBtn')) {
-        hookKpiButton();
-        observer.disconnect();
-      }
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-  });
-</script>
+<!-- Drop this near the end of <body>, AFTER Tailwind is loaded -->
 <script>
 (function(){
   const BASE_API = "/api/app";
@@ -1242,22 +1208,12 @@
   }
 
   // ----------------- INIT -----------------
- document.addEventListener("DOMContentLoaded", ()=>{
-  createMetricsModal(); // Only modal here
-
-  // When admin opens the panel, wire the button
-  document.body.addEventListener("click", (e)=>{
-    if(e.target.closest("#adminPanelButton") || e.target.closest("[data-open-admin]")){
-      setTimeout(()=>{
-        const btn = document.getElementById("ytAdminKpiBtn");
-        if(btn) btn.onclick = openMetricsModal;
-      }, 80);
-    }
+  document.addEventListener("DOMContentLoaded", ()=>{
+    createMetricsButton();
   });
-});
-
 })();
 </script>
+
 
 <script>
 window.addEventListener('DOMContentLoaded', () => {
