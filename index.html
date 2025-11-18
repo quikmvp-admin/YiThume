@@ -980,6 +980,58 @@ window.addEventListener('DOMContentLoaded', () => {
       return `${y}-${m}-${da} ${hh}:${mm}`;
     }catch(_){ return '—'; }
   }
+function resolveDriverForOrder(o){
+  const did = o.driver_id || o.raw?.assigned_driver_id || o.raw?.driver_id || null;
+
+  let rec = null;
+  if (did) {
+    if (DEMO_MODE && DEMO_DRIVERS_DB[did]) {
+      rec = DEMO_DRIVERS_DB[did];
+    } else if (API_DRIVERS_MAP[did]) {
+      rec = API_DRIVERS_MAP[did];
+    } else if (DRIVERS_BY_ID[did]) {
+      rec = DRIVERS_BY_ID[did];
+    }
+  }
+
+  const raw = o.raw || {};
+  const fallbackName =
+    raw.driver_name ||
+    raw.driver?.name ||
+    raw.meta?.assigned_driver?.name ||
+    did ||
+    '—';
+
+  const fallbackPhone = digits(
+    raw.driver_phone ||
+    raw.driver?.phone ||
+    raw.meta?.assigned_driver?.phone ||
+    ''
+  ) || null;
+
+  const area =
+    rec?.area ||
+    rec?.zone ||
+    raw.driver?.area ||
+    raw.zone ||
+    raw.meta?.collection_name ||
+    raw.depot_name ||
+    'Area not set';
+
+  const vehicle =
+    rec?.vehicle ||
+    raw.driver?.vehicle ||
+    raw.vehicle ||
+    '—';
+
+  return {
+    id: did,
+    name: rec?.name || fallbackName,
+    phone: rec?.phone || fallbackPhone,
+    vehicle,
+    area
+  };
+}
 
     // ========================================================================
   // NORMALIZED ORDERS (shared for History / Stats / Metrics / Drivers)
@@ -2025,109 +2077,109 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
    async function renderAdminStats(){
-    const panel = ensureOrdersPanelScaffold();
+  const panel = ensureOrdersPanelScaffold();
 
-    // Ensure base layout exists (KPI cards forced to show)
-    if(!document.getElementById('adminStatsWrap')){
-      statsContainer.innerHTML = `
-        <div id="adminStatsWrap" class="space-y-4">
-          <div class="grid gap-3 sm:grid-cols-3">
-            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-              <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-              <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-              <div class="text-xs text-slate-500 mb-1">Revenue</div>
-              <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
-              <div class="text-xs text-slate-500 mb-1">Drivers &amp; Payouts</div>
-              <div class="text-sm">
-                Drivers: <b id="adminDriversCount">0</b>
-              </div>
-              <div class="text-xs text-slate-500 mt-2">
-                Pending: <b id="adminPayPending">R0</b>
-              </div>
-              <div class="text-xs text-slate-500">
-                Approved: <b id="adminPayApproved">R0</b>
-              </div>
-            </div>
+  if(!document.getElementById('adminStatsWrap')){
+    statsContainer.innerHTML = `
+      <div id="adminStatsWrap" class="space-y-4">
+        <div class="grid gap-3 sm:grid-cols-3">
+          <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+            <div id="adminStatsOrders" class="text-2xl font-semibold">0</div>
           </div>
-          <div class="grid gap-3 sm:grid-cols-2 mt-2">
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-sm font-medium mb-2">Top Products</div>
-              <ul id="adminTopProducts" class="space-y-1 text-sm"></ul>
+          <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Revenue (Delivered only)</div>
+            <div id="adminStatsRevenue" class="text-2xl font-semibold">R0</div>
+          </div>
+          <div class="bg-white border rounded-2xl p-3 shadow-sm flex flex-col">
+            <div class="text-xs text-slate-500 mb-1">Drivers &amp; Payouts</div>
+            <div class="text-sm">
+              Drivers: <b id="adminDriversCount">0</b>
             </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-sm font-medium mb-2">Top Areas</div>
-              <ul id="adminTopAreas" class="space-y-1 text-sm"></ul>
+            <div class="text-xs text-slate-500 mt-2">
+              Pending: <b id="adminPayPending">R0</b>
+            </div>
+            <div class="text-xs text-slate-500">
+              Approved: <b id="adminPayApproved">R0</b>
             </div>
           </div>
         </div>
-      `;
-    }
-
-    adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
-    adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
-    adminTopProductsEl  = document.getElementById('adminTopProducts');
-    adminTopAreasEl     = document.getElementById('adminTopAreas');
-    adminDriversCountEl = document.getElementById('adminDriversCount');
-    adminPayPendingEl   = document.getElementById('adminPayPending');
-    adminPayApprovedEl  = document.getElementById('adminPayApproved');
-
-    // 🔹 Use the same orders the History tab uses
-    const orders = getNormalizedOrdersArray();
-
-    // 🔹 If live mode & drivers API is empty, derive a driver map from orders
-    if(!DEMO_MODE && Object.keys(API_DRIVERS_MAP).length === 0){
-      API_DRIVERS_MAP = deriveDriversFromOrders(orders);
-    }
-
-    // Totals
-    const totalOrders = orders.length;
-    const revenue = orders.reduce((s,o)=> s + Number(o.total || 0), 0);
-
-    if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
-    if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = fmtMoney(revenue);
-
-    // Top products
-    const prodMap = new Map();
-    orders.forEach(ord=>{
-      (ord.items||[]).forEach(it=>{
-        if(!it || !it.name) return;
-        prodMap.set(it.name, (prodMap.get(it.name)||0) + Number(it.qty||1));
-      });
-    });
-    const topProducts = Array.from(prodMap.entries())
-      .sort((a,b)=>b[1]-a[1])
-      .slice(0,5);
-
-    if(adminTopProductsEl){
-      adminTopProductsEl.innerHTML = topProducts.length
-        ? topProducts.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
-        : '<li class="text-slate-500">No data yet</li>';
-    }
-
-    // Top areas
-    const areaMap = new Map();
-    orders.forEach(ord=>{
-      const k = ord.meta?.collection_name || '—';
-      areaMap.set(k, (areaMap.get(k)||0)+1);
-    });
-    const topAreas = Array.from(areaMap.entries())
-      .sort((a,b)=>b[1]-a[1])
-      .slice(0,5);
-
-    if(adminTopAreasEl){
-      adminTopAreasEl.innerHTML = topAreas.length
-        ? topAreas.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
-        : '<li class="text-slate-500">No data yet</li>';
-    }
-
-    // Drivers & payouts from the same order data
-    recalcAdminPayoutWidgets();
+        <div class="grid gap-3 sm:grid-cols-2 mt-2">
+          <div class="bg-white border rounded-2xl p-3 shadow-sm">
+            <div class="text-sm font-medium mb-2">Top Products (Delivered)</div>
+            <ul id="adminTopProducts" class="space-y-1 text-sm"></ul>
+          </div>
+          <div class="bg-white border rounded-2xl p-3 shadow-sm">
+            <div class="text-sm font-medium mb-2">Top Areas (Delivered)</div>
+            <ul id="adminTopAreas" class="space-y-1 text-sm"></ul>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
+  adminStatsOrdersEl  = document.getElementById('adminStatsOrders');
+  adminStatsRevenueEl = document.getElementById('adminStatsRevenue');
+  adminTopProductsEl  = document.getElementById('adminTopProducts');
+  adminTopAreasEl     = document.getElementById('adminTopAreas');
+  adminDriversCountEl = document.getElementById('adminDriversCount');
+  adminPayPendingEl   = document.getElementById('adminPayPending');
+  adminPayApprovedEl  = document.getElementById('adminPayApproved');
+
+  // 🔹 Pull fresh orders + drivers (same history source)
+  const ordersRaw = await fetchAllOrders();
+  await fetchDrivers();
+
+  // If drivers API is empty, derive from orders
+  if(!DEMO_MODE && Object.keys(API_DRIVERS_MAP).length === 0){
+    const derived = deriveDriversFromOrders(ordersRaw);
+    API_DRIVERS_MAP = derived;
+  }
+
+  const norm = ordersRaw.map(o => o._normalized ? o : normalizeOrder(o));
+  const delivered = norm.filter(o => o.status === 'delivered');
+
+  const totalOrders = norm.length;
+  const revenue = delivered.reduce((s,o)=> s + Number(o.total||0), 0);
+
+  if(adminStatsOrdersEl)  adminStatsOrdersEl.textContent  = String(totalOrders);
+  if(adminStatsRevenueEl) adminStatsRevenueEl.textContent = fmtMoney(revenue);
+
+  // 🔹 Top products from delivered orders
+  const prodMap = new Map();
+  delivered.forEach(o=>{
+    (o.items||[]).forEach(it=>{
+      if(!it || !it.name) return;
+      prodMap.set(it.name, (prodMap.get(it.name)||0) + Number(it.qty||1));
+    });
+  });
+  const topProducts = Array.from(prodMap.entries())
+    .sort((a,b)=>b[1]-a[1])
+    .slice(0,5);
+  if(adminTopProductsEl){
+    adminTopProductsEl.innerHTML = topProducts.length
+      ? topProducts.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
+      : '<li class="text-slate-500">No delivered orders yet</li>';
+  }
+
+  // 🔹 Top areas from delivered orders
+  const areaMap = new Map();
+  delivered.forEach(o=>{
+    const k = o.meta?.collection_name || '—';
+    areaMap.set(k, (areaMap.get(k)||0)+1);
+  });
+  const topAreas = Array.from(areaMap.entries())
+    .sort((a,b)=>b[1]-a[1])
+    .slice(0,5);
+  if(adminTopAreasEl){
+    adminTopAreasEl.innerHTML = topAreas.length
+      ? topAreas.map(([name,c])=>`<li>${salesSafe(name)} — <b>${c}</b></li>`).join('')
+      : '<li class="text-slate-500">No delivered orders yet</li>';
+  }
+
+  // 🔹 Driver payout widgets from same history data
+  recalcAdminPayoutWidgets();
+}
 
   // Wrapper so any existing calls still work
   function renderStats(){
@@ -2172,131 +2224,133 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
   function renderMetrics(){
-    const panel = ensureOrdersPanelScaffold();
-    metricsContainer = document.getElementById('metricsContainer');
-    if(!metricsContainer) return;
-    
-    const sourceArr = getNormalizedOrdersArray();
+  const panel = ensureOrdersPanelScaffold();
+  metricsContainer = document.getElementById('metricsContainer');
+  if(!metricsContainer) return;
 
+  const sourceArr = DEMO_MODE
+    ? Object.values(DEMO_ORDERS_DB).map(o=>normalizeOrder(o))
+    : Object.values(ALL_ORDERS_MAP).map(o=> o._normalized ? o : normalizeOrder(o));
 
-    const orders = [...sourceArr].sort((a,b)=>{
-      const ta = a.created_at ? a.created_at.getTime() : 0;
-      const tb = b.created_at ? b.created_at.getTime() : 0;
-      return tb - ta;
+  // Use normalized "history" orders, newest first
+  const orders = [...sourceArr].sort((a,b)=>{
+    const ta = a.created_at ? a.created_at.getTime() : 0;
+    const tb = b.created_at ? b.created_at.getTime() : 0;
+    return tb - ta;
+  });
+
+  const totalRevenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
+  const totalOrders  = orders.length;
+  const itemsSold    = orders.reduce((s,o)=> s + (o.items||[]).reduce((k,i)=> k + Number(i.qty||0),0), 0);
+  const avgOrder     = totalOrders ? Math.round(totalRevenue/totalOrders) : 0;
+
+  const byDay = groupBy(orders, o=> dayKey(o.created_at));
+  const days = Array.from(byDay.entries())
+    .map(([key,arr])=> ({
+      label:key,
+      value: arr.length,
+      revenue: arr.reduce((s,o)=>s+Number(o.total||0),0)
+    }))
+    .sort((a,b)=> a.label.localeCompare(b.label))
+    .slice(-14);
+
+  const prod = new Map();
+  orders.forEach(o=>{
+    (o.items||[]).forEach(it=>{
+      if(!it || !it.name) return;
+      prod.set(it.name, (prod.get(it.name)||0) + Number(it.qty||1));
     });
+  });
+  const topProducts = Array.from(prod.entries())
+    .map(([name,qty])=>({label:name, value:qty}))
+    .sort((a,b)=> b.value-a.value)
+    .slice(0,8);
 
-    const totalRevenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
-    const totalOrders  = orders.length;
-    const itemsSold    = orders.reduce((s,o)=> s + (o.items||[]).reduce((k,i)=> k + Number(i.qty||0),0), 0);
-    const avgOrder     = totalOrders ? Math.round(totalRevenue/totalOrders) : 0;
+  const areaC = new Map();
+  const areaR = new Map();
+  orders.forEach(o=>{
+    const area = o.meta?.collection_name || '—';
+    areaC.set(area, (areaC.get(area)||0)+1);
+    areaR.set(area, (areaR.get(area)||0)+Number(o.total||0));
+  });
+  const topAreasByOrders = Array.from(areaC.entries())
+    .map(([label,value])=>({label,value, sub:`${fmtMoney(areaR.get(label)||0)} revenue`}))
+    .sort((a,b)=> b.value-a.value)
+    .slice(0,8);
 
-    const byDay = groupBy(orders, o=> dayKey(o.created_at));
-    const days = Array.from(byDay.entries())
-      .map(([key,arr])=> ({
-        label:key,
-        value: arr.length,
-        revenue: arr.reduce((s,o)=>s+Number(o.total||0),0)
-      }))
-      .sort((a,b)=> a.label.localeCompare(b.label))
-      .slice(-14);
-
-    const prod = new Map();
-    orders.forEach(o=>{
-      (o.items||[]).forEach(it=>{
-        if(!it || !it.name) return;
-        prod.set(it.name, (prod.get(it.name)||0) + Number(it.qty||1));
-      });
-    });
-    const topProducts = Array.from(prod.entries())
-      .map(([name,qty])=>({label:name, value:qty}))
-      .sort((a,b)=> b.value-a.value)
-      .slice(0,8);
-
-    const areaC = new Map();
-    const areaR = new Map();
-    orders.forEach(o=>{
-      const area = o.meta?.collection_name || '—';
-      areaC.set(area, (areaC.get(area)||0)+1);
-      areaR.set(area, (areaR.get(area)||0)+Number(o.total||0));
-    });
-    const topAreasByOrders = Array.from(areaC.entries())
-      .map(([label,value])=>({label,value, sub:`${fmtMoney(areaR.get(label)||0)} revenue`}))
-      .sort((a,b)=> b.value-a.value)
-      .slice(0,8);
-
-    if(!document.getElementById('metricsWrap')){
-      metricsContainer.innerHTML = `
-        <div id="metricsWrap" class="space-y-4">
-          <div class="grid gap-3 sm:grid-cols-4">
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-xs text-slate-500 mb-1">Total Revenue</div>
-              <div class="text-2xl font-semibold">${fmtMoney(totalRevenue)}</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-              <div class="text-2xl font-semibold">${totalOrders}</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-xs text-slate-500 mb-1">Items Sold</div>
-              <div class="text-2xl font-semibold">${itemsSold}</div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-xs text-slate-500 mb-1">Avg Order Value</div>
-              <div class="text-2xl font-semibold">${fmtMoney(avgOrder)}</div>
-            </div>
+  if(!document.getElementById('metricsWrap')){
+    metricsContainer.innerHTML = `
+      <div id="metricsWrap" class="space-y-4">
+        <div class="grid gap-3 sm:grid-cols-4">
+          <div class="bg-white border rounded-2xl p-3 shadow-sm">
+            <div class="text-xs text-slate-500 mb-1">Total Revenue (All history)</div>
+            <div class="text-2xl font-semibold">${fmtMoney(totalRevenue)}</div>
           </div>
-
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-sm font-medium mb-2">Daily Orders (last 14 days)</div>
-              <div id="mxDailyOrders"></div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-sm font-medium mb-2">Daily Revenue (last 14 days)</div>
-              <div id="mxDailyRevenue"></div>
-            </div>
+          <div class="bg-white border rounded-2xl p-3 shadow-sm">
+            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
+            <div class="text-2xl font-semibold">${totalOrders}</div>
           </div>
-
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-sm font-medium mb-2">Top Products (qty)</div>
-              <div id="mxTopProducts"></div>
-            </div>
-            <div class="bg-white border rounded-2xl p-3 shadow-sm">
-              <div class="text-sm font-medium mb-2">Top Areas</div>
-              <div id="mxTopAreas"></div>
-            </div>
+          <div class="bg-white border rounded-2xl p-3 shadow-sm">
+            <div class="text-xs text-slate-500 mb-1">Items Sold</div>
+            <div class="text-2xl font-semibold">${itemsSold}</div>
+          </div>
+          <div class="bg-white border rounded-2xl p-3 shadow-sm">
+            <div class="text-xs text-slate-500 mb-1">Avg Order Value</div>
+            <div class="text-2xl font-semibold">${fmtMoney(avgOrder)}</div>
           </div>
         </div>
-      `;
-    } else {
-      const kpiCards = metricsContainer.querySelectorAll('.grid.sm\\:grid-cols-4 .text-2xl');
-      if(kpiCards[0]) kpiCards[0].textContent = fmtMoney(totalRevenue);
-      if(kpiCards[1]) kpiCards[1].textContent = String(totalOrders);
-      if(kpiCards[2]) kpiCards[2].textContent = String(itemsSold);
-      if(kpiCards[3]) kpiCards[3].textContent = fmtMoney(avgOrder);
-    }
 
-    const elDailyOrders  = document.getElementById('mxDailyOrders');
-    const elDailyRevenue = document.getElementById('mxDailyRevenue');
-    const elTopProducts  = document.getElementById('mxTopProducts');
-    const elTopAreas     = document.getElementById('mxTopAreas');
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div class="bg-white border rounded-2xl p-3 shadow-sm">
+            <div class="text-sm font-medium mb-2">Daily Orders (last 14 days)</div>
+            <div id="mxDailyOrders"></div>
+          </div>
+          <div class="bg-white border rounded-2xl p-3 shadow-sm">
+            <div class="text-sm font-medium mb-2">Daily Revenue (last 14 days)</div>
+            <div id="mxDailyRevenue"></div>
+          </div>
+        </div>
 
-    if(elDailyOrders){
-      const list = days.map(d=>({label:d.label, value:d.value}));
-      elDailyOrders.innerHTML = simpleBars(list);
-    }
-    if(elDailyRevenue){
-      const list = days.map(d=>({label:d.label, value:Math.round(d.revenue)}));
-      elDailyRevenue.innerHTML = simpleBars(list);
-    }
-    if(elTopProducts){
-      elTopProducts.innerHTML = simpleBars(topProducts);
-    }
-    if(elTopAreas){
-      elTopAreas.innerHTML = simpleBars(topAreasByOrders);
-    }
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div class="bg-white border rounded-2xl p-3 shadow-sm">
+            <div class="text-sm font-medium mb-2">Top Products (qty)</div>
+            <div id="mxTopProducts"></div>
+          </div>
+          <div class="bg-white border rounded-2xl p-3 shadow-sm">
+            <div class="text-sm font-medium mb-2">Top Areas</div>
+            <div id="mxTopAreas"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  } else {
+    const kpiCards = metricsContainer.querySelectorAll('.grid.sm\\:grid-cols-4 .text-2xl');
+    if(kpiCards[0]) kpiCards[0].textContent = fmtMoney(totalRevenue);
+    if(kpiCards[1]) kpiCards[1].textContent = String(totalOrders);
+    if(kpiCards[2]) kpiCards[2].textContent = String(itemsSold);
+    if(kpiCards[3]) kpiCards[3].textContent = fmtMoney(avgOrder);
   }
+
+  const elDailyOrders  = document.getElementById('mxDailyOrders');
+  const elDailyRevenue = document.getElementById('mxDailyRevenue');
+  const elTopProducts  = document.getElementById('mxTopProducts');
+  const elTopAreas     = document.getElementById('mxTopAreas');
+
+  if(elDailyOrders){
+    const list = days.map(d=>({label:d.label, value:d.value}));
+    elDailyOrders.innerHTML = simpleBars(list);
+  }
+  if(elDailyRevenue){
+    const list = days.map(d=>({label:d.label, value:Math.round(d.revenue)}));
+    elDailyRevenue.innerHTML = simpleBars(list);
+  }
+  if(elTopProducts){
+    elTopProducts.innerHTML = simpleBars(topProducts);
+  }
+  if(elTopAreas){
+    elTopAreas.innerHTML = simpleBars(topAreasByOrders);
+  }
+}
 
   // ========================================================================
   // ADMIN TABS
@@ -2419,61 +2473,93 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     return clamp(fee, 25, 45);
   }
 
-    async function assignOneOrder(internalId){
-    if(!internalId){ alert("Missing order id."); return; }
+   async function assignOneOrder(internalId){
+  if(!internalId){ alert("Missing order id."); return; }
 
-    if(DEMO_MODE){
+  if(DEMO_MODE){
+    mutateOrder(internalId, (o)=>{
+      if(!o.driver_id){ o.driver_id = pickDriverId(); }
+      const pay = calcDriverPayout(o);
+      o.driver_pay_status   = 'pending';
+      o.driver_pay_pending  = pay;
+      o.driver_pay_approved = 0;
+      if(o.status === 'pending') o.status = 'assigned';
+    });
+    renderOrders(); renderDrivers(); renderStats(); renderMetrics();
+    alert(`[DEMO] Assigned ${internalId}.`);
+    return;
+  }
+
+  try{
+    const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ order_id: internalId })   // 🔹 send body to avoid 400
+    });
+    const data = await res.json().catch(()=>({}));
+
+    if(res.ok && (data && (data.ok !== false))){
+      alert(`Assigned: ${internalId} -> ${data.driver_id || 'driver?'}`);
+    } else if (res.status === 409 && data && data.error === "no_driver_available") {
+      alert(`No driver available for ${internalId}`);
+    } else {
+      alert(`Failed to assign ${internalId} (${res.status})`);
+    }
+  }catch(err){
+    console.error("assignOneOrder err",err);
+    alert(`Network error assigning ${internalId}`);
+  }
+  refreshAllData();
+}
+
+async function autoAssignForAll(){
+  const source = DEMO_MODE ? DEMO_ORDERS_DB : ALL_ORDERS_MAP;
+  const ids = Object.values(source)
+    .map(x=> x._normalized ? x : normalizeOrder(x))
+    .filter(o => o.status === 'pending')
+    .map(o => o._internal_id);
+
+  if (ids.length === 0){ alert("No pending orders to assign."); return; }
+
+  const results = [];
+  for (const internalId of ids){
+    if (DEMO_MODE){
       mutateOrder(internalId, (o)=>{
         if(!o.driver_id){ o.driver_id = pickDriverId(); }
         const pay = calcDriverPayout(o);
-        o.driver_pay_status   = 'pending';
-        o.driver_pay_pending  = pay;
-        o.driver_pay_approved = 0;
-        if(o.status === 'pending') o.status = 'assigned';
+        o.driver_pay_status  = 'pending';
+        o.driver_pay_pending = pay;
+        o.status             = 'assigned';
+        results.push(`✅ (demo) ${internalId} -> ${o.driver_id} (R${pay})`);
       });
-      renderOrders(); renderDrivers(); renderStats(); renderMetrics();
-      alert(`[DEMO] Assigned ${internalId}.`);
-      return;
+      continue;
     }
 
-    // 🔹 Look up the normalized order we know about
-    const ord = ALL_ORDERS_MAP[internalId];
-    console.log('assignOneOrder debug', {
-      internalId,
-      ord,
-      raw: ord?.raw
-    });
-
-    // 🔹 Try a few possible identifiers, prefer human refs first
-    const apiRef =
-      ord?.order_public_id ||
-      ord?.order_id ||
-      ord?.raw?.order_public_id ||
-      ord?.raw?.order_id ||
-      ord?.raw?._id ||         // typical Mongo style
-      internalId;              // fallback
-
-    try{
-      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(apiRef)}/auto-assign`, {
+    try {
+      const res = await fetch(`${BASE_API}/orders/${encodeURIComponent(internalId)}/auto-assign`, {
         method: "POST",
-        headers: {"Content-Type":"application/json"}
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ order_id: internalId })   // 🔹 body for backend
       });
       const data = await res.json().catch(()=>({}));
 
-      if(res.ok && data && data.ok){
-        alert(`Assigned: ${apiRef} -> ${data.driver_id || 'driver?'}`);
+      if(res.ok && (data && (data.ok !== false))){
+        const driverId = data.driver_id || "driver?";
+        results.push(`✅ ${internalId} → ${driverId}`);
       } else if (res.status === 409 && data && data.error === "no_driver_available") {
-        alert(`No driver available for ${apiRef}`);
+        results.push(`⚠️ ${internalId}: no driver`);
       } else {
-        console.error('assignOneOrder error payload', { status: res.status, data });
-        alert(`Failed to assign ${apiRef} (${res.status})`);
+        results.push(`❌ ${internalId}: failed (${res.status})`);
       }
-    }catch(err){
-      console.error("assignOneOrder network err",err);
-      alert(`Network error assigning ${apiRef}`);
+    } catch (err){
+      console.error("autoAssignForAll error", err);
+      results.push(`❌ ${internalId}: network error`);
     }
-    refreshAllData();
   }
+  alert(results.join("\n"));
+  refreshAllData();
+}
+
 
 
   async function markDelivered(internalId){
@@ -2658,133 +2744,127 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     return dr && dr.phone ? dr.phone : null;
   }
 
-   function buildOrderRow(o, rich=false){
-    const idDisplay = o.order_public_id || o.order_id || o._internal_id || '—';
-    const statusCls = statusColor(o.status);
-    const created   = fmtDate(o.created_at);
-    const coll      = o.meta?.collection_name || '—';
-    const distKm    = Number(o.meta?.distance_km||0).toFixed(1);
+  function buildOrderRow(o, rich=false){
+  const idDisplay = o.order_public_id || o.order_id || o._internal_id || '—';
+  const statusCls = statusColor(o.status);
+  const created   = fmtDate(o.created_at);
+  const coll      = o.meta?.collection_name || '—';
+  const distKm    = Number(o.meta?.distance_km||0).toFixed(1);
 
-    const customer  = o.customer || {};
-    const name      = customer.name || '—';
-    const phone     = customer.phone ? `+${customer.phone}` : '—';
-    const address   = (customer.address && (customer.address.line1 || customer.address)) || '—';
+  const customer  = o.customer || {};
+  const custName  = customer.name || '—';
+  const phone     = customer.phone ? `+${customer.phone}` : '—';
+  const address   = (customer.address && (customer.address.line1 || customer.address)) || '—';
 
-    // 🔹 Look up driver *name* from your driver maps
-    const driverId = o.driver_id || '—';
-    let driverName = null;
-    if (driverId && driverId !== '—') {
-      const d = API_DRIVERS_MAP[driverId] || DEMO_DRIVERS_DB?.[driverId];
-      if (d && d.name) {
-        driverName = d.name;
-      }
-    }
-    const driverLabel =
-      driverName
-        ? `${salesSafe(driverName)} (${salesSafe(driverId)})`
-        : salesSafe(driverId);
+  // 🔹 Driver details (name + phone + area)
+  const drv       = resolveDriverForOrder(o);
+  const driverName  = drv.name || (drv.id || '—');
+  const driverPhone = drv.phone ? `+${drv.phone}` : '—';
+  const driverArea  = drv.area || 'Area not set';
 
-    const payoutStr = o.driver_pay_status==='approved'
-      ? `Approved ${fmtMoney(o.driver_pay_approved||0)}`
-      : o.driver_pay_status==='pending'
-      ? `Pending ${fmtMoney(o.driver_pay_pending||0)}`
-      : '—';
+  const payoutStr = o.driver_pay_status==='approved'
+    ? `Approved ${fmtMoney(o.driver_pay_approved||0)}`
+    : o.driver_pay_status==='pending'
+    ? `Pending ${fmtMoney(o.driver_pay_pending||0)}`
+    : '—';
 
-    const itemsTable = buildItemsTable(o.items||[]);
-    const stepper    = buildStepper(o.status);
+  const itemsTable = buildItemsTable(o.items||[]);
+  const stepper    = buildStepper(o.status);
 
-    // 🔹 This is the key: show "Name – Ref" instead of just the ref
-    const idLabel = (name && name !== '—')
-      ? `${salesSafe(name)} – ${salesSafe(idDisplay)}`
-      : salesSafe(idDisplay);
+  // 🔹 Label: "Customer – ORDER_REF" for Pending / Transit / Delivered
+  const headerLabel = `${salesSafe(custName)} – ${salesSafe(idDisplay)}`;
 
-    // Actions vary with status
-    const canAssign   = (o.status === 'pending');
-    const canDeliver  = (o.status === 'in_transit' || o.status === 'assigned');
+  // Actions vary with status
+  const canAssign   = (o.status === 'pending');
+  const canDeliver  = (o.status === 'in_transit' || o.status === 'assigned');
 
-    const actions = `
-      <div class="flex flex-wrap gap-2">
-        ${canAssign ? `<button class="btn-assign px-2 py-1 text-xs rounded-lg border border-slate-300 hover:bg-slate-100" data-id="${salesSafe(o._internal_id)}">Assign</button>` : ''}
-        ${canDeliver ? `<button class="btn-deliver px-2 py-1 text-xs rounded-lg bg-emerald-600 text-white hover:bg-emerald-700" data-id="${salesSafe(o._internal_id)}">Mark Delivered</button>` : ''}
-      </div>
-    `;
+  const actions = `
+    <div class="flex flex-wrap gap-2">
+      ${canAssign ? `<button class="btn-assign px-2 py-1 text-xs rounded-lg border border-slate-300 hover:bg-slate-100" data-id="${salesSafe(o._internal_id)}">Assign</button>` : ''}
+      ${canDeliver ? `<button class="btn-deliver px-2 py-1 text-xs rounded-lg bg-emerald-600 text-white hover:bg-emerald-700" data-id="${salesSafe(o._internal_id)}">Mark Delivered</button>` : ''}
+    </div>
+  `;
 
-    if(!rich){
-      // 🔹 Compact row (Pending / Assigned / In Transit / Delivered tabs)
-      const row = document.createElement('div');
-      row.className = "py-3";
-      row.innerHTML = `
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-mono text-slate-500">${idLabel}</span>
-              <span class="text-[10px] px-1.5 py-0.5 rounded-full border ${statusCls}">${o.status.replace('_',' ')}</span>
-            </div>
-            <div class="text-xs text-slate-500 mt-0.5">
-              ${created} • ${salesSafe(coll)} • ${distKm}km • Total ${fmtMoney(o.total)}
-            </div>
-            <div class="mt-2">${stepper}</div>
+  if(!rich){
+    // Compact row (Pending / Assigned / In Transit / Delivered tabs)
+    const row = document.createElement('div');
+    row.className = "py-3";
+    row.innerHTML = `
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-medium text-slate-900 truncate max-w-[180px]">${headerLabel}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full border ${statusCls}">${o.status.replace('_',' ')}</span>
           </div>
-          <div class="text-right text-xs">
-            <div>Driver: <b>${driverLabel}</b></div>
-            <div class="text-slate-500">Payout: ${payoutStr}</div>
-            <div class="mt-2">${actions}</div>
+          <div class="text-xs text-slate-500 mt-0.5">
+            ${created} • ${salesSafe(coll)} • ${distKm}km • Total ${fmtMoney(o.total)}
           </div>
+          <div class="mt-2">${stepper}</div>
         </div>
-      `;
-      return row;
-    }
-
-    // 🔹 Rich receipt-style card (History tab)
-    const card = document.createElement('div');
-    card.className = "py-3";
-    card.innerHTML = `
-      <div class="border rounded-2xl p-3 bg-white shadow-sm">
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-mono">${idLabel}</span>
-              <span class="text-[10px] px-1.5 py-0.5 rounded-full border ${statusCls}">${o.status.replace('_',' ')}</span>
-            </div>
-            <div class="text-xs text-slate-500 mt-0.5">
-              ${created} • ${salesSafe(coll)} • ${distKm}km
-            </div>
-          </div>
-          <div class="text-right">
-            <div class="text-sm font-semibold">${fmtMoney(o.total)}</div>
-            <div class="text-[11px] text-slate-500">Delivery fee: ${fmtMoney(o.delivery_fee||0)}</div>
-          </div>
-        </div>
-
-        <div class="mt-3">${stepper}</div>
-
-        <div class="mt-3 grid gap-3 sm:grid-cols-2">
-          <div class="rounded-xl border p-2">
-            <div class="text-xs text-slate-500 mb-1">Customer</div>
-            <div class="text-sm font-medium">${salesSafe(name)}</div>
-            <div class="text-xs">Phone: ${salesSafe(phone)}</div>
-            <div class="text-xs">Address: ${salesSafe(address)}</div>
-          </div>
-          <div class="rounded-xl border p-2">
-            <div class="text-xs text-slate-500 mb-1">Driver / Payout</div>
-            <div class="text-sm">Driver: <b>${driverLabel}</b></div>
-            <div class="text-xs text-slate-500">Payout: ${payoutStr}</div>
-          </div>
-        </div>
-
-        <div class="mt-3 rounded-xl border p-2">
-          <div class="text-xs text-slate-500 mb-1">Items</div>
-          ${itemsTable}
-        </div>
-
-        <div class="mt-3 flex items-center justify-between">
-          <div class="text-[11px] text-slate-500">Fraud score: ${(o.fraud_score||0).toFixed(2)}</div>
-          ${actions}
+        <div class="text-right text-xs min-w-[130px]">
+          <div>Driver: <b>${salesSafe(driverName)}</b></div>
+          <div class="text-[11px] text-slate-500">📞 ${salesSafe(driverPhone)}</div>
+          <div class="text-[11px] text-slate-500">📍 ${salesSafe(driverArea)}</div>
+          <div class="text-[11px] text-slate-500 mt-1">Payout: ${payoutStr}</div>
+          <div class="mt-2">${actions}</div>
         </div>
       </div>
     `;
-    return card;
+    return row;
   }
+
+  // Rich receipt-style card (History tab)
+  const card = document.createElement('div');
+  card.className = "py-3";
+  card.innerHTML = `
+    <div class="border rounded-2xl p-3 bg-white shadow-sm">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-medium text-slate-900 truncate max-w-[210px]">${headerLabel}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full border ${statusCls}">${o.status.replace('_',' ')}</span>
+          </div>
+          <div class="text-xs text-slate-500 mt-0.5">
+            ${created} • ${salesSafe(coll)} • ${distKm}km
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-sm font-semibold">${fmtMoney(o.total)}</div>
+          <div class="text-[11px] text-slate-500">Delivery fee: ${fmtMoney(o.delivery_fee||0)}</div>
+        </div>
+      </div>
+
+      <div class="mt-3">${stepper}</div>
+
+      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <div class="rounded-xl border p-2">
+          <div class="text-xs text-slate-500 mb-1">Customer</div>
+          <div class="text-sm font-medium">${salesSafe(custName)}</div>
+          <div class="text-xs">Phone: ${salesSafe(phone)}</div>
+          <div class="text-xs">Address: ${salesSafe(address)}</div>
+        </div>
+        <div class="rounded-xl border p-2">
+          <div class="text-xs text-slate-500 mb-1">Driver / Payout</div>
+          <div class="text-sm">Driver: <b>${salesSafe(driverName)}</b></div>
+          <div class="text-xs text-slate-500">Phone: ${salesSafe(driverPhone)}</div>
+          <div class="text-xs text-slate-500">Area: ${salesSafe(driverArea)}</div>
+          <div class="text-xs text-slate-500 mt-1">Payout: ${payoutStr}</div>
+        </div>
+      </div>
+
+      <div class="mt-3 rounded-xl border p-2">
+        <div class="text-xs text-slate-500 mb-1">Items</div>
+        ${itemsTable}
+      </div>
+
+      <div class="mt-3 flex items-center justify-between">
+        <div class="text-[11px] text-slate-500">Fraud score: ${(o.fraud_score||0).toFixed(2)}</div>
+        ${actions}
+      </div>
+    </div>
+  `;
+  return card;
+}
 
 
   function wireOrderRowButtons(scope){
@@ -2905,173 +2985,168 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
   }
 
    function renderDrivers(){
-    driversList = document.getElementById('driversList');
-    if(!driversList) return;
+  driversList = document.getElementById('driversList');
+  if(!driversList) return;
 
-    // 🔹 Use same orders as History/Stats/Metrics
-    const orders = getNormalizedOrdersArray();
+  let pairs;
+  if(DEMO_MODE){
+    pairs = Object.entries(DEMO_DRIVERS_DB);
+  } else {
+    pairs = Object.entries(API_DRIVERS_MAP);
+  }
 
-    let pairs;
-    if(DEMO_MODE){
-      pairs = Object.entries(DEMO_DRIVERS_DB);
-    } else {
-      // If no drivers returned from API, derive them from orders
-      if(Object.keys(API_DRIVERS_MAP).length === 0){
-        API_DRIVERS_MAP = deriveDriversFromOrders(orders);
+  driversList.innerHTML = '';
+  if(pairs.length===0){
+    driversList.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
+    return;
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
+
+  for(const [driverKey, dr] of pairs){
+    const stats = computeDriverDerived(driverKey);
+    const labelId = dr.driver_id || driverKey;
+    const area =
+      dr.area || dr.zone || dr.base_area || dr.depot_name || dr.hub_name || 'Area not set';
+
+    const phoneDisplay = dr.phone ? `+${digits(dr.phone)}` : '—';
+
+    const card = document.createElement('div');
+    card.className =
+      'bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-col gap-2 text-xs';
+
+    card.innerHTML = `
+      <div class="flex flex-col gap-1">
+        <div class="flex flex-wrap items-baseline gap-2">
+          <div class="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
+            #${salesSafe(labelId)}
+          </div>
+          <div class="font-semibold text-slate-900">${salesSafe(dr.name || '')}</div>
+        </div>
+        <div class="text-[10px] text-slate-500">📞 ${salesSafe(phoneDisplay)}</div>
+        <div class="text-[10px] text-slate-500">📍 ${salesSafe(area)}</div>
+        <div class="text-[10px] text-slate-500">🚗 ${salesSafe(dr.vehicle || '—')}</div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 text-[9px] mt-1">
+        <div class="bg-slate-50 rounded-xl px-2 py-1">
+          <div class="text-slate-500">Delivered</div>
+          <div class="text-sm font-semibold text-emerald-700">${stats.delivered}</div>
+        </div>
+        <div class="bg-slate-50 rounded-xl px-2 py-1">
+          <div class="text-slate-500">Assigned</div>
+          <div class="text-sm font-semibold text-slate-800">${stats.assigned}</div>
+        </div>
+        <div class="bg-slate-50 rounded-xl px-2 py-1">
+          <div class="text-slate-500">In transit</div>
+          <div class="text-sm font-semibold text-slate-800">${stats.in_transit}</div>
+        </div>
+      </div>
+
+      <div class="text-[9px] text-slate-500">
+        Delivered value:
+        <span class="font-semibold text-slate-900">${fmtMoney(stats.deliveredRevenue)}</span>
+        &nbsp;• Avg fee:
+        <span class="font-semibold text-slate-900">${fmtMoney(stats.avgFee)}</span>
+      </div>
+
+      <div class="text-[9px] text-slate-500">
+        Pending pay:
+        <span class="font-semibold text-amber-600">${fmtMoney(stats.pendingPay)}</span>
+        &nbsp;• Approved:
+        <span class="font-semibold text-emerald-700">${fmtMoney(stats.approvedPay)}</span>
+      </div>
+
+      ${
+        stats.lastDeliveries.length
+          ? `<div class="text-[8px] text-slate-400">
+               Recent refs:
+               ${stats.lastDeliveries.map(x=>`<code>${salesSafe(x)}</code>`).join(', ')}
+             </div>`
+          : ''
       }
-      pairs = Object.entries(API_DRIVERS_MAP);
-    }
 
-    driversList.innerHTML = '';
-    if(pairs.length===0){
-      driversList.innerHTML = `<div class="text-sm text-slate-500 p-4">No drivers yet.</div>`;
-      return;
-    }
-
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
-
-    for(const [driverKey, dr] of pairs){
-      const stats = computeDriverDerived(driverKey);
-      const labelId = dr.driver_id || driverKey;
-      const area =
-        dr.area || dr.zone || dr.base_area || dr.depot_name || dr.hub_name || 'Area not set';
-
-      const card = document.createElement('div');
-      card.className =
-        'bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-col gap-2 text-xs';
-
-      card.innerHTML = `
-        <div class="flex flex-col gap-1">
-          <div class="flex flex-wrap items-baseline gap-2">
-            <div class="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
-              #${salesSafe(labelId)}
-            </div>
-            <div class="font-semibold text-slate-900">${salesSafe(dr.name || '')}</div>
-          </div>
-          <div class="text-[10px] text-slate-500">📞 ${salesSafe(dr.phone || '—')}</div>
-          <div class="text-[10px] text-slate-500">📍 ${salesSafe(area)}</div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-2 text-[9px] mt-1">
-          <div class="bg-slate-50 rounded-xl px-2 py-1">
-            <div class="text-slate-500">Delivered</div>
-            <div class="text-sm font-semibold text-emerald-700">${stats.delivered}</div>
-          </div>
-          <div class="bg-slate-50 rounded-xl px-2 py-1">
-            <div class="text-slate-500">Assigned</div>
-            <div class="text-sm font-semibold text-slate-800">${stats.assigned}</div>
-          </div>
-          <div class="bg-slate-50 rounded-xl px-2 py-1">
-            <div class="text-slate-500">In transit</div>
-            <div class="text-sm font-semibold text-slate-800">${stats.in_transit}</div>
-          </div>
-        </div>
-
-        <div class="text-[9px] text-slate-500">
-          Delivered value:
-          <span class="font-semibold text-slate-900">${fmtMoney(stats.deliveredRevenue)}</span>
-          &nbsp;• Avg fee:
-          <span class="font-semibold text-slate-900">${fmtMoney(stats.avgFee)}</span>
-        </div>
-
-        <div class="text-[9px] text-slate-500">
-          Pending pay:
-          <span class="font-semibold text-amber-600">${fmtMoney(stats.pendingPay)}</span>
-          &nbsp;• Approved:
-          <span class="font-semibold text-emerald-700">${fmtMoney(stats.approvedPay)}</span>
-        </div>
-
+      <div class="mt-2 flex flex-wrap gap-2">
+        <button
+          class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
+          data-id="${salesSafe(driverKey)}">
+          View Orders
+        </button>
+        <button
+          class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+          data-id="${salesSafe(driverKey)}">
+          Approve All Pay
+        </button>
         ${
-          stats.lastDeliveries.length
-            ? `<div class="text-[8px] text-slate-400">
-                 Recent refs:
-                 ${stats.lastDeliveries.map(x=>`<code>${salesSafe(x)}</code>`).join(', ')}
-               </div>`
+          dr.phone
+            ? `<a
+                 class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
+                 href="https://wa.me/${digits(dr.phone)}"
+                 target="_blank" rel="noopener">
+                 WhatsApp
+               </a>`
             : ''
         }
-
-        <div class="mt-2 flex flex-wrap gap-2">
-          <button
-            class="btn-view-orders px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-            data-id="${salesSafe(driverKey)}">
-            View Orders
-          </button>
-          <button
-            class="btn-approve-pay px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-            data-id="${salesSafe(driverKey)}">
-            Approve All Pay
-          </button>
-          ${
-            dr.phone
-              ? `<a
-                   class="px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100"
-                   href="https://wa.me/${salesSafe(dr.phone)}"
-                   target="_blank" rel="noopener">
-                   WhatsApp
-                 </a>`
-              : ''
-          }
-        </div>
-      `;
-      wrapper.appendChild(card);
-    }
-
-    driversList.appendChild(wrapper);
-
-    // Approve payouts
-    driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const did = btn.getAttribute('data-id');
-
-        if (DEMO_MODE){
-          let count = 0;
-          Object.values(DEMO_ORDERS_DB).forEach(o=>{
-            const n = normalizeOrder(o);
-            if(n.driver_id===did && n.driver_pay_status==='pending'){
-              const amount = n.driver_pay_pending || 0;
-              o.driver_pay_status = 'approved';
-              o.driver_pay_approved = amount;
-              o.driver_pay_pending  = 0;
-              count++;
-            }
-          });
-          saveOrdersToLS();
-          hydrateState();
-          renderDrivers(); renderOrders(); renderStats(); renderMetrics();
-          alert(count ? `Approved ${count} payout(s) for driver.` : `No pending payouts.`);
-          return;
-        }
-
-        try{
-          const res = await fetch(`${BASE_API}/drivers/${encodeURIComponent(did)}/approve-all-pay`, {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'}
-          });
-          const data = await res.json().catch(()=>({}));
-          if(res.ok && data && data.ok){
-            alert(`Approved payouts for driver.`);
-          } else {
-            alert('Server did not approve payouts.');
-          }
-        }catch(err){
-          console.error('approve payouts err', err);
-          alert('Network/API error approving payouts.');
-        }
-        refreshAllData();
-      });
-    });
-
-    // View orders for driver
-    driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const did = btn.getAttribute('data-id');
-        ordersTab = `by_driver:${did}`;
-        setActiveAdminTab(ordersTab);
-      });
-    });
+      </div>
+    `;
+    wrapper.appendChild(card);
   }
+
+  driversList.appendChild(wrapper);
+
+  // Approve payouts
+  driversList.querySelectorAll('.btn-approve-pay').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const did = btn.getAttribute('data-id');
+
+      if (DEMO_MODE){
+        let count = 0;
+        Object.values(DEMO_ORDERS_DB).forEach(o=>{
+          const n = normalizeOrder(o);
+          if(n.driver_id===did && n.driver_pay_status==='pending'){
+            const amount = n.driver_pay_pending || 0;
+            o.driver_pay_status = 'approved';
+            o.driver_pay_approved = amount;
+            o.driver_pay_pending  = 0;
+            count++;
+          }
+        });
+        saveOrdersToLS();
+        hydrateState();
+        renderDrivers(); renderOrders(); renderStats(); renderMetrics();
+        alert(count ? `Approved ${count} payout(s) for driver.` : `No pending payouts.`);
+        return;
+      }
+
+      try{
+        const res = await fetch(`${BASE_API}/drivers/${encodeURIComponent(did)}/approve-all-pay`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'}
+        });
+        const data = await res.json().catch(()=>({}));
+        if(res.ok && data && data.ok){
+          alert(`Approved payouts for driver.`);
+        } else {
+          alert('Server did not approve payouts.');
+        }
+      }catch(err){
+        console.error('approve payouts err', err);
+        alert('Network/API error approving payouts.');
+      }
+      refreshAllData();
+    });
+  });
+
+  // View orders for driver
+  driversList.querySelectorAll('.btn-view-orders').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const did = btn.getAttribute('data-id');
+      ordersTab = `by_driver:${did}`;
+      setActiveAdminTab(ordersTab);
+    });
+  });
+}
 
   // ========================================================================
   // MAP + ANIMATION
