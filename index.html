@@ -920,6 +920,299 @@
     </div>
   </div>
 </div>
+  <!-- Drop this near the end of <body>, AFTER Tailwind is loaded -->
+<script>
+(function(){
+  const BASE_API = "/api/app";
+
+  // ----------------- HELPERS -----------------
+  function fmtMoney(v){
+    const n = Number(v || 0);
+    return "R" + n.toFixed(2);
+  }
+
+  function parseDate(d){
+    if(!d) return null;
+    const dt = new Date(d);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  function escapeHtml(str){
+    if(str == null) return "";
+    return String(str)
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
+  }
+
+  function simpleBars(list){
+    if(!list || !list.length){
+      return '<div class="text-slate-500 text-sm">No data yet</div>';
+    }
+    const maxVal = Math.max(1, ...list.map(x => x.value || 0));
+    return list.map(({label,value,sub})=>{
+      const w = Math.max(4, Math.round((value/maxVal)*100));
+      return `
+        <div class="mb-2">
+          <div class="flex items-center justify-between text-xs">
+            <span class="truncate pr-2">${escapeHtml(label)}</span>
+            <span class="font-semibold">${value}</span>
+          </div>
+          <div class="w-full h-2 bg-slate-100 rounded-full mt-1">
+            <div class="h-2 rounded-full" style="width:${w}% ; background:#059669;"></div>
+          </div>
+          ${sub ? `<div class="text-[10px] text-slate-500 mt-0.5">${escapeHtml(sub)}</div>` : ""}
+        </div>
+      `;
+    }).join("");
+  }
+
+  function computeMetrics(orders){
+    const all = Array.isArray(orders) ? orders : [];
+
+    const totalOrders = all.length;
+    const totalRevenue = all.reduce((s,o)=> s + Number(o.total || 0), 0);
+    const itemsSold = all.reduce((s,o)=>{
+      const its = o.items || [];
+      return s + its.reduce((k,i)=> k + Number(i.qty || 0), 0);
+    }, 0);
+    const avgOrder = totalOrders ? totalRevenue / totalOrders : 0;
+
+    // Top products
+    const prodMap = new Map();
+    all.forEach(o=>{
+      (o.items || []).forEach(it=>{
+        if(!it || !it.name) return;
+        const key = it.name;
+        const qty = Number(it.qty || 1);
+        prodMap.set(key, (prodMap.get(key) || 0) + qty);
+      });
+    });
+    const topProducts = Array.from(prodMap.entries())
+      .map(([label,val]) => ({label, value: val}))
+      .sort((a,b)=> b.value - a.value)
+      .slice(0,8);
+
+    // Top areas by collection_name
+    const areaCount = new Map();
+    const areaRev   = new Map();
+    all.forEach(o=>{
+      const meta = o.meta || {};
+      const area = meta.collection_name || "—";
+      areaCount.set(area, (areaCount.get(area) || 0) + 1);
+      areaRev.set(area, (areaRev.get(area) || 0) + Number(o.total || 0));
+    });
+    const topAreas = Array.from(areaCount.entries())
+      .map(([label,val])=>({
+        label,
+        value: val,
+        sub: fmtMoney(areaRev.get(label) || 0) + " revenue"
+      }))
+      .sort((a,b)=> b.value - a.value)
+      .slice(0,8);
+
+    return {
+      totalOrders,
+      totalRevenue,
+      itemsSold,
+      avgOrder,
+      topProducts,
+      topAreas
+    };
+  }
+
+  // ----------------- DOM CREATION -----------------
+  function createMetricsButton(){
+    if(document.getElementById("ytMetricsButton")) return;
+
+    const btn = document.createElement("button");
+    btn.id = "ytMetricsButton";
+    btn.type = "button";
+    btn.className =
+      "fixed bottom-4 right-4 z-40 bg-emerald-600 text-white px-4 py-2 rounded-full " +
+      "shadow-lg text-sm font-semibold flex items-center gap-2 hover:bg-emerald-700 " +
+      "focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2";
+
+    btn.innerHTML = `
+      <span class="inline-flex h-2 w-2 rounded-full bg-emerald-300 mr-1"></span>
+      <span>View KPIs</span>
+    `;
+
+    btn.addEventListener("click", openMetricsModal);
+    document.body.appendChild(btn);
+  }
+
+  function createMetricsModal(){
+    if(document.getElementById("ytMetricsOverlay")) return;
+
+    const overlay = document.createElement("div");
+    overlay.id = "ytMetricsOverlay";
+    overlay.className =
+      "fixed inset-0 z-50 hidden bg-slate-900/40 backdrop-blur-sm " +
+      "flex items-end sm:items-center justify-center";
+
+    overlay.innerHTML = `
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl mx-3 mb-3 sm:mb-0 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <div>
+            <div class="text-xs uppercase tracking-wide text-emerald-600 font-semibold">YiThume</div>
+            <div class="text-sm md:text-base font-semibold text-slate-800">Orders KPIs</div>
+          </div>
+          <button type="button"
+            id="ytMetricsClose"
+            class="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 hover:bg-slate-100">
+            <span class="sr-only">Close</span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clip-rule="evenodd" />
+            </svg>
+          </button>
+        </div>
+
+        <div id="ytMetricsBody" class="px-4 py-4">
+          <div class="flex items-center justify-center py-8">
+            <div class="h-8 w-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        </div>
+
+        <div class="px-4 py-3 border-t border-slate-100 text-[11px] text-slate-400 flex justify-between">
+          <span>KPIs from Orders history (API)</span>
+          <span>Updated just now</span>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Close handlers
+    overlay.addEventListener("click", (e)=>{
+      if(e.target === overlay){
+        closeMetricsModal();
+      }
+    });
+    const closeBtn = overlay.querySelector("#ytMetricsClose");
+    if(closeBtn){
+      closeBtn.addEventListener("click", closeMetricsModal);
+    }
+  }
+
+  // ----------------- RENDERING -----------------
+  function renderMetricsInModal(metrics){
+    const body = document.getElementById("ytMetricsBody");
+    if(!body) return;
+
+    const {
+      totalOrders,
+      totalRevenue,
+      itemsSold,
+      avgOrder,
+      topProducts,
+      topAreas
+    } = metrics;
+
+    body.innerHTML = `
+      <div class="space-y-4">
+        <!-- KPI row -->
+        <div class="grid gap-3 sm:grid-cols-4">
+          <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3">
+            <div class="text-[11px] text-slate-500 mb-1">Total Revenue</div>
+            <div class="text-xl md:text-2xl font-semibold text-slate-900">${fmtMoney(totalRevenue)}</div>
+          </div>
+          <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3">
+            <div class="text-[11px] text-slate-500 mb-1">Total Orders</div>
+            <div class="text-xl md:text-2xl font-semibold text-slate-900">${totalOrders}</div>
+          </div>
+          <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3">
+            <div class="text-[11px] text-slate-500 mb-1">Items Sold</div>
+            <div class="text-xl md:text-2xl font-semibold text-slate-900">${itemsSold}</div>
+          </div>
+          <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3">
+            <div class="text-[11px] text-slate-500 mb-1">Avg Order Value</div>
+            <div class="text-xl md:text-2xl font-semibold text-slate-900">${fmtMoney(avgOrder)}</div>
+          </div>
+        </div>
+
+        <!-- Lists -->
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div class="bg-white border border-slate-100 rounded-2xl p-3">
+            <div class="text-sm font-medium text-slate-800 mb-2">Top Products (qty)</div>
+            <div id="ytMetricsTopProducts">
+              ${simpleBars(topProducts)}
+            </div>
+          </div>
+          <div class="bg-white border border-slate-100 rounded-2xl p-3">
+            <div class="text-sm font-medium text-slate-800 mb-2">Top Areas</div>
+            <div id="ytMetricsTopAreas">
+              ${simpleBars(topAreas)}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ----------------- FETCH + OPEN/CLOSE -----------------
+  async function openMetricsModal(){
+    createMetricsModal();
+    const overlay = document.getElementById("ytMetricsOverlay");
+    const body = document.getElementById("ytMetricsBody");
+    if(!overlay || !body) return;
+
+    overlay.classList.remove("hidden");
+    body.innerHTML = `
+      <div class="flex items-center justify-center py-8">
+        <div class="h-8 w-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    `;
+
+    try {
+      // Fetch a chunk of history. You can tweak limit and/or status filter if you want only delivered:
+      // const url = BASE_API + "/orders?limit=500&status=delivered";
+      const url = BASE_API + "/orders?limit=500";
+      const res = await fetch(url);
+      if(!res.ok){
+        throw new Error("HTTP " + res.status);
+      }
+      const data = await res.json();
+      const orders = (data && data.orders) ? data.orders : [];
+
+      // Sort newest first, like your History tab
+      orders.sort((a,b)=>{
+        const ta = parseDate(a.created_at_iso || a.created_at || 0)?.getTime() || 0;
+        const tb = parseDate(b.created_at_iso || b.created_at || 0)?.getTime() || 0;
+        return tb - ta;
+      });
+
+      const metrics = computeMetrics(orders);
+      renderMetricsInModal(metrics);
+    } catch(err){
+      console.error("Metrics fetch error", err);
+      body.innerHTML = `
+        <div class="text-center py-8 text-sm text-red-600">
+          Could not load KPIs. Please try again.<br/>
+          <span class="text-[11px] text-slate-400">${escapeHtml(String(err))}</span>
+        </div>
+      `;
+    }
+  }
+
+  function closeMetricsModal(){
+    const overlay = document.getElementById("ytMetricsOverlay");
+    if(overlay){
+      overlay.classList.add("hidden");
+    }
+  }
+
+  // ----------------- INIT -----------------
+  document.addEventListener("DOMContentLoaded", ()=>{
+    createMetricsButton();
+  });
+})();
+</script>
+
 <script>
 window.addEventListener('DOMContentLoaded', () => {
   // ========================================================================
