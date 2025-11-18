@@ -4201,372 +4201,232 @@ window.addEventListener('DOMContentLoaded', () => {
   // ============================================================
   // RENDER: HISTORY (source of truth)
   // ============================================================
-  function renderHistory() {
-    if (!elHistoryList) return;
-    clearEl(elHistoryList);
+function renderHistory() {
+  if (!elHistoryList) return;
+  clearEl(elHistoryList);
 
-    if (!allOrders.length) {
-      renderEmpty(elHistoryList, 'No orders yet.');
-      return;
-    }
-
-    const sorted = [...allOrders].sort((a, b) => {
-      const ta = new Date(a.created_at_iso || a.created_at || 0).getTime();
-      const tb = new Date(b.created_at_iso || b.created_at || 0).getTime();
-      return tb - ta;
-    });
-
-    sorted.forEach(o => {
-      const driver = driversById[o.assigned_driver_id] || {};
-      const row = document.createElement('div');
-      row.className = 'px-4 py-3 border-b border-slate-100 text-xs md:text-sm';
-
-      const itemsText = o.items.map(it => `${it.name || 'Item'} x${it.qty || 1}`).join(', ') || '— items';
-
-      row.innerHTML = `
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div class="font-semibold text-slate-800">
-            ${escapeHtml(o.customer_name)} <span class="text-slate-400">–</span>
-            <span class="text-emerald-600">${escapeHtml(o.order_ref)}</span>
-          </div>
-          <div class="text-[11px] uppercase tracking-wide font-semibold ${
-            o.status === 'delivered' ? 'text-emerald-600' :
-            o.status === 'pending' ? 'text-amber-600' :
-            'text-slate-500'
-          }">
-            ${escapeHtml(o.status.replace(/_/g, ' '))}
-          </div>
-        </div>
-        <div class="mt-1 text-slate-600">
-          ${escapeHtml(itemsText)}
-        </div>
-        <div class="mt-1 text-slate-500 flex flex-wrap gap-3">
-          <span>Total: ${fmtMoney(o.total)}</span>
-          <span>Zone: ${escapeHtml(o.zone)}</span>
-          <span>Pickup: ${escapeHtml(o.collection_name)}</span>
-          <span>Driver: ${driver.name ? escapeHtml(driver.name) : '—'}</span>
-        </div>
-        <div class="mt-1 text-[11px] text-slate-400">
-          Created: ${fmtDate(o.created_at_iso)} · Assigned: ${fmtDate(o.assigned_at_iso)} · Delivered: ${fmtDate(o.delivered_at_iso)}
-        </div>
-      `;
-
-      elHistoryList.appendChild(row);
-    });
+  if (!allOrders.length) {
+    renderEmpty(elHistoryList, 'No orders yet.');
+    return;
   }
 
-  // ============================================================
-  // RENDER: DRIVERS TAB
-  // ============================================================
-  function buildDriverAggregates() {
-    const agg = {};
-    allOrders.forEach(o => {
-      const did = o.assigned_driver_id;
-      if (!did) return;
-      if (!agg[did]) {
-        agg[did] = {
-          pending: 0,
-          assigned: 0,
-          in_transit: 0,
-          delivered: 0,
-          cancelled: 0,
-          failed: 0,
-          review_required: 0,
-          pay_pending: 0,
-          pay_approved: 0
-        };
-      }
-      const a = agg[did];
-      if (a[o.status] !== undefined) a[o.status] += 1;
+  // --------------------------------------------------
+  // 1) Sort orders newest -> oldest
+  // --------------------------------------------------
+  const sorted = [...allOrders].sort((a, b) => {
+    const ta = new Date(a.created_at_iso || a.created_at || 0).getTime();
+    const tb = new Date(b.created_at_iso || b.created_at || 0).getTime();
+    return tb - ta;
+  });
 
-      a.pay_pending  += Number(o.driver_pay_pending || 0);
-      a.pay_approved += Number(o.driver_pay_approved || 0);
-    });
-    return agg;
-  }
+  // --------------------------------------------------
+  // 2) Compute KPIs from history
+  // --------------------------------------------------
+  let totalRevenue = 0;
+  let deliveredRevenue = 0;
+  let deliveredCount = 0;
+  let pendingCount = 0;
+  let assignedCount = 0;
+  let inTransitCount = 0;
 
-  function renderDriversTab() {
-    if (!elDriversList) return;
-    clearEl(elDriversList);
+  const zonesCount = {};
+  const collectionsCount = {};
 
-    if (!allDrivers.length) {
-      renderEmpty(elDriversList, 'No drivers yet.');
-      return;
+  sorted.forEach(o => {
+    const total = Number(o.total || 0);
+    totalRevenue += total;
+
+    const st = (o.status || '').toLowerCase();
+    if (st === 'delivered') {
+      deliveredCount += 1;
+      deliveredRevenue += total;
+    } else if (st === 'pending') {
+      pendingCount += 1;
+    } else if (st === 'assigned') {
+      assignedCount += 1;
+    } else if (st === 'in_transit') {
+      inTransitCount += 1;
     }
 
-    const agg = buildDriverAggregates();
+    const zoneKey = (o.zone || '—');
+    zonesCount[zoneKey] = (zonesCount[zoneKey] || 0) + 1;
 
-    allDrivers.forEach(d => {
-      const did = d._internal_id || d.driver_id || d.id;
-      const a = agg[did] || {
-        pending: 0,
-        assigned: 0,
-        in_transit: 0,
-        delivered: 0,
-        cancelled: 0,
-        failed: 0,
-        review_required: 0,
-        pay_pending: 0,
-        pay_approved: 0
-      };
+    const collKey = (o.collection_name || '—');
+    collectionsCount[collKey] = (collectionsCount[collKey] || 0) + 1;
+  });
 
-      const card = document.createElement('div');
-      card.className = 'border border-slate-200 rounded-xl p-4 mb-3 bg-white shadow-sm';
+  const totalOrders = sorted.length;
+  const avgOrderValue = totalOrders ? (totalRevenue / totalOrders) : 0;
 
-      const zone = (d.meta && d.meta.zone) ? d.meta.zone : '—';
+  // Top zone / collection (for quick KPI flavour)
+  const topZone = Object.entries(zonesCount)
+    .sort((a, b) => b[1] - a[1])[0] || ['—', 0];
+  const topCollection = Object.entries(collectionsCount)
+    .sort((a, b) => b[1] - a[1])[0] || ['—', 0];
 
-      card.innerHTML = `
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div class="font-semibold text-slate-900">${escapeHtml(d.name || 'Unnamed Driver')}</div>
-            <div class="text-xs text-slate-500 flex flex-wrap gap-2">
-              <span class="font-mono">${escapeHtml(d.phone || '—')}</span>
-              <span>Vehicle: ${escapeHtml(d.vehicle || 'car')}</span>
-              <span>Zone: ${escapeHtml(zone)}</span>
-            </div>
-          </div>
-          <div class="text-right text-xs text-slate-500">
-            <div>Pending payout: <span class="font-semibold text-amber-600">${fmtMoney(a.pay_pending)}</span></div>
-            <div>Approved payout: <span class="font-semibold text-emerald-600">${fmtMoney(a.pay_approved)}</span></div>
-          </div>
-        </div>
-        <div class="mt-3 grid grid-cols-3 md:grid-cols-6 gap-2 text-[11px] text-slate-500">
-          <div class="bg-slate-50 rounded-lg p-2 text-center">
-            <div class="font-semibold text-slate-800">${a.pending}</div>
-            <div>Pending</div>
-          </div>
-          <div class="bg-slate-50 rounded-lg p-2 text-center">
-            <div class="font-semibold text-slate-800">${a.assigned}</div>
-            <div>Assigned</div>
-          </div>
-          <div class="bg-slate-50 rounded-lg p-2 text-center">
-            <div class="font-semibold text-slate-800">${a.in_transit}</div>
-            <div>In transit</div>
-          </div>
-          <div class="bg-slate-50 rounded-lg p-2 text-center">
-            <div class="font-semibold text-emerald-700">${a.delivered}</div>
-            <div>Delivered</div>
-          </div>
-          <div class="bg-slate-50 rounded-lg p-2 text-center">
-            <div class="font-semibold text-slate-800">${a.cancelled}</div>
-            <div>Cancelled</div>
-          </div>
-          <div class="bg-slate-50 rounded-lg p-2 text-center">
-            <div class="font-semibold text-slate-800">${a.failed}</div>
-            <div>Failed</div>
-          </div>
+  // --------------------------------------------------
+  // 3) Render KPI cards at the top of History
+  // --------------------------------------------------
+  const kpiWrap = document.createElement('div');
+  kpiWrap.className = 'grid grid-cols-2 md:grid-cols-4 gap-3 mb-4';
+
+  kpiWrap.innerHTML = `
+    <div class="bg-white border border-slate-100 rounded-xl shadow-sm px-3 py-2">
+      <div class="text-[11px] uppercase tracking-wide text-slate-400">Total revenue</div>
+      <div class="mt-1 text-sm md:text-base font-semibold text-slate-800">
+        ${fmtMoney(totalRevenue)}
+      </div>
+    </div>
+
+    <div class="bg-white border border-slate-100 rounded-xl shadow-sm px-3 py-2">
+      <div class="text-[11px] uppercase tracking-wide text-slate-400">Delivered revenue</div>
+      <div class="mt-1 text-sm md:text-base font-semibold text-emerald-700">
+        ${fmtMoney(deliveredRevenue)}
+      </div>
+      <div class="mt-0.5 text-[11px] text-slate-400">
+        ${deliveredCount} delivered orders
+      </div>
+    </div>
+
+    <div class="bg-white border border-slate-100 rounded-xl shadow-sm px-3 py-2">
+      <div class="text-[11px] uppercase tracking-wide text-slate-400">Total orders</div>
+      <div class="mt-1 text-sm md:text-base font-semibold text-slate-800">
+        ${totalOrders}
+      </div>
+      <div class="mt-0.5 text-[11px] text-slate-400">
+        Avg order: ${fmtMoney(avgOrderValue)}
+      </div>
+    </div>
+
+    <div class="bg-white border border-slate-100 rounded-xl shadow-sm px-3 py-2">
+      <div class="text-[11px] uppercase tracking-wide text-slate-400">Pipeline</div>
+      <div class="mt-1 text-[11px] text-slate-700 flex flex-col gap-0.5">
+        <span>Pending: ${pendingCount}</span>
+        <span>Assigned: ${assignedCount}</span>
+        <span>In transit: ${inTransitCount}</span>
+      </div>
+    </div>
+  `;
+
+  elHistoryList.appendChild(kpiWrap);
+
+  // Optional: a small text chip for top area / pickup
+  const metaRow = document.createElement('div');
+  metaRow.className = 'flex flex-wrap gap-2 mb-2 text-[11px] text-slate-500';
+  metaRow.innerHTML = `
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200">
+      Top zone: <span class="ml-1 font-semibold text-slate-700">${escapeHtml(topZone[0])}</span>
+      <span class="ml-1 text-slate-400">(${topZone[1]} orders)</span>
+    </span>
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200">
+      Top pickup: <span class="ml-1 font-semibold text-slate-700">${escapeHtml(topCollection[0])}</span>
+      <span class="ml-1 text-slate-400">(${topCollection[1]} orders)</span>
+    </span>
+  `;
+  elHistoryList.appendChild(metaRow);
+
+  // --------------------------------------------------
+  // 4) Render each order row + full receipt
+  // --------------------------------------------------
+  sorted.forEach(o => {
+    const driver = driversById[o.assigned_driver_id] || {};
+    const row = document.createElement('div');
+    row.className = 'px-4 py-3 border-b border-slate-100 text-xs md:text-sm';
+
+    const itemsText = (o.items || [])
+      .map(it => `${it.name || 'Item'} x${it.qty || 1}`)
+      .join(', ') || '— items';
+
+    // build receipt HTML (line items + totals)
+    const itemsReceiptHtml = (o.items || []).map(it => {
+      const name = escapeHtml(it.name || 'Item');
+      const qty = it.qty || 1;
+      const price = Number(it.price || 0);
+      const lineTotal = price * qty;
+      return `
+        <div class="flex justify-between text-[11px] text-slate-700">
+          <span>${name} × ${qty}</span>
+          <span>${fmtMoney(lineTotal)}</span>
         </div>
       `;
-
-      const actions = document.createElement('div');
-      actions.className = 'mt-3 flex flex-wrap items-center gap-2';
-
-      if (d.phone) {
-        const btnWa = document.createElement('a');
-        btnWa.className = 'px-3 py-1.5 text-xs rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100';
-        btnWa.href = `https://wa.me/${encodeURIComponent(cleanPhone(d.phone))}`;
-        btnWa.target = '_blank';
-        btnWa.rel = 'noopener noreferrer';
-        btnWa.textContent = 'WhatsApp Driver';
-        actions.appendChild(btnWa);
-      }
-
-      const btnViewOrders = document.createElement('button');
-      btnViewOrders.className = 'px-3 py-1.5 text-xs rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200';
-      btnViewOrders.textContent = 'View Orders';
-      btnViewOrders.addEventListener('click', () => showDriverOrders(did));
-      actions.appendChild(btnViewOrders);
-
-      const btnApproveAll = document.createElement('button');
-      btnApproveAll.className = 'px-3 py-1.5 text-xs rounded-full bg-emerald-600 text-white hover:bg-emerald-700';
-      btnApproveAll.textContent = 'Approve All Pay';
-      btnApproveAll.addEventListener('click', () => approveAllPayForDriver(did));
-      actions.appendChild(btnApproveAll);
-
-      card.appendChild(actions);
-      elDriversList.appendChild(card);
-    });
-  }
-
-  function showDriverOrders(driverInternalId) {
-    const driver = driversById[driverInternalId] || {};
-    const orders = allOrders.filter(o => o.assigned_driver_id === driverInternalId);
-    const text = orders.map(o => {
-      return `${o.order_ref} (${o.status}) – ${o.customer_name} – ${fmtMoney(o.total)}`;
-    }).join('\n') || 'No orders for this driver.';
-
-    alert(`Orders for ${driver.name || 'Driver'}:\n\n${text}`);
-  }
-
-  function cleanPhone(phone) {
-    return String(phone || '').replace(/\D+/g, '');
-  }
-
-  // ============================================================
-  // STATS + METRICS (from history)
-  // ============================================================
-  function renderStatsTab() {
-    if (!elStatsSummary) return;
-    clearEl(elStatsSummary);
-
-    if (!allOrders.length) {
-      renderEmpty(elStatsSummary, 'No orders yet to compute stats.');
-      return;
-    }
-
-    const delivered = allOrders.filter(o => o.status === 'delivered');
-    const totalOrders = allOrders.length;
-    const deliveredRevenue = delivered.reduce((acc, o) => acc + Number(o.total || 0), 0);
-
-    const products = {};
-    const areas = {};
-    allOrders.forEach(o => {
-      const areaKey = o.collection_name || '—';
-      areas[areaKey] = (areas[areaKey] || 0) + 1;
-
-      o.items.forEach(it => {
-        const name = it.name || 'Item';
-        const qty = Number(it.qty || 1);
-        products[name] = (products[name] || 0) + qty;
-      });
-    });
-
-    const topProducts = Object.entries(products)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
-    const topAreas = Object.entries(areas)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
-
-    const driverCount = allDrivers.length;
-
-    const grid = document.createElement('div');
-    grid.className = 'grid grid-cols-2 md:grid-cols-4 gap-3 mb-4';
-
-    const cardTotalOrders = statCard('Total orders', String(totalOrders));
-    const cardRevenue = statCard('Delivered revenue', fmtMoney(deliveredRevenue));
-    const cardDrivers = statCard('Active drivers', String(driverCount));
-    const cardAvgValue = statCard(
-      'Avg delivered order',
-      delivered.length ? fmtMoney(deliveredRevenue / delivered.length) : '—'
-    );
-
-    grid.appendChild(cardTotalOrders);
-    grid.appendChild(cardRevenue);
-    grid.appendChild(cardDrivers);
-    grid.appendChild(cardAvgValue);
-
-    const lists = document.createElement('div');
-    lists.className = 'grid grid-cols-1 md:grid-cols-2 gap-4';
-
-    const prodBox = document.createElement('div');
-    prodBox.className = 'border border-slate-200 rounded-xl p-3 bg-white';
-    prodBox.innerHTML = `<div class="text-xs font-semibold text-slate-500 uppercase mb-2">Top products</div>`;
-    const prodUl = document.createElement('ul');
-    prodUl.className = 'space-y-1 text-sm text-slate-700';
-    if (!topProducts.length) {
-      prodUl.innerHTML = '<li class="text-xs text-slate-400">No products yet.</li>';
-    } else {
-      topProducts.forEach(([name, count]) => {
-        const li = document.createElement('li');
-        li.innerHTML = `<span class="font-medium">${escapeHtml(name)}</span> – <span class="text-slate-500">${count} sold</span>`;
-        prodUl.appendChild(li);
-      });
-    }
-    prodBox.appendChild(prodUl);
-
-    const areasBox = document.createElement('div');
-    areasBox.className = 'border border-slate-200 rounded-xl p-3 bg-white';
-    areasBox.innerHTML = `<div class="text-xs font-semibold text-slate-500 uppercase mb-2">Top areas / depots</div>`;
-    const areasUl = document.createElement('ul');
-    areasUl.className = 'space-y-1 text-sm text-slate-700';
-    if (!topAreas.length) {
-      areasUl.innerHTML = '<li class="text-xs text-slate-400">No areas yet.</li>';
-    } else {
-      topAreas.forEach(([name, count]) => {
-        const li = document.createElement('li');
-        li.innerHTML = `<span class="font-medium">${escapeHtml(name)}</span> – <span class="text-slate-500">${count} orders</span>`;
-        areasUl.appendChild(li);
-      });
-    }
-    areasBox.appendChild(areasUl);
-
-    lists.appendChild(prodBox);
-    lists.appendChild(areasBox);
-
-    elStatsSummary.appendChild(grid);
-    elStatsSummary.appendChild(lists);
-  }
-
-  function statCard(label, value) {
-    const card = document.createElement('div');
-    card.className = 'border border-slate-200 rounded-xl p-3 bg-white flex flex-col gap-1';
-    card.innerHTML = `
-      <div class="text-xs text-slate-500 uppercase tracking-wide font-semibold">${escapeHtml(label)}</div>
-      <div class="text-lg font-semibold text-slate-900">${escapeHtml(value)}</div>
-    `;
-    return card;
-  }
-
-  function renderMetricsTab() {
-    if (!elMetricsSummary) return;
-    clearEl(elMetricsSummary);
-
-    if (!allOrders.length) {
-      renderEmpty(elMetricsSummary, 'No metrics yet – no orders.');
-      return;
-    }
-
-    const byStatus = {};
-    const byZone = {};
-    const byChannel = {};
-    allOrders.forEach(o => {
-      const st = o.status || 'unknown';
-      const zone = o.zone || '—';
-      const channel = (o.meta && o.meta.channel) || 'web';
-
-      byStatus[st] = (byStatus[st] || 0) + 1;
-      byZone[zone] = (byZone[zone] || 0) + 1;
-      byChannel[channel] = (byChannel[channel] || 0) + 1;
-    });
-
-    const wrap = document.createElement('div');
-    wrap.className = 'grid grid-cols-1 md:grid-cols-3 gap-4';
-
-    wrap.appendChild(metricList('Orders by status', byStatus));
-    wrap.appendChild(metricList('Orders by zone', byZone));
-    wrap.appendChild(metricList('Orders by channel', byChannel));
-
-    elMetricsSummary.appendChild(wrap);
-  }
-
-  function metricList(title, obj) {
-    const card = document.createElement('div');
-    card.className = 'border border-slate-200 rounded-xl p-3 bg-white';
-
-    const entries = Object.entries(obj).sort((a, b) => b[1] - a[1]);
-
-    card.innerHTML = `
-      <div class="text-xs font-semibold text-slate-500 uppercase mb-2">${escapeHtml(title)}</div>
+    }).join('') || `
+      <div class="text-[11px] text-slate-400">No line items recorded.</div>
     `;
 
-    const ul = document.createElement('ul');
-    ul.className = 'space-y-1 text-sm text-slate-700';
+    const subtotal = Number(o.subtotal || 0);
+    const deliveryFee = Number(o.delivery_fee || 0);
+    const total = Number(o.total || 0);
 
-    if (!entries.length) {
-      ul.innerHTML = '<li class="text-xs text-slate-400">No data.</li>';
-    } else {
-      entries.forEach(([k, v]) => {
-        const li = document.createElement('li');
-        li.innerHTML = `<span class="font-medium">${escapeHtml(k)}</span> – <span class="text-slate-500">${v} orders</span>`;
-        ul.appendChild(li);
-      });
-    }
+    row.innerHTML = `
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="font-semibold text-slate-800">
+          ${escapeHtml(o.customer_name)} <span class="text-slate-400">–</span>
+          <span class="text-emerald-600">${escapeHtml(o.order_ref)}</span>
+        </div>
+        <div class="text-[11px] uppercase tracking-wide font-semibold ${
+          o.status === 'delivered' ? 'text-emerald-600' :
+          o.status === 'pending' ? 'text-amber-600' :
+          'text-slate-500'
+        }">
+          ${escapeHtml((o.status || '').replace(/_/g, ' '))}
+        </div>
+      </div>
 
-    card.appendChild(ul);
-    return card;
-  }
+      <div class="mt-1 text-slate-600">
+        ${escapeHtml(itemsText)}
+      </div>
 
+      <div class="mt-1 text-slate-500 flex flex-wrap gap-3">
+        <span>Total: ${fmtMoney(total)}</span>
+        <span>Zone: ${escapeHtml(o.zone)}</span>
+        <span>Pickup: ${escapeHtml(o.collection_name)}</span>
+        <span>Driver: ${driver.name ? escapeHtml(driver.name) : '—'}</span>
+      </div>
+
+      <div class="mt-1 text-[11px] text-slate-400">
+        Created: ${fmtDate(o.created_at_iso)}
+        · Assigned: ${fmtDate(o.assigned_at_iso)}
+        · Delivered: ${fmtDate(o.delivered_at_iso)}
+      </div>
+
+      <!-- Receipt block -->
+      <div class="mt-2 rounded-lg bg-slate-50 px-3 py-2 border border-slate-100">
+        <div class="flex items-center justify-between">
+          <div class="text-[11px] font-semibold text-slate-700 uppercase tracking-wide">
+            Receipt
+          </div>
+          <div class="text-[10px] text-slate-400">
+            ${escapeHtml(o.order_ref)}
+          </div>
+        </div>
+
+        <div class="mt-1 space-y-1">
+          ${itemsReceiptHtml}
+        </div>
+
+        <div class="mt-2 border-t border-slate-200 pt-2 space-y-0.5 text-[11px]">
+          <div class="flex justify-between text-slate-600">
+            <span>Subtotal</span>
+            <span>${fmtMoney(subtotal)}</span>
+          </div>
+          <div class="flex justify-between text-slate-500">
+            <span>Delivery fee</span>
+            <span>${fmtMoney(deliveryFee)}</span>
+          </div>
+          <div class="flex justify-between font-semibold text-emerald-700">
+            <span>Total</span>
+            <span>${fmtMoney(total)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    elHistoryList.appendChild(row);
+  });
+}
+
+
+  
   // ============================================================
   // UTILS: escaping for safety
   // ============================================================
