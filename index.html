@@ -2076,7 +2076,7 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
     adminPayApprovedEl.textContent = fmtMoney(approved);
   }
 
-   async function renderAdminStats(){
+async function renderAdminStats(){
   const panel = ensureOrdersPanelScaffold();
 
   if(!document.getElementById('adminStatsWrap')){
@@ -2376,10 +2376,8 @@ ${storeItems.map(i=>"- "+i.name+" (R"+i.price+")").join("\n")}`;
       ['Assigned','assigned'],
       ['In Transit','in_transit'],
       ['Delivered','delivered'],
-      ['Drivers','drivers'],
-      ['Stats','stats'],      // moved analytics here
       ['History','history'],  // new receipts-only view
-      ['Metrics','metrics']
+      ['Metrics','history']
     ];
 
     const host = ordersTabsContainer || ordersList?.parentElement || document.getElementById('ordersPanel') || document.body;
