@@ -2186,170 +2186,134 @@ async function renderAdminStats(){
     renderAdminStats();
   }
 
-  // ========================================================================
-  // METRICS TAB (NEW)
-  // ========================================================================
-  function groupBy(arr, fn){
-    const m = new Map();
-    arr.forEach(x=>{
-      const k = fn(x);
-      m.set(k, (m.get(k)||[]).concat([x]));
-    });
-    return m;
-  }
-  function dayKey(d){
-    if(!d || !(d instanceof Date)) return 'unknown';
-    return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-  }
-  function simpleBars(list, maxVal){
-    if(list.length===0){
-      return '<div class="text-slate-500 text-sm">No data yet</div>';
-    }
-    const safeMax = Math.max(1, maxVal ?? Math.max(...list.map(x=>x.value||0)));
-    return list.map(({label,value,sub})=>{
-      const w = Math.max(4, Math.round((value/safeMax)*100));
-      return `
-        <div class="mb-2">
-          <div class="flex items-center justify-between text-xs">
-            <span class="truncate pr-2">${salesSafe(label)}</span>
-            <span class="font-medium">${value}</span>
-          </div>
-          <div class="w-full h-2 bg-slate-100 rounded-full mt-1">
-            <div class="h-2 rounded-full" style="width:${w}% ; background:${emerald[600]};"></div>
-          </div>
-          ${sub ? `<div class="text-[10px] text-slate-500 mt-0.5">${salesSafe(sub)}</div>` : ''}
-        </div>
-      `;
-    }).join('');
-  }
-
-  function renderMetrics(){
+ // ========================================================================
+// METRICS TAB — Mirror History Totals
+// ========================================================================
+function renderMetrics() {
   const panel = ensureOrdersPanelScaffold();
   metricsContainer = document.getElementById('metricsContainer');
-  if(!metricsContainer) return;
+  if (!metricsContainer) return;
 
-  const sourceArr = DEMO_MODE
-    ? Object.values(DEMO_ORDERS_DB).map(o=>normalizeOrder(o))
-    : Object.values(ALL_ORDERS_MAP).map(o=> o._normalized ? o : normalizeOrder(o));
+  // ------------------------------------------------------------
+  // Use the *exact same* orders the History tab uses
+  // ------------------------------------------------------------
+  const orders = Array.isArray(allOrders) ? allOrders : [];
 
-  // Use normalized "history" orders, newest first
-  const orders = [...sourceArr].sort((a,b)=>{
-    const ta = a.created_at ? a.created_at.getTime() : 0;
-    const tb = b.created_at ? b.created_at.getTime() : 0;
+  if (!orders.length) {
+    metricsContainer.innerHTML = `
+      <div class="p-4 text-center text-sm text-slate-500">
+        No order history found.
+      </div>
+    `;
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // FIX: Always parse dates safely (string → Date)
+  // ------------------------------------------------------------
+  const sorted = [...orders].sort((a, b) => {
+    const ta = new Date(a.created_at_iso || a.created_at || 0).getTime();
+    const tb = new Date(b.created_at_iso || b.created_at || 0).getTime();
     return tb - ta;
   });
 
-  const totalRevenue = orders.reduce((s,o)=> s + Number(o.total||0), 0);
-  const totalOrders  = orders.length;
-  const itemsSold    = orders.reduce((s,o)=> s + (o.items||[]).reduce((k,i)=> k + Number(i.qty||0),0), 0);
-  const avgOrder     = totalOrders ? Math.round(totalRevenue/totalOrders) : 0;
+  // ------------------------------------------------------------
+  // Compute TOTALS (same as History)
+  // ------------------------------------------------------------
+  let totalRevenue = 0;
+  let deliveredRevenue = 0;
 
-  const byDay = groupBy(orders, o=> dayKey(o.created_at));
-  const days = Array.from(byDay.entries())
-    .map(([key,arr])=> ({
-      label:key,
-      value: arr.length,
-      revenue: arr.reduce((s,o)=>s+Number(o.total||0),0)
-    }))
-    .sort((a,b)=> a.label.localeCompare(b.label))
-    .slice(-14);
+  let deliveredCount = 0;
+  let pendingCount = 0;
+  let assignedCount = 0;
+  let inTransitCount = 0;
 
-  const prod = new Map();
-  orders.forEach(o=>{
-    (o.items||[]).forEach(it=>{
-      if(!it || !it.name) return;
-      prod.set(it.name, (prod.get(it.name)||0) + Number(it.qty||1));
-    });
+  const zones = {};
+  const pickups = {};
+
+  sorted.forEach(o => {
+    const total = Number(o.total || 0);
+    totalRevenue += total;
+
+    const st = (o.status || "").toLowerCase();
+    if (st === "delivered") {
+      deliveredCount++;
+      deliveredRevenue += total;
+    }
+    if (st === "pending") pendingCount++;
+    if (st === "assigned") assignedCount++;
+    if (st === "in_transit") inTransitCount++;
+
+    // Track zones  
+    const z = o.zone || "—";
+    zones[z] = (zones[z] || 0) + 1;
+
+    // Track pickups
+    const p = o.collection_name || "—";
+    pickups[p] = (pickups[p] || 0) + 1;
   });
-  const topProducts = Array.from(prod.entries())
-    .map(([name,qty])=>({label:name, value:qty}))
-    .sort((a,b)=> b.value-a.value)
-    .slice(0,8);
 
-  const areaC = new Map();
-  const areaR = new Map();
-  orders.forEach(o=>{
-    const area = o.meta?.collection_name || '—';
-    areaC.set(area, (areaC.get(area)||0)+1);
-    areaR.set(area, (areaR.get(area)||0)+Number(o.total||0));
-  });
-  const topAreasByOrders = Array.from(areaC.entries())
-    .map(([label,value])=>({label,value, sub:`${fmtMoney(areaR.get(label)||0)} revenue`}))
-    .sort((a,b)=> b.value-a.value)
-    .slice(0,8);
+  const totalOrders = sorted.length;
+  const avgOrderValue = totalOrders ? totalRevenue / totalOrders : 0;
 
-  if(!document.getElementById('metricsWrap')){
-    metricsContainer.innerHTML = `
-      <div id="metricsWrap" class="space-y-4">
-        <div class="grid gap-3 sm:grid-cols-4">
-          <div class="bg-white border rounded-2xl p-3 shadow-sm">
-            <div class="text-xs text-slate-500 mb-1">Total Revenue (All history)</div>
-            <div class="text-2xl font-semibold">${fmtMoney(totalRevenue)}</div>
-          </div>
-          <div class="bg-white border rounded-2xl p-3 shadow-sm">
-            <div class="text-xs text-slate-500 mb-1">Total Orders</div>
-            <div class="text-2xl font-semibold">${totalOrders}</div>
-          </div>
-          <div class="bg-white border rounded-2xl p-3 shadow-sm">
-            <div class="text-xs text-slate-500 mb-1">Items Sold</div>
-            <div class="text-2xl font-semibold">${itemsSold}</div>
-          </div>
-          <div class="bg-white border rounded-2xl p-3 shadow-sm">
-            <div class="text-xs text-slate-500 mb-1">Avg Order Value</div>
-            <div class="text-2xl font-semibold">${fmtMoney(avgOrder)}</div>
-          </div>
+  // Get top zone & pickup
+  const topZone = Object.entries(zones).sort((a, b) => b[1] - a[1])[0] || ["—", 0];
+  const topPickup = Object.entries(pickups).sort((a, b) => b[1] - a[1])[0] || ["—", 0];
+
+  // ------------------------------------------------------------
+  // Render the KPI CARDS
+  // ------------------------------------------------------------
+  metricsContainer.innerHTML = `
+    <div class="space-y-4">
+
+      <!-- KPI CARDS -->
+      <div class="grid gap-3 sm:grid-cols-4">
+
+        <div class="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div class="text-xs text-slate-500">Total Revenue</div>
+          <div class="text-2xl font-bold text-slate-900">${fmtMoney(totalRevenue)}</div>
         </div>
 
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div class="bg-white border rounded-2xl p-3 shadow-sm">
-            <div class="text-sm font-medium mb-2">Daily Orders (last 14 days)</div>
-            <div id="mxDailyOrders"></div>
-          </div>
-          <div class="bg-white border rounded-2xl p-3 shadow-sm">
-            <div class="text-sm font-medium mb-2">Daily Revenue (last 14 days)</div>
-            <div id="mxDailyRevenue"></div>
-          </div>
+        <div class="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div class="text-xs text-slate-500">Delivered Revenue</div>
+          <div class="text-2xl font-bold text-emerald-700">${fmtMoney(deliveredRevenue)}</div>
+          <div class="text-[11px] text-slate-400">${deliveredCount} delivered orders</div>
         </div>
 
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div class="bg-white border rounded-2xl p-3 shadow-sm">
-            <div class="text-sm font-medium mb-2">Top Products (qty)</div>
-            <div id="mxTopProducts"></div>
-          </div>
-          <div class="bg-white border rounded-2xl p-3 shadow-sm">
-            <div class="text-sm font-medium mb-2">Top Areas</div>
-            <div id="mxTopAreas"></div>
+        <div class="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div class="text-xs text-slate-500">Total Orders</div>
+          <div class="text-2xl font-bold text-slate-900">${totalOrders}</div>
+          <div class="text-[11px] text-slate-400">Average: ${fmtMoney(avgOrderValue)}</div>
+        </div>
+
+        <div class="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div class="text-xs text-slate-500">Order Pipeline</div>
+          <div class="text-[11px] leading-tight text-slate-700 mt-1">
+            Pending: ${pendingCount}<br>
+            Assigned: ${assignedCount}<br>
+            In transit: ${inTransitCount}<br>
+            Delivered: ${deliveredCount}
           </div>
         </div>
       </div>
-    `;
-  } else {
-    const kpiCards = metricsContainer.querySelectorAll('.grid.sm\\:grid-cols-4 .text-2xl');
-    if(kpiCards[0]) kpiCards[0].textContent = fmtMoney(totalRevenue);
-    if(kpiCards[1]) kpiCards[1].textContent = String(totalOrders);
-    if(kpiCards[2]) kpiCards[2].textContent = String(itemsSold);
-    if(kpiCards[3]) kpiCards[3].textContent = fmtMoney(avgOrder);
-  }
 
-  const elDailyOrders  = document.getElementById('mxDailyOrders');
-  const elDailyRevenue = document.getElementById('mxDailyRevenue');
-  const elTopProducts  = document.getElementById('mxTopProducts');
-  const elTopAreas     = document.getElementById('mxTopAreas');
+      <!-- TOP ZONE + PICKUP -->
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div class="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div class="text-sm font-medium text-slate-700">Top Zone</div>
+          <div class="text-lg font-semibold text-slate-900">${escapeHtml(topZone[0])}</div>
+          <div class="text-[11px] text-slate-400">${topZone[1]} orders</div>
+        </div>
 
-  if(elDailyOrders){
-    const list = days.map(d=>({label:d.label, value:d.value}));
-    elDailyOrders.innerHTML = simpleBars(list);
-  }
-  if(elDailyRevenue){
-    const list = days.map(d=>({label:d.label, value:Math.round(d.revenue)}));
-    elDailyRevenue.innerHTML = simpleBars(list);
-  }
-  if(elTopProducts){
-    elTopProducts.innerHTML = simpleBars(topProducts);
-  }
-  if(elTopAreas){
-    elTopAreas.innerHTML = simpleBars(topAreasByOrders);
-  }
+        <div class="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div class="text-sm font-medium text-slate-700">Top Collection Point</div>
+          <div class="text-lg font-semibold text-slate-900">${escapeHtml(topPickup[0])}</div>
+          <div class="text-[11px] text-slate-400">${topPickup[1]} orders</div>
+        </div>
+      </div>
+
+    </div>
+  `;
 }
 
   // ========================================================================
