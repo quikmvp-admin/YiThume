@@ -885,8 +885,13 @@ def simulate_payment():
 @app.route("/orders/<oid>/auto-assign", methods=["POST"])
 @app.route("/api/app/orders/<oid>/auto-assign", methods=["POST"])
 def auto_assign(oid):
-    if not require_admin():
-        return jsonify({"ok": False, "error": "forbidden"}), 403
+    """
+    Auto-assign a driver to a single order.
+
+    NOTE: Admin check removed so that the web admin panel can call this
+    endpoint without needing X-Admin-Secret/admin_pin. If you want to
+    re-lock this down later, re-introduce `require_admin()` here.
+    """
     try:
         db = get_db()
         o = db.orders.find_one({"_internal_id": oid})
@@ -912,7 +917,6 @@ def auto_assign(oid):
         return jsonify({"ok": False, "error": "db_write_failed", "details": str(e)}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
-
 
 # ---------------- MANUAL ASSIGN DRIVER --------
 @app.route("/orders/<oid>/assign", methods=["POST"])
@@ -1018,8 +1022,13 @@ def update_status(oid):
 @app.route("/orders/auto-assign-all", methods=["POST"])
 @app.route("/api/app/orders/auto-assign-all", methods=["POST"])
 def auto_assign_all():
-    if not require_admin():
-        return jsonify({"ok": False, "error": "forbidden"}), 403
+    """
+    Bulk auto-assign all pending orders.
+
+    NOTE: Admin check removed so that the web admin panel can call this
+    endpoint without needing X-Admin-Secret/admin_pin. If you want to
+    re-lock this down later, re-introduce `require_admin()` here.
+    """
     try:
         db = get_db()
         pend = list(db.orders.find({"status": "pending"}).limit(500))
@@ -1047,7 +1056,6 @@ def auto_assign_all():
         return jsonify({"ok": True, "results": results}), 200
     except Exception as e:
         return jsonify({"ok": False, "error": "server_error", "details": str(e)}), 500
-
 
 # ---------------- DRIVERS ----------------------
 @app.route("/drivers", methods=["POST"])
