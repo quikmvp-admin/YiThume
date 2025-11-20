@@ -1648,8 +1648,12 @@ function resolveDriverForOrder(o){
   const storeNameEl         = document.getElementById('storeName');
   const storePhoneEl        = document.getElementById('storePhone');
   const storeZoneEl         = document.getElementById('storeZone');
+// ========================================================================
+// CONFIG FOR THIS SCRIPT
+// ========================================================================
+const BASE_API = "/api/app"; // local config for KPI script
 
-  // ========================================================================
+// ========================================================================
 // ADMIN PANEL SCAFFOLD (auto-create if missing)
 // ========================================================================
 function ensureOrdersPanelScaffold(){
@@ -1663,7 +1667,7 @@ function ensureOrdersPanelScaffold(){
   panel.innerHTML = `
     <div class="bg-white w-[min(100%,1000px)] max-h-[85vh] rounded-2xl shadow-xl p-4 flex flex-col">
       <div class="flex items-center justify-between gap-2">
-        <div class="text-sm font-semibold">Orders / Admin</div>
+        <div class="text-sm font-semibold">Orders Admin</div>
         <div class="flex items-center gap-2">
           <button id="ordersAssign" class="px-2 py-1 text-xs rounded-lg border border-slate-300 hover:bg-slate-100">Auto-assign</button>
           <button id="ordersRefresh" class="px-2 py-1 text-xs rounded-lg border border-slate-300 hover:bg-slate-100">Refresh</button>
@@ -1690,7 +1694,7 @@ function ensureOrdersPanelScaffold(){
   `;
   document.body.appendChild(panel);
 
-  // Re-bind globals
+  // Re-bind globals (these vars must exist in your main script)
   ordersPanel         = document.getElementById('ordersPanel');
   ordersList          = document.getElementById('ordersList');
   ordersClose         = document.getElementById('closeOrdersPanel');
@@ -1811,7 +1815,7 @@ function ytComputeMetrics(orders){
 }
 
 // ========================================================================
-// KPI BUTTON + SMALL PANEL (bottom-right)
+// KPI PANEL (small card above button)
 // ========================================================================
 function ytEnsureKpiPanel(){
   let panel = document.getElementById('ytKpiPanel');
@@ -1894,7 +1898,7 @@ async function ytToggleKpiPanel(){
     const data   = await res.json();
     const orders = (data && data.orders) ? data.orders : [];
 
-    // Sort newest first (similar to history tab)
+    // Sort newest first
     orders.sort((a,b)=>{
       const ta = ytParseDate(a.created_at_iso || a.created_at || 0)?.getTime() || 0;
       const tb = ytParseDate(b.created_at_iso || b.created_at || 0)?.getTime() || 0;
@@ -1966,6 +1970,9 @@ async function ytToggleKpiPanel(){
   }
 }
 
+// ========================================================================
+// KPI BUTTON (bottom-right) – ADMIN ONLY
+// ========================================================================
 function createMetricsButton(){
   // Only create if admin mode is active
   if (!window.ytIsAdminMode) return;
@@ -2010,7 +2017,6 @@ function closeOrders(){
 
   ordersPanel.classList.add("hidden");
 }
-
   // ========================================================================
   // COLLECTION POINTS
   // ========================================================================
