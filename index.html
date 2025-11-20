@@ -2035,8 +2035,6 @@ function closeOrders(){
     setActiveAdminTab(ordersTab);
     refreshAllData();
   };
-  const closeOrders= ()=> closeFlex(document.getElementById('ordersPanel'));
-
   const openDriverDash = ()=>{
     if(driverPayoutPendingEl)  driverPayoutPendingEl.textContent = String(driverTotals.pending);
     if(driverPayoutApprovedEl) driverPayoutApprovedEl.textContent = String(driverTotals.approved);
