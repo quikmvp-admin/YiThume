@@ -1650,67 +1650,323 @@ function resolveDriverForOrder(o){
   const storeZoneEl         = document.getElementById('storeZone');
 
   // ========================================================================
-  // ADMIN PANEL SCAFFOLD (auto-create if missing)
-  // ========================================================================
-  function ensureOrdersPanelScaffold(){
-    let panel = document.getElementById('ordersPanel');
-    if (panel) return panel;
+// ADMIN PANEL SCAFFOLD (auto-create if missing)
+// ========================================================================
+function ensureOrdersPanelScaffold(){
+  let panel = document.getElementById('ordersPanel');
+  if (panel) return panel;
 
-    panel = document.createElement('div');
-    panel.id = 'ordersPanel';
-    panel.className = 'hidden fixed inset-0 z-[1000] items-center justify-center bg-black/40';
+  panel = document.createElement('div');
+  panel.id = 'ordersPanel';
+  panel.className = 'hidden fixed inset-0 z-[1000] items-center justify-center bg-black/40';
 
-    panel.innerHTML = `
-      <div class="bg-white w-[min(100%,1000px)] max-h-[85vh] rounded-2xl shadow-xl p-4 flex flex-col">
-        <div class="flex items-center justify-between gap-2">
-          <div class="text-sm font-semibold">Orders / Admin</div>
-          <div class="flex items-center gap-2">
-            <button id="ordersAssign" class="px-2 py-1 text-xs rounded-lg border border-slate-300 hover:bg-slate-100">Auto-assign</button>
-            <button id="ordersRefresh" class="px-2 py-1 text-xs rounded-lg border border-slate-300 hover:bg-slate-100">Refresh</button>
-            <button id="closeOrdersPanel" class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white">Close</button>
-          </div>
+  panel.innerHTML = `
+    <div class="bg-white w-[min(100%,1000px)] max-h-[85vh] rounded-2xl shadow-xl p-4 flex flex-col">
+      <div class="flex items-center justify-between gap-2">
+        <div class="text-sm font-semibold">Orders / Admin</div>
+        <div class="flex items-center gap-2">
+          <button id="ordersAssign" class="px-2 py-1 text-xs rounded-lg border border-slate-300 hover:bg-slate-100">Auto-assign</button>
+          <button id="ordersRefresh" class="px-2 py-1 text-xs rounded-lg border border-slate-300 hover:bg-slate-100">Refresh</button>
+          <button id="closeOrdersPanel" class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white">Close</button>
         </div>
+      </div>
 
-        <div id="ordersTabs" class="mt-3 flex flex-wrap gap-2"></div>
+      <div id="ordersTabs" class="mt-3 flex flex-wrap gap-2"></div>
 
-        <div class="mt-3 grid grid-cols-1 gap-3 overflow-auto">
-          <div>
-            <div class="text-xs text-slate-500 mb-1">Orders</div>
-            <div id="ordersList" class="divide-y divide-slate-200"></div>
-          </div>
-          <div>
-            <div class="text-xs text-slate-500 mb-1">Drivers</div>
-            <div id="driversList"></div>
-          </div>
+      <div class="mt-3 grid grid-cols-1 gap-3 overflow-auto">
+        <div>
+          <div class="text-xs text-slate-500 mb-1">Orders</div>
+          <div id="ordersList" class="divide-y divide-slate-200"></div>
         </div>
+        <div>
+          <div class="text-xs text-slate-500 mb-1">Drivers</div>
+          <div id="driversList"></div>
+        </div>
+      </div>
 
-        <div id="statsContainer" class="mt-4"></div>
-        <div id="metricsContainer" class="mt-4"></div>
+      <div id="statsContainer" class="mt-4"></div>
+      <div id="metricsContainer" class="mt-4"></div>
+    </div>
+  `;
+  document.body.appendChild(panel);
+
+  // Re-bind globals
+  ordersPanel         = document.getElementById('ordersPanel');
+  ordersList          = document.getElementById('ordersList');
+  ordersClose         = document.getElementById('closeOrdersPanel');
+  ordersAssign        = document.getElementById('ordersAssign');
+  ordersRefresh       = document.getElementById('ordersRefresh');
+  driversList         = document.getElementById('driversList');
+  driversRefresh      = document.getElementById('driversRefresh'); // may not exist
+  ordersTabsContainer = document.getElementById('ordersTabs');
+  statsContainer      = document.getElementById('statsContainer');
+  metricsContainer    = document.getElementById('metricsContainer');
+
+  // Wire header buttons
+  ordersClose?.addEventListener('click', closeOrders);
+  ordersAssign?.addEventListener('click', autoAssignForAll);
+  ordersRefresh?.addEventListener('click', hardRefresh);
+
+  return panel;
+}
+
+// ========================================================================
+// KPI HELPERS
+// ========================================================================
+function ytFmtMoney(v){
+  const n = Number(v || 0);
+  return "R" + n.toFixed(2);
+}
+
+function ytParseDate(d){
+  if(!d) return null;
+  const dt = new Date(d);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+function ytEscapeHtml(str){
+  if(str == null) return "";
+  return String(str)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#39;");
+}
+
+function ytSimpleBars(list){
+  if(!list || !list.length){
+    return '<div class="text-slate-500 text-sm">No data yet</div>';
+  }
+  const maxVal = Math.max(1, ...list.map(x => x.value || 0));
+  return list.map(({label,value,sub})=>{
+    const w = Math.max(4, Math.round((value/maxVal)*100));
+    return `
+      <div class="mb-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="truncate pr-2">${ytEscapeHtml(label)}</span>
+          <span class="font-semibold">${value}</span>
+        </div>
+        <div class="w-full h-2 bg-slate-100 rounded-full mt-1">
+          <div class="h-2 rounded-full" style="width:${w}% ; background:#059669;"></div>
+        </div>
+        ${sub ? `<div class="text-[10px] text-slate-500 mt-0.5">${ytEscapeHtml(sub)}</div>` : ""}
       </div>
     `;
-    document.body.appendChild(panel);
+  }).join("");
+}
 
-    // Re-bind globals
-    ordersPanel         = document.getElementById('ordersPanel');
-    ordersList          = document.getElementById('ordersList');
-    ordersClose         = document.getElementById('closeOrdersPanel');
-    ordersAssign        = document.getElementById('ordersAssign');
-    ordersRefresh       = document.getElementById('ordersRefresh');
-    driversList         = document.getElementById('driversList');
-    driversRefresh      = document.getElementById('driversRefresh'); // may not exist
-    ordersTabsContainer = document.getElementById('ordersTabs');
-    statsContainer      = document.getElementById('statsContainer');
-    metricsContainer    = document.getElementById('metricsContainer');
+function ytComputeMetrics(orders){
+  const all = Array.isArray(orders) ? orders : [];
 
-    // Wire header buttons
-    ordersClose?.addEventListener('click', closeOrders);
-    ordersAssign?.addEventListener('click', autoAssignForAll);
-    ordersRefresh?.addEventListener('click', hardRefresh);
+  const totalOrders  = all.length;
+  const totalRevenue = all.reduce((s,o)=> s + Number(o.total || 0), 0);
+  const itemsSold    = all.reduce((s,o)=>{
+    const its = o.items || [];
+    return s + its.reduce((k,i)=> k + Number(i.qty || 0), 0);
+  }, 0);
+  const avgOrder = totalOrders ? totalRevenue / totalOrders : 0;
 
-    return panel;
+  // Top products
+  const prodMap = new Map();
+  all.forEach(o=>{
+    (o.items || []).forEach(it=>{
+      if(!it || !it.name) return;
+      const key = it.name;
+      const qty = Number(it.qty || 1);
+      prodMap.set(key, (prodMap.get(key) || 0) + qty);
+    });
+  });
+  const topProducts = Array.from(prodMap.entries())
+    .map(([label,val]) => ({label, value: val}))
+    .sort((a,b)=> b.value - a.value)
+    .slice(0,8);
+
+  // Top areas by collection_name
+  const areaCount = new Map();
+  const areaRev   = new Map();
+  all.forEach(o=>{
+    const meta = o.meta || {};
+    const area = meta.collection_name || "—";
+    areaCount.set(area, (areaCount.get(area) || 0) + 1);
+    areaRev.set(area, (areaRev.get(area) || 0) + Number(o.total || 0));
+  });
+  const topAreas = Array.from(areaCount.entries())
+    .map(([label,val])=>({
+      label,
+      value: val,
+      sub: ytFmtMoney(areaRev.get(label) || 0) + " revenue"
+    }))
+    .sort((a,b)=> b.value - a.value)
+    .slice(0,8);
+
+  return {
+    totalOrders,
+    totalRevenue,
+    itemsSold,
+    avgOrder,
+    topProducts,
+    topAreas
+  };
+}
+
+// ========================================================================
+// KPI BUTTON + SMALL PANEL (bottom-right)
+// ========================================================================
+function ytEnsureKpiPanel(){
+  let panel = document.getElementById('ytKpiPanel');
+  if (panel) return panel;
+
+  panel = document.createElement('div');
+  panel.id = 'ytKpiPanel';
+  panel.className =
+    "fixed bottom-20 right-4 z-40 w-[320px] sm:w-[380px] bg-white rounded-2xl " +
+    "shadow-xl border border-slate-200 p-3 hidden";
+
+  panel.innerHTML = `
+    <div class="flex items-center justify-between mb-2">
+      <div>
+        <div class="text-[11px] uppercase tracking-wide text-emerald-600 font-semibold">YiThume</div>
+        <div class="text-sm font-semibold text-slate-800">Orders KPIs</div>
+      </div>
+      <button type="button"
+        id="ytKpiClose"
+        class="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 hover:bg-slate-100">
+        <span class="sr-only">Close</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd"
+            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+            clip-rule="evenodd" />
+        </svg>
+      </button>
+    </div>
+    <div id="ytKpiBody" class="text-xs">
+      <div class="flex items-center justify-center py-6">
+        <div class="h-6 w-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    </div>
+    <div class="pt-2 mt-2 border-t border-slate-100 text-[10px] text-slate-400 flex justify-between">
+      <span>KPIs from orders history</span>
+      <span id="ytKpiUpdated">Loading…</span>
+    </div>
+  `;
+
+  document.body.appendChild(panel);
+
+  const closeBtn = panel.querySelector('#ytKpiClose');
+  closeBtn?.addEventListener('click', () => {
+    panel.classList.add('hidden');
+  });
+
+  return panel;
+}
+
+async function ytToggleKpiPanel(){
+  const panel = ytEnsureKpiPanel();
+  const body  = panel.querySelector('#ytKpiBody');
+  const updatedLabel = panel.querySelector('#ytKpiUpdated');
+
+  // If visible, hide it
+  if (!panel.classList.contains('hidden')){
+    panel.classList.add('hidden');
+    return;
   }
 
-  function createMetricsButton(){
+  // Show + loading
+  panel.classList.remove('hidden');
+  if(body){
+    body.innerHTML = `
+      <div class="flex items-center justify-center py-6">
+        <div class="h-6 w-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    `;
+  }
+  if(updatedLabel){
+    updatedLabel.textContent = "Loading…";
+  }
+
+  try {
+    const url = BASE_API + "/orders?limit=500";
+    const res = await fetch(url);
+    if(!res.ok){
+      throw new Error("HTTP " + res.status);
+    }
+    const data   = await res.json();
+    const orders = (data && data.orders) ? data.orders : [];
+
+    // Sort newest first (similar to history tab)
+    orders.sort((a,b)=>{
+      const ta = ytParseDate(a.created_at_iso || a.created_at || 0)?.getTime() || 0;
+      const tb = ytParseDate(b.created_at_iso || b.created_at || 0)?.getTime() || 0;
+      return tb - ta;
+    });
+
+    const metrics = ytComputeMetrics(orders);
+    const {
+      totalOrders,
+      totalRevenue,
+      itemsSold,
+      avgOrder,
+      topProducts,
+      topAreas
+    } = metrics;
+
+    if(body){
+      body.innerHTML = `
+        <div class="space-y-3">
+          <div class="grid gap-2 sm:grid-cols-2">
+            <div class="bg-slate-50 border border-slate-100 rounded-xl p-2.5">
+              <div class="text-[10px] text-slate-500 mb-0.5">Total Revenue</div>
+              <div class="text-lg font-semibold text-slate-900">${ytFmtMoney(totalRevenue)}</div>
+            </div>
+            <div class="bg-slate-50 border border-slate-100 rounded-xl p-2.5">
+              <div class="text-[10px] text-slate-500 mb-0.5">Total Orders</div>
+              <div class="text-lg font-semibold text-slate-900">${totalOrders}</div>
+            </div>
+            <div class="bg-slate-50 border border-slate-100 rounded-xl p-2.5">
+              <div class="text-[10px] text-slate-500 mb-0.5">Items Sold</div>
+              <div class="text-lg font-semibold text-slate-900">${itemsSold}</div>
+            </div>
+            <div class="bg-slate-50 border border-slate-100 rounded-xl p-2.5">
+              <div class="text-[10px] text-slate-500 mb-0.5">Avg Order Value</div>
+              <div class="text-lg font-semibold text-slate-900">${ytFmtMoney(avgOrder)}</div>
+            </div>
+          </div>
+
+          <div class="grid gap-2 sm:grid-cols-2">
+            <div class="bg-white border border-slate-100 rounded-xl p-2.5">
+              <div class="text-[11px] font-medium text-slate-800 mb-1">Top Products</div>
+              ${ytSimpleBars(topProducts)}
+            </div>
+            <div class="bg-white border border-slate-100 rounded-xl p-2.5">
+              <div class="text-[11px] font-medium text-slate-800 mb-1">Top Areas</div>
+              ${ytSimpleBars(topAreas)}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    if(updatedLabel){
+      const now = new Date();
+      updatedLabel.textContent = now.toLocaleTimeString();
+    }
+  } catch(err){
+    console.error("KPI fetch error", err);
+    if(body){
+      body.innerHTML = `
+        <div class="text-center py-4 text-xs text-red-600">
+          Could not load KPIs.<br/>
+          <span class="text-[10px] text-slate-400">${ytEscapeHtml(String(err))}</span>
+        </div>
+      `;
+    }
+    if(updatedLabel){
+      updatedLabel.textContent = "Error";
+    }
+  }
+}
+
+function createMetricsButton(){
   // Only create if admin mode is active
   if (!window.ytIsAdminMode) return;
 
@@ -1729,19 +1985,28 @@ function resolveDriverForOrder(o){
     <span>View KPIs</span>
   `;
 
-  btn.addEventListener("click", openMetricsModal);
+  btn.addEventListener("click", ytToggleKpiPanel);
   document.body.appendChild(btn);
 }
+
+// ========================================================================
+// OPEN/CLOSE ADMIN PANEL HOOKS
+// ========================================================================
 function openOrdersPanel(){
+  ensureOrdersPanelScaffold();
   window.ytIsAdminMode = true;
   createMetricsButton();
   ordersPanel.classList.remove("hidden");
 }
+
 function closeOrders(){
   window.ytIsAdminMode = false;
 
   const btn = document.getElementById("ytMetricsButton");
   if (btn) btn.remove();
+
+  const kpiPanel = document.getElementById("ytKpiPanel");
+  if (kpiPanel) kpiPanel.classList.add("hidden");
 
   ordersPanel.classList.add("hidden");
 }
