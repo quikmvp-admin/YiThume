@@ -1650,6 +1650,8 @@ function resolveDriverForOrder(o){
   const storeZoneEl         = document.getElementById('storeZone');
 
 // ========================================================================
+
+// ========================================================================
 // ADMIN PANEL SCAFFOLD (auto-create if missing)
 // ========================================================================
 function ensureOrdersPanelScaffold(){
@@ -1886,7 +1888,7 @@ async function ytToggleKpiPanel(){
   }
 
   try {
-    const url = BASE_API + "/orders?limit=500";
+    const url = KPI_BASE_API + "/orders?limit=500";
     const res = await fetch(url);
     if(!res.ok){
       throw new Error("HTTP " + res.status);
@@ -2013,6 +2015,24 @@ function closeOrders(){
 
   ordersPanel.classList.add("hidden");
 }
+
+// ========================================================================
+// CLEAN UP OLD FLOATING "AUTO ASSIGN ALL" PILL IF IT EXISTS
+// ========================================================================
+document.addEventListener("DOMContentLoaded", () => {
+  // remove any legacy floating element that has a button with text "Auto assign all"
+  const autoAssignAllBtn = Array.from(document.querySelectorAll("button"))
+    .find(b => b.textContent.trim().toLowerCase() === "auto assign all");
+  if (autoAssignAllBtn) {
+    const container = autoAssignAllBtn.closest("div");
+    if (container && container.parentElement) {
+      container.parentElement.removeChild(container);
+    } else {
+      autoAssignAllBtn.remove();
+    }
+  }
+});
+
   // ========================================================================
   // COLLECTION POINTS
   // ========================================================================
