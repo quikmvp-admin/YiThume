@@ -933,7 +933,8 @@
 </div>
 <script>
 (function(){
-  const BASE_API = "/api/app";
+  // Use existing BASE_API if defined, otherwise default
+  const KPI_BASE_API = (typeof BASE_API !== "undefined") ? BASE_API : "/api/app";
 
   // ----------------- HELPERS -----------------
   function fmtMoney(v){
@@ -982,13 +983,13 @@
   function computeMetrics(orders){
     const all = Array.isArray(orders) ? orders : [];
 
-    const totalOrders = all.length;
+    const totalOrders  = all.length;
     const totalRevenue = all.reduce((s,o)=> s + Number(o.total || 0), 0);
-    const itemsSold = all.reduce((s,o)=>{
+    const itemsSold    = all.reduce((s,o)=>{
       const its = o.items || [];
       return s + its.reduce((k,i)=> k + Number(i.qty || 0), 0);
     }, 0);
-    const avgOrder = totalOrders ? totalRevenue / totalOrders : 0;
+    const avgOrder     = totalOrders ? totalRevenue / totalOrders : 0;
 
     // Top products
     const prodMap = new Map();
@@ -1033,171 +1034,88 @@
     };
   }
 
-  // ----------------- DOM CREATION -----------------
-  function createMetricsButton(){
-    if(document.getElementById("ytMetricsButton")) return;
+  // ----------------- KPI PANEL ABOVE BUTTON -----------------
+  function ensureKpiPanel(){
+    let panel = document.getElementById("ytKpiPanel");
+    if (panel) return panel;
 
-    const btn = document.createElement("button");
-    btn.id = "ytMetricsButton";
-    btn.type = "button";
-    btn.className =
-      "fixed bottom-4 right-4 z-40 bg-emerald-600 text-white px-4 py-2 rounded-full " +
-      "shadow-lg text-sm font-semibold flex items-center gap-2 hover:bg-emerald-700 " +
-      "focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2";
+    panel = document.createElement("div");
+    panel.id = "ytKpiPanel";
+    panel.className =
+      "fixed bottom-20 right-4 z-[1000001] w-[320px] sm:w-[380px] " +
+      "bg-white rounded-2xl shadow-xl border border-slate-200 p-3 hidden";
 
-    btn.innerHTML = `
-      <span class="fixed bottom-4 right-4 px-4 py-2 rounded-full flex items-center gap-2
-         bg-emerald-600 text-white text-sm font-semibold shadow-lg
-         hover:bg-emerald-700
-         z-[1000000]"></span>
-      <span>View KPIs</span>
-    `;
-
-    btn.addEventListener("click", openMetricsModal);
-    document.body.appendChild(btn);
-  }
-
-  function removeMetricsButton(){
-    const btn = document.getElementById("ytMetricsButton");
-    if(btn) btn.remove();
-  }
-
-  function createMetricsModal(){
-    if(document.getElementById("ytMetricsOverlay")) return;
-
-    const overlay = document.createElement("div");
-    overlay.id = "ytMetricsOverlay";
-    overlay.className =
-      "fixed inset-0 z-50 hidden bg-slate-900/40 backdrop-blur-sm " +
-      "flex items-end sm:items-center justify-center";
-
-    overlay.innerHTML = `
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl mx-3 mb-3 sm:mb-0 overflow-hidden">
-        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-          <div>
-            <div class="text-xs uppercase tracking-wide text-emerald-600 font-semibold">YiThume</div>
-            <div class="text-sm md:text-base font-semibold text-slate-800">Orders KPIs</div>
-          </div>
-          <button type="button"
-            id="ytMetricsClose"
-            class="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 hover:bg-slate-100">
-            <span class="sr-only">Close</span>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd"
-                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                clip-rule="evenodd" />
-            </svg>
-          </button>
+    panel.innerHTML = `
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <div class="text-[11px] uppercase tracking-wide text-emerald-600 font-semibold">YiThume</div>
+          <div class="text-sm font-semibold text-slate-800">Orders KPIs</div>
         </div>
-
-        <div id="ytMetricsBody" class="px-4 py-4">
-          <div class="flex items-center justify-center py-8">
-            <div class="h-8 w-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-          </div>
+        <button type="button"
+          id="ytKpiClose"
+          class="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 hover:bg-slate-100">
+          <span class="sr-only">Close</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+              clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+      <div id="ytKpiBody" class="text-xs">
+        <div class="flex items-center justify-center py-6">
+          <div class="h-6 w-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
-
-        <div class="px-4 py-3 border-t border-slate-100 text-[11px] text-slate-400 flex justify-between">
-          <span>KPIs from Orders history (API)</span>
-          <span>Updated just now</span>
-        </div>
+      </div>
+      <div class="pt-2 mt-2 border-t border-slate-100 text-[10px] text-slate-400 flex justify-between">
+        <span>KPIs from orders history</span>
+        <span id="ytKpiUpdated">Loading…</span>
       </div>
     `;
 
-    document.body.appendChild(overlay);
+    document.body.appendChild(panel);
 
-    // Close handlers
-    overlay.addEventListener("click", (e)=>{
-      if(e.target === overlay){
-        closeMetricsModal();
-      }
+    const closeBtn = panel.querySelector("#ytKpiClose");
+    closeBtn?.addEventListener("click", () => {
+      panel.classList.add("hidden");
     });
-    const closeBtn = overlay.querySelector("#ytMetricsClose");
-    if(closeBtn){
-      closeBtn.addEventListener("click", closeMetricsModal);
+
+    return panel;
+  }
+
+  async function toggleKpiPanel(){
+    const panel = ensureKpiPanel();
+    const body  = panel.querySelector("#ytKpiBody");
+    const updatedLabel = panel.querySelector("#ytKpiUpdated");
+
+    // If visible, hide
+    if (!panel.classList.contains("hidden")){
+      panel.classList.add("hidden");
+      return;
     }
-  }
 
-  // ----------------- RENDERING -----------------
-  function renderMetricsInModal(metrics){
-    const body = document.getElementById("ytMetricsBody");
-    if(!body) return;
-
-    const {
-      totalOrders,
-      totalRevenue,
-      itemsSold,
-      avgOrder,
-      topProducts,
-      topAreas
-    } = metrics;
-
-    body.innerHTML = `
-      <div class="space-y-4">
-        <!-- KPI row -->
-        <div class="grid gap-3 sm:grid-cols-4">
-          <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3">
-            <div class="text-[11px] text-slate-500 mb-1">Total Revenue</div>
-            <div class="text-xl md:text-2xl font-semibold text-slate-900">${fmtMoney(totalRevenue)}</div>
-          </div>
-          <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3">
-            <div class="text-[11px] text-slate-500 mb-1">Total Orders</div>
-            <div class="text-xl md:text-2xl font-semibold text-slate-900">${totalOrders}</div>
-          </div>
-          <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3">
-            <div class="text-[11px] text-slate-500 mb-1">Items Sold</div>
-            <div class="text-xl md:text-2xl font-semibold text-slate-900">${itemsSold}</div>
-          </div>
-          <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3">
-            <div class="text-[11px] text-slate-500 mb-1">Avg Order Value</div>
-            <div class="text-xl md:text-2xl font-semibold text-slate-900">${fmtMoney(avgOrder)}</div>
-          </div>
+    // Show + loading
+    panel.classList.remove("hidden");
+    if(body){
+      body.innerHTML = `
+        <div class="flex items-center justify-center py-6">
+          <div class="h-6 w-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
-
-        <!-- Lists -->
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div class="bg-white border border-slate-100 rounded-2xl p-3">
-            <div class="text-sm font-medium text-slate-800 mb-2">Top Products (qty)</div>
-            <div id="ytMetricsTopProducts">
-              ${simpleBars(topProducts)}
-            </div>
-          </div>
-          <div class="bg-white border border-slate-100 rounded-2xl p-3">
-            <div class="text-sm font-medium text-slate-800 mb-2">Top Areas</div>
-            <div id="ytMetricsTopAreas">
-              ${simpleBars(topAreas)}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  // ----------------- FETCH + OPEN/CLOSE -----------------
-  async function openMetricsModal(){
-    createMetricsModal();
-    const overlay = document.getElementById("ytMetricsOverlay");
-    const body = document.getElementById("ytMetricsBody");
-    if(!overlay || !body) return;
-
-    overlay.classList.remove("hidden");
-    body.innerHTML = `
-      <div class="flex items-center justify-center py-8">
-        <div class="h-8 w-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    `;
+      `;
+    }
+    if(updatedLabel){
+      updatedLabel.textContent = "Loading…";
+    }
 
     try {
-      // Fetch a chunk of history. You can tweak limit and/or status filter if you want only delivered:
-      // const url = BASE_API + "/orders?limit=500&status=delivered";
-      const url = BASE_API + "/orders?limit=500";
+      const url = KPI_BASE_API + "/orders?limit=500";
       const res = await fetch(url);
       if(!res.ok){
         throw new Error("HTTP " + res.status);
       }
-      const data = await res.json();
+      const data   = await res.json();
       const orders = (data && data.orders) ? data.orders : [];
 
-      // Sort newest first, like your History tab
       orders.sort((a,b)=>{
         const ta = parseDate(a.created_at_iso || a.created_at || 0)?.getTime() || 0;
         const tb = parseDate(b.created_at_iso || b.created_at || 0)?.getTime() || 0;
@@ -1205,73 +1123,76 @@
       });
 
       const metrics = computeMetrics(orders);
-      renderMetricsInModal(metrics);
+      const {
+        totalOrders,
+        totalRevenue,
+        itemsSold,
+        avgOrder,
+        topProducts,
+        topAreas
+      } = metrics;
+
+      if(body){
+        body.innerHTML = `
+          <div class="space-y-3">
+            <div class="grid gap-2 sm:grid-cols-2">
+              <div class="bg-slate-50 border border-slate-100 rounded-xl p-2.5">
+                <div class="text-[10px] text-slate-500 mb-0.5">Total Revenue</div>
+                <div class="text-lg font-semibold text-slate-900">${fmtMoney(totalRevenue)}</div>
+              </div>
+              <div class="bg-slate-50 border border-slate-100 rounded-xl p-2.5">
+                <div class="text-[10px] text-slate-500 mb-0.5">Total Orders</div>
+                <div class="text-lg font-semibold text-slate-900">${totalOrders}</div>
+              </div>
+              <div class="bg-slate-50 border border-slate-100 rounded-xl p-2.5">
+                <div class="text-[10px] text-slate-500 mb-0.5">Items Sold</div>
+                <div class="text-lg font-semibold text-slate-900">${itemsSold}</div>
+              </div>
+              <div class="bg-slate-50 border border-slate-100 rounded-xl p-2.5">
+                <div class="text-[10px] text-slate-500 mb-0.5">Avg Order Value</div>
+                <div class="text-lg font-semibold text-slate-900">${fmtMoney(avgOrder)}</div>
+              </div>
+            </div>
+
+            <div class="grid gap-2 sm:grid-cols-2">
+              <div class="bg-white border border-slate-100 rounded-xl p-2.5">
+                <div class="text-[11px] font-medium text-slate-800 mb-1">Top Products</div>
+                ${simpleBars(topProducts)}
+              </div>
+              <div class="bg-white border border-slate-100 rounded-xl p-2.5">
+                <div class="text-[11px] font-medium text-slate-800 mb-1">Top Areas</div>
+                ${simpleBars(topAreas)}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+      if(updatedLabel){
+        const now = new Date();
+        updatedLabel.textContent = now.toLocaleTimeString();
+      }
     } catch(err){
-      console.error("Metrics fetch error", err);
-      body.innerHTML = `
-        <div class="text-center py-8 text-sm text-red-600">
-          Could not load KPIs. Please try again.<br/>
-          <span class="text-[11px] text-slate-400">${escapeHtml(String(err))}</span>
-        </div>
-      `;
-    }
-  }
-
-  function closeMetricsModal(){
-    const overlay = document.getElementById("ytMetricsOverlay");
-    if(overlay){
-      overlay.classList.add("hidden");
-    }
-  }
-
-  // Expose open function globally so admin UI can call it if needed
-  window.ytOpenMetricsModal = openMetricsModal;
-
-  // ----------------- ADMIN PANEL INTEGRATION -----------------
-  function watchOrdersPanel(panel){
-    // Watch class changes on ordersPanel to know when admin is open/closed
-    const updateButtonForVisibility = () => {
-      const isVisible = !panel.classList.contains("hidden");
-      if(isVisible){
-        createMetricsButton();
-      } else {
-        removeMetricsButton();
+      console.error("KPI fetch error", err);
+      if(body){
+        body.innerHTML = `
+          <div class="text-center py-4 text-xs text-red-600">
+            Could not load KPIs.<br/>
+            <span class="text-[10px] text-slate-400">${escapeHtml(String(err))}</span>
+          </div>
+        `;
       }
-    };
-
-    // Initial state check
-    updateButtonForVisibility();
-
-    const obs = new MutationObserver(updateButtonForVisibility);
-    obs.observe(panel, { attributes: true, attributeFilter: ["class"] });
-  }
-
-  function setupAdminWatcher(){
-    // ordersPanel might be created later (ensureOrdersPanelScaffold),
-    // so we watch the DOM for it.
-    const existing = document.getElementById("ordersPanel");
-    if(existing){
-      watchOrdersPanel(existing);
-    }
-
-    const bodyObs = new MutationObserver((mutations)=>{
-      for(const m of mutations){
-        m.addedNodes.forEach(node=>{
-          if(node.nodeType === 1 && node.id === "ordersPanel"){
-            watchOrdersPanel(node);
-          }
-        });
+      if(updatedLabel){
+        updatedLabel.textContent = "Error";
       }
-    });
-
-    bodyObs.observe(document.body, { childList: true, subtree: true });
+    }
   }
 
-  // ----------------- INIT -----------------
-  document.addEventListener("DOMContentLoaded", ()=>{
-    // Do NOT create the button on page load.
-    // Only hook into admin panel visibility.
-    setupAdminWatcher();
+  // ----------------- INIT: hook button to panel -----------------
+  document.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("ytAdminKpiBtn");
+    if (btn){
+      btn.addEventListener("click", toggleKpiPanel);
+    }
   });
 })();
 </script>
