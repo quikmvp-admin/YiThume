@@ -928,7 +928,6 @@
     </div>
   </div>
 </div>
-<!-- Drop this near the end of <body>, AFTER Tailwind is loaded -->
 <script>
 (function(){
   const BASE_API = "/api/app";
@@ -1050,6 +1049,11 @@
 
     btn.addEventListener("click", openMetricsModal);
     document.body.appendChild(btn);
+  }
+
+  function removeMetricsButton(){
+    const btn = document.getElementById("ytMetricsButton");
+    if(btn) btn.remove();
   }
 
   function createMetricsModal(){
@@ -1214,13 +1218,57 @@
     }
   }
 
+  // Expose open function globally so admin UI can call it if needed
+  window.ytOpenMetricsModal = openMetricsModal;
+
+  // ----------------- ADMIN PANEL INTEGRATION -----------------
+  function watchOrdersPanel(panel){
+    // Watch class changes on ordersPanel to know when admin is open/closed
+    const updateButtonForVisibility = () => {
+      const isVisible = !panel.classList.contains("hidden");
+      if(isVisible){
+        createMetricsButton();
+      } else {
+        removeMetricsButton();
+      }
+    };
+
+    // Initial state check
+    updateButtonForVisibility();
+
+    const obs = new MutationObserver(updateButtonForVisibility);
+    obs.observe(panel, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  function setupAdminWatcher(){
+    // ordersPanel might be created later (ensureOrdersPanelScaffold),
+    // so we watch the DOM for it.
+    const existing = document.getElementById("ordersPanel");
+    if(existing){
+      watchOrdersPanel(existing);
+    }
+
+    const bodyObs = new MutationObserver((mutations)=>{
+      for(const m of mutations){
+        m.addedNodes.forEach(node=>{
+          if(node.nodeType === 1 && node.id === "ordersPanel"){
+            watchOrdersPanel(node);
+          }
+        });
+      }
+    });
+
+    bodyObs.observe(document.body, { childList: true, subtree: true });
+  }
+
   // ----------------- INIT -----------------
   document.addEventListener("DOMContentLoaded", ()=>{
-    createMetricsButton();
+    // Do NOT create the button on page load.
+    // Only hook into admin panel visibility.
+    setupAdminWatcher();
   });
 })();
 </script>
-
 
 <script>
 window.addEventListener('DOMContentLoaded', () => {
