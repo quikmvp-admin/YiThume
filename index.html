@@ -530,16 +530,21 @@
           <input id="drvPhone" class="mt-1 w-full border rounded-lg p-2" placeholder="2782..." required />
         </label>
 
-        <label class="block">
-          <div class="text-xs font-medium text-slate-600">Your Zone</div>
-          <select id="drvZone" class="mt-1 w-full border rounded-lg p-2">
-            <option value="A">Zone A – Port Alfred</option>
-            <option value="B">Zone B – Bathurst</option>
-            <option value="C">Zone C – Kenton</option>
-            <option value="D">Zone D – Makhanda / Grahamstown / Alice</option>
-            <option value="E">Zone E – Alexandria / Alicedale</option>
-          </select>
-        </label>
+       <label class="block">
+  <div class="text-xs font-medium text-slate-600">Max distance you can cover (km)</div>
+  <input
+    id="drvMaxRadiusKm"
+    type="number"
+    min="1"
+    max="100"
+    class="mt-1 w-full border rounded-lg p-2"
+    placeholder="e.g. 15"
+  />
+  <p class="mt-1 text-[11px] text-slate-500">
+    We’ll send you orders from the closest depot within this distance from your base location.
+  </p>
+</label>
+
 
         <label class="block">
           <div class="text-xs font-medium text-slate-600">How far you’ll drive (km)</div>
@@ -1657,16 +1662,50 @@ function resolveDriverForOrder(o){
     return panel;
   }
 
+  function createMetricsButton(){
+  // Only create if admin mode is active
+  if (!window.ytIsAdminMode) return;
+
+  if(document.getElementById("ytMetricsButton")) return;
+
+  const btn = document.createElement("button");
+  btn.id = "ytMetricsButton";
+  btn.type = "button";
+  btn.className =
+    "fixed bottom-4 right-4 z-40 bg-emerald-600 text-white px-4 py-2 rounded-full " +
+    "shadow-lg text-sm font-semibold flex items-center gap-2 hover:bg-emerald-700 " +
+    "focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2";
+
+  btn.innerHTML = `
+    <span class="inline-flex h-2 w-2 rounded-full bg-emerald-300 mr-1"></span>
+    <span>View KPIs</span>
+  `;
+
+  btn.addEventListener("click", openMetricsModal);
+  document.body.appendChild(btn);
+}
+function openOrdersPanel(){
+  window.ytIsAdminMode = true;
+  createMetricsButton();
+  ordersPanel.classList.remove("hidden");
+}
+function closeOrders(){
+  window.ytIsAdminMode = false;
+
+  const btn = document.getElementById("ytMetricsButton");
+  if (btn) btn.remove();
+
+  ordersPanel.classList.add("hidden");
+}
+
   // ========================================================================
   // COLLECTION POINTS
   // ========================================================================
   const COLLECTIONS = [
-    { id:'DEPOT-PA',   name:'Port Alfred Depot',         lat:-33.590, lng:26.890 },
-    { id:'DEPOT-KENT', name:'Kenton-on-Sea Depot',       lat:-33.686, lng:26.668 },
+    { id:'DEPOT-PTA',  name:'Pretoria (Main Depot)',     lat:-25.746, lng:28.188 }, 
     { id:'DEPOT-GHT',  name:'Makhanda / Grahamstown',    lat:-33.310, lng:26.520 },
     { id:'DEPOT-ALC',  name:'Alice Depot',               lat:-32.789, lng:26.834 },
-    { id:'DEPOT-GQ',   name:'Gqeberha (Port Elizabeth)', lat:-33.958, lng:25.602 },
-    { id:'DEPOT-PTA',  name:'Pretoria (Main Depot)',     lat:-25.746, lng:28.188 }
+    { id:'DEPOT-GQ',   name:'Gqeberha (Port Elizabeth)', lat:-33.958, lng:25.602 }
   ];
 
   function ensureCollectionSelectPopulated(){
